@@ -14,12 +14,7 @@ from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.mcp import MCPServerStdio
 from pydantic_ai import Agent, RunContext
 
-from configure_langfuse import configure_langfuse
-
 load_dotenv()
-
-# Configure Langfuse for agent observability
-tracer = configure_langfuse()
 
 # ========== Helper function to get model configuration ==========
 def get_model():
@@ -116,7 +111,6 @@ async def use_brave_search_agent(query: str) -> dict[str, str]:
     """
     print(f"Calling Brave agent with query: {query}")
     result = await brave_agent.run(query)
-    #result = 0 / 0
     return {"result": result.data}
 
 @primary_agent.tool_plain
@@ -199,27 +193,19 @@ async def main():
                 break
             
             try:
-                # Configure the metadata for the Langfuse tracing
-                with tracer.start_as_current_span("Pydantic-Ai-Trace") as span:
-                    span.set_attribute("langfuse.user.id", "user-456")
-                    span.set_attribute("langfuse.session.id", "987654321")
-
-                    # Process the user input and output the response
-                    print("\n[Assistant]")
-                    curr_message = ""
-                    with Live('', console=console, vertical_overflow='visible') as live:
-                        async with primary_agent.run_stream(
-                            user_input, message_history=messages
-                        ) as result:
-                            async for message in result.stream_text(delta=True):
-                                curr_message += message
-                                live.update(Markdown(curr_message))
-                        
-                    # Add the new messages to the chat history
-                    messages.extend(result.all_messages())
-
-                    span.set_attribute("input.value", user_input)
-                    span.set_attribute("output.value", curr_message)
+                # Process the user input and output the response
+                print("\n[Assistant]")
+                curr_message = ""
+                with Live('', console=console, vertical_overflow='visible') as live:
+                    async with primary_agent.run_stream(
+                        user_input, message_history=messages
+                    ) as result:
+                        async for message in result.stream_text(delta=True):
+                            curr_message += message
+                            live.update(Markdown(curr_message))
+                    
+                # Add the new messages to the chat history
+                messages.extend(result.all_messages())
                 
             except Exception as e:
                 print(f"\n[Error] An error occurred: {str(e)}")
