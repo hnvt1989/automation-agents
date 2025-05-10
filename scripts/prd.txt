@@ -6,10 +6,6 @@ and automatically logging defects from pipeline failures, along with other effic
 
 # Core Features  
 [List and describe the main features of your product. For each feature, include:
-- What it does
-- Why it's important
-- How it works at a high level
-
 - Multi-Agents orchestration.
 - AI-driven agents for quality assurance (QA) to boost overall productivity.
 - Tests Generation Agent (TGA), Test execution Agent (TEA), Test Analysis Agent (TAA), QA Metrics dashboard Agent (MDA), Defect Logging Agent (DLA).
