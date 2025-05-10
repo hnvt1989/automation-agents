@@ -59,7 +59,7 @@ brave_agent = Agent(
     get_model(),
     system_prompt="You are a web search specialist using Brave Search. Find relevant information on the web.",
     mcp_servers=[brave_server],
-    instrument=True
+    instrument=False
 )
 
 # Filesystem agent
@@ -67,7 +67,7 @@ filesystem_agent = Agent(
     get_model(),
     system_prompt="You are a filesystem specialist. Help users manage their files and directories.",
     mcp_servers=[filesystem_server],
-    instrument=True
+    instrument=False
 )
 
 # GitHub agent
@@ -75,7 +75,7 @@ github_agent = Agent(
     get_model(),
     system_prompt="You are a GitHub specialist. Help users interact with GitHub repositories and features.",
     mcp_servers=[github_server],
-    instrument=True
+    instrument=False
 )
 
 # Slack agent
@@ -83,7 +83,7 @@ slack_agent = Agent(
     get_model(),
     system_prompt="You are a Slack specialist. Help users interact with Slack workspaces and channels.",
     mcp_servers=[slack_server],
-    instrument=True
+    instrument=False
 )
 
 # ========== Create the primary orchestration agent ==========
@@ -92,7 +92,7 @@ primary_agent = Agent(
     system_prompt="""You are a primary orchestration agent that can call upon specialized subagents 
     to perform various tasks. Each subagent is an expert in interacting with a specific third-party service.
     Analyze the user request and delegate the work to the appropriate subagent.""",
-    instrument=True
+    instrument=False
 )
 
 # ========== Define tools for the primary agent to call subagents ==========
