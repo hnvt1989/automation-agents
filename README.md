@@ -11,3 +11,14 @@ Design and develop AI-driven agents for quality assurance (QA) to boost overall 
 - **TEA**: Executes the tests; artifacts are sent to TAA.
 - **TAA**: Analyzes the test results and sends metrics to MDA.
 - **MDA**: Logs the defect and notifies the Slack channel.
+
+
+example prompt: 
+
+create a test using the <resources> at <directory> , create a pull request.
+if this pull request is approved. run the following pipeline steps:
+
+run the test at <directory>
+collect the metrics, post to dashboard
+post to slack bot
+

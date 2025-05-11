@@ -59,4 +59,13 @@ htmlcov/
 .coverage.*
 nosetests.xml
 coverage.xml
-*.cover 
+*.cover
+
+# Test reports
+reports/
+assets/
+*.html
+report/
+test-results/
+test-reports/
+pytest-report/ 

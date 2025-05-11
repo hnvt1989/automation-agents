@@ -70,6 +70,13 @@ filesystem_agent = Agent(
     instrument=False
 )
 
+analyzer_agent = Agent(
+    get_model(),
+    system_prompt="You are a test report analyzer. Help users analyze their test reports.",
+    #mcp_servers=[analyzer_server],
+    instrument=False
+)
+
 # GitHub agent
 github_agent = Agent(
     get_model(),
@@ -164,6 +171,24 @@ async def use_slack_agent(query: str) -> dict[str, str]:
     result = await slack_agent.run(query)
     return {"result": result.data}
 
+@primary_agent.tool_plain
+async def use_analyzer_agent(query: str) -> dict[str, str]:
+    """
+    Interact with the analyzer subagent.
+    Use this tool when the user needs to analyze their test reports.
+
+    Args:
+        ctx: The run context.
+        query: The instruction for the analyzer agent.
+
+    Returns:
+        The response from the analyzer agent.
+    """
+    print(f"Calling Analyzer agent with query: {query}")
+    result = await analyzer_agent.run(query)
+    return {"result": result.data}
+
+
 # ========== Main execution function ==========
 async def main():
     """Run the primary agent with a given query."""
@@ -178,6 +203,7 @@ async def main():
         await stack.enter_async_context(filesystem_agent.run_mcp_servers())
         await stack.enter_async_context(github_agent.run_mcp_servers())
         await stack.enter_async_context(slack_agent.run_mcp_servers())
+        #await stack.enter_async_context(analyzer_agent.run_mcp_servers())
         print("All MCP servers started successfully!")
 
         console = Console()
