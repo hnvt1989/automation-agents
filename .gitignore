@@ -16,6 +16,10 @@ __pycache__/
 # Environment variables
 .env
 
+# Vector store and embeddings
+chroma_db/
+vector_store/
+
 # Editor directories and files
 .idea
 .vscode

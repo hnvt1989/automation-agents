@@ -1,6 +1,6 @@
 from __future__ import annotations
 from contextlib import AsyncExitStack
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from dataclasses import dataclass
 from dotenv import load_dotenv
 from rich.markdown import Markdown
@@ -13,6 +13,9 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.mcp import MCPServerStdio
 from pydantic_ai import Agent, RunContext
+from chromadb import Client, Settings
+import chromadb
+import json
 
 load_dotenv()
 
@@ -92,6 +95,97 @@ slack_agent = Agent(
     mcp_servers=[slack_server],
     instrument=False
 )
+
+# ========== Create RAG agent with ChromaDB ==========
+class ChromaDBServer:
+    def __init__(self, persist_dir: str = "./chroma_db"):
+        self.client = chromadb.Client(Settings(
+            persist_directory=persist_dir,
+            is_persistent=True
+        ))
+        self.collection = self.client.get_or_create_collection(
+            name="knowledge_base",
+            metadata={"hnsw:space": "cosine"}
+        )
+    
+    async def add_documents(self, texts: List[str], metadatas: Optional[List[dict]] = None) -> List[str]:
+        """Add documents to the vector store"""
+        ids = [f"doc_{i}" for i in range(len(texts))]
+        self.collection.add(
+            documents=texts,
+            metadatas=metadatas if metadatas else [{"source": "user"} for _ in texts],
+            ids=ids
+        )
+        return ids
+    
+    async def search(self, query: str, n_results: int = 3) -> List[dict]:
+        """Search for relevant documents"""
+        results = self.collection.query(
+            query_texts=[query],
+            n_results=n_results
+        )
+        return {
+            "documents": results["documents"][0],
+            "metadatas": results["metadatas"][0],
+            "distances": results["distances"][0]
+        }
+
+# Initialize ChromaDB server
+chroma_server = ChromaDBServer()
+
+# Create RAG agent
+rag_agent = Agent(
+    get_model(),
+    system_prompt="""You are a RAG (Retrieval Augmented Generation) specialist that uses ChromaDB as your vector store. You help users by:
+    1. Indexing documents and content into the vector store
+    2. Performing semantic search to find relevant context
+    3. Generating responses based on the retrieved context
+    4. Managing the knowledge base
+    
+    Always explain what you're doing and provide relevant excerpts from retrieved documents.
+    
+    When indexing documents:
+    - Split long texts into smaller chunks
+    - Maintain document metadata
+    - Confirm successful indexing
+    
+    When searching:
+    - Use semantic search to find relevant documents
+    - Consider similarity scores
+    - Return the most relevant context""",
+    instrument=False
+)
+
+# Add ChromaDB methods as tools for the RAG agent
+@rag_agent.tool_plain
+async def add_to_knowledge_base(texts: List[str], metadatas: Optional[List[dict]] = None) -> dict[str, Any]:
+    """
+    Add documents to the ChromaDB vector store.
+    
+    Args:
+        texts: List of text documents to add
+        metadatas: Optional list of metadata dictionaries for each document
+        
+    Returns:
+        Dictionary containing the IDs of added documents
+    """
+    doc_ids = await chroma_server.add_documents(texts, metadatas)
+    return {"document_ids": doc_ids}
+
+@rag_agent.tool_plain
+async def search_knowledge_base(query: str, n_results: int = 3) -> dict[str, Any]:
+    """
+    Search the ChromaDB vector store for relevant documents.
+    
+    Args:
+        query: The search query
+        n_results: Number of results to return (default: 3)
+        
+    Returns:
+        Dictionary containing matched documents, their metadata, and similarity scores
+    """
+    results = await chroma_server.search(query, n_results)
+    return results
 
 # ========== Create the primary orchestration agent ==========
 primary_agent = Agent(
@@ -188,12 +282,41 @@ async def use_analyzer_agent(query: str) -> dict[str, str]:
     result = await analyzer_agent.run(query)
     return {"result": result.data}
 
+@primary_agent.tool_plain
+async def use_rag_agent(query: str) -> dict[str, str]:
+    """
+    Interact with the RAG agent for contextual information retrieval and generation.
+    Use this tool when the user needs to:
+    - Index new documents into the knowledge base
+    - Search for information in indexed documents
+    - Get answers based on the knowledge base context
+    - Manage the vector store
+
+    Args:
+        query: The instruction for the RAG agent.
+
+    Returns:
+        The response from the RAG agent with retrieved context and generated answer.
+    """
+    print(f"Calling RAG agent with query: {query}")
+    result = await rag_agent.run(query)
+    return {"result": result.data}
 
 # ========== Main execution function ==========
 async def main():
     """Run the primary agent with a given query."""
     print("MCP Agent Army - Multi-agent system using Model Context Protocol")
     print("Enter 'exit' to quit the program.")
+
+    # Initialize ChromaDB
+    print("Initializing ChromaDB vector store...")
+    try:
+        # This will create or load the existing database
+        chroma_server = ChromaDBServer()
+        print("ChromaDB initialized successfully!")
+    except Exception as e:
+        print(f"Error initializing ChromaDB: {str(e)}")
+        return
 
     # Use AsyncExitStack to manage all MCP servers in one context
     async with AsyncExitStack() as stack:
@@ -203,7 +326,6 @@ async def main():
         await stack.enter_async_context(filesystem_agent.run_mcp_servers())
         await stack.enter_async_context(github_agent.run_mcp_servers())
         await stack.enter_async_context(slack_agent.run_mcp_servers())
-        #await stack.enter_async_context(analyzer_agent.run_mcp_servers())
         print("All MCP servers started successfully!")
 
         console = Console()
