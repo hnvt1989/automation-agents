@@ -9,32 +9,56 @@ dev-debug.log
 # Dependency directories
 node_modules/
 .venv/
+venv/
 __pycache__/
 *.py[cod]
 *$py.class
 
-# Environment variables
+# Environment variables and configuration
 .env
+local.env
+*.env.local
+*.env.production
+.env.*.local
 
 # Vector store and embeddings
 chroma_db/
 vector_store/
+embeddings/
+*.db
+*.sqlite
+*.sqlite3
+
+# AI/ML model caches and data
+.cache/
+.huggingface/
+model_cache/
+tokenizer_cache/
 
 # Editor directories and files
-.idea
-.vscode
+.idea/
+.vscode/
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+.history/
 
 # OS specific
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 
-# Task files
+# Task files and project specific
 tasks.json
 tasks/
+scripts/task-complexity-report.json
+.taskmasterconfig
 
 # Python specific
 *.pyc
@@ -54,8 +78,9 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
 
-# Python testing
+# Python testing and coverage
 .coverage
 .pytest_cache/
 htmlcov/
@@ -64,12 +89,64 @@ htmlcov/
 nosetests.xml
 coverage.xml
 *.cover
+.hypothesis/
+.prof
 
-# Test reports
+# Test reports and artifacts
 reports/
 assets/
 *.html
 report/
 test-results/
 test-reports/
-pytest-report/ 
+pytest-report/
+allure-results/
+screenshots/
+
+# MCP (Model Context Protocol) specific
+mcp_cache/
+mcp_logs/
+
+# ChromaDB specific
+chroma_data/
+persist/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# Environments
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/ 

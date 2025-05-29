@@ -8,6 +8,9 @@ from rich.console import Console
 from rich.live import Live
 import asyncio
 import os
+import pathlib
+import mimetypes
+from pathlib import Path
 
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.models.openai import OpenAIModel
@@ -108,6 +111,94 @@ class ChromaDBServer:
             metadata={"hnsw:space": "cosine"}
         )
     
+    def _chunk_text(self, text: str, chunk_size: int = 1000, overlap: int = 200) -> List[str]:
+        """Split text into overlapping chunks"""
+        if len(text) <= chunk_size:
+            return [text]
+        
+        chunks = []
+        start = 0
+        while start < len(text):
+            end = start + chunk_size
+            if end >= len(text):
+                chunks.append(text[start:])
+                break
+            
+            # Try to break at a sentence or paragraph boundary
+            chunk = text[start:end]
+            last_period = chunk.rfind('.')
+            last_newline = chunk.rfind('\n')
+            
+            if last_period > chunk_size * 0.7:
+                end = start + last_period + 1
+            elif last_newline > chunk_size * 0.7:
+                end = start + last_newline + 1
+            
+            chunks.append(text[start:end])
+            start = end - overlap
+        
+        return chunks
+    
+    def _read_file_content(self, file_path: str) -> Optional[str]:
+        """Read content from a file based on its type"""
+        try:
+            path = Path(file_path)
+            if not path.exists():
+                return None
+            
+            mime_type, _ = mimetypes.guess_type(file_path)
+            
+            # Handle text files
+            if mime_type and mime_type.startswith('text/'):
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    return f.read()
+            
+            # Handle specific file extensions
+            text_extensions = {'.py', '.js', '.ts', '.html', '.css', '.md', '.txt', 
+                             '.json', '.xml', '.yaml', '.yml', '.sh', '.sql', '.env'}
+            
+            if path.suffix.lower() in text_extensions:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    return f.read()
+            
+            return None
+            
+        except Exception as e:
+            print(f"Error reading file {file_path}: {str(e)}")
+            return None
+    
+    def _get_directory_files(self, directory_path: str, recursive: bool = True, 
+                           include_extensions: Optional[List[str]] = None) -> List[str]:
+        """Get all readable files from a directory"""
+        try:
+            path = Path(directory_path)
+            if not path.exists() or not path.is_dir():
+                return []
+            
+            files = []
+            pattern = "**/*" if recursive else "*"
+            
+            for file_path in path.glob(pattern):
+                if file_path.is_file():
+                    # Skip hidden files and common non-text files
+                    if file_path.name.startswith('.'):
+                        continue
+                    
+                    # Filter by extensions if specified
+                    if include_extensions:
+                        if file_path.suffix.lower() not in include_extensions:
+                            continue
+                    
+                    # Check if file is readable
+                    if self._read_file_content(str(file_path)) is not None:
+                        files.append(str(file_path))
+            
+            return files
+            
+        except Exception as e:
+            print(f"Error reading directory {directory_path}: {str(e)}")
+            return []
+    
     async def add_documents(self, texts: List[str], metadatas: Optional[List[dict]] = None) -> List[str]:
         """Add documents to the vector store"""
         ids = [f"doc_{i}" for i in range(len(texts))]
@@ -117,6 +208,69 @@ class ChromaDBServer:
             ids=ids
         )
         return ids
+    
+    async def add_file(self, file_path: str, chunk_size: int = 1000) -> dict[str, Any]:
+        """Add a single file to the vector store"""
+        content = self._read_file_content(file_path)
+        if content is None:
+            return {"success": False, "error": f"Could not read file: {file_path}"}
+        
+        chunks = self._chunk_text(content, chunk_size)
+        metadatas = [
+            {
+                "source": "file",
+                "file_path": file_path,
+                "chunk_index": i,
+                "total_chunks": len(chunks)
+            }
+            for i in range(len(chunks))
+        ]
+        
+        doc_ids = await self.add_documents(chunks, metadatas)
+        
+        return {
+            "success": True,
+            "file_path": file_path,
+            "chunks_added": len(chunks),
+            "document_ids": doc_ids
+        }
+    
+    async def add_directory(self, directory_path: str, recursive: bool = True, 
+                          include_extensions: Optional[List[str]] = None,
+                          chunk_size: int = 1000) -> dict[str, Any]:
+        """Add all files from a directory to the vector store"""
+        files = self._get_directory_files(directory_path, recursive, include_extensions)
+        
+        if not files:
+            return {"success": False, "error": f"No readable files found in: {directory_path}"}
+        
+        total_chunks = 0
+        processed_files = []
+        errors = []
+        
+        for file_path in files:
+            try:
+                result = await self.add_file(file_path, chunk_size)
+                if result["success"]:
+                    processed_files.append({
+                        "file_path": file_path,
+                        "chunks": result["chunks_added"]
+                    })
+                    total_chunks += result["chunks_added"]
+                else:
+                    errors.append(f"{file_path}: {result['error']}")
+            except Exception as e:
+                errors.append(f"{file_path}: {str(e)}")
+        
+        return {
+            "success": len(processed_files) > 0,
+            "directory_path": directory_path,
+            "files_processed": len(processed_files),
+            "total_files_found": len(files),
+            "total_chunks_added": total_chunks,
+            "processed_files": processed_files,
+            "errors": errors
+        }
     
     async def search(self, query: str, n_results: int = 3) -> List[dict]:
         """Search for relevant documents"""
@@ -137,7 +291,11 @@ chroma_server = ChromaDBServer()
 rag_agent = Agent(
     get_model(),
     system_prompt="""You are a RAG (Retrieval Augmented Generation) specialist that uses ChromaDB as your vector store. You help users by:
-    1. Indexing documents and content into the vector store
+    1. Indexing documents and content into the vector store:
+       - Individual text documents from user input
+       - Single files (supports various text formats: .py, .js, .ts, .html, .css, .md, .txt, .json, .xml, .yaml, .yml, .sh, .sql, .env, etc.)
+       - Entire directories (with optional filtering by file extensions)
+       - Recursive directory scanning
     2. Performing semantic search to find relevant context
     3. Generating responses based on the retrieved context
     4. Managing the knowledge base
@@ -145,14 +303,23 @@ rag_agent = Agent(
     Always explain what you're doing and provide relevant excerpts from retrieved documents.
     
     When indexing documents:
-    - Split long texts into smaller chunks
-    - Maintain document metadata
-    - Confirm successful indexing
+    - Split long texts into smaller, overlapping chunks for better retrieval
+    - Maintain detailed document metadata (source, file paths, chunk information)
+    - Confirm successful indexing with statistics
+    - Handle various text file formats automatically
+    
+    When indexing files:
+    - Support both individual files and entire directories
+    - Automatically detect and read text-based files
+    - Skip binary files and hidden files
+    - Allow filtering by file extensions
+    - Provide detailed results including files processed, chunks created, and any errors
     
     When searching:
     - Use semantic search to find relevant documents
     - Consider similarity scores
-    - Return the most relevant context""",
+    - Return the most relevant context with source information
+    - Include file paths and chunk information when available""",
     instrument=False
 )
 
@@ -171,6 +338,40 @@ async def add_to_knowledge_base(texts: List[str], metadatas: Optional[List[dict]
     """
     doc_ids = await chroma_server.add_documents(texts, metadatas)
     return {"document_ids": doc_ids}
+
+@rag_agent.tool_plain
+async def index_file(file_path: str, chunk_size: int = 1000) -> dict[str, Any]:
+    """
+    Index a single file into the ChromaDB vector store.
+    
+    Args:
+        file_path: Path to the file to index
+        chunk_size: Size of text chunks (default: 1000)
+        
+    Returns:
+        Dictionary containing indexing results and metadata
+    """
+    result = await chroma_server.add_file(file_path, chunk_size)
+    return result
+
+@rag_agent.tool_plain
+async def index_directory(directory_path: str, recursive: bool = True, 
+                         include_extensions: Optional[List[str]] = None,
+                         chunk_size: int = 1000) -> dict[str, Any]:
+    """
+    Index all files from a directory into the ChromaDB vector store.
+    
+    Args:
+        directory_path: Path to the directory to index
+        recursive: Whether to include subdirectories (default: True)
+        include_extensions: List of file extensions to include (e.g., ['.py', '.txt'])
+        chunk_size: Size of text chunks (default: 1000)
+        
+    Returns:
+        Dictionary containing indexing results and metadata
+    """
+    result = await chroma_server.add_directory(directory_path, recursive, include_extensions, chunk_size)
+    return result
 
 @rag_agent.tool_plain
 async def search_knowledge_base(query: str, n_results: int = 3) -> dict[str, Any]:
@@ -288,9 +489,14 @@ async def use_rag_agent(query: str) -> dict[str, str]:
     Interact with the RAG agent for contextual information retrieval and generation.
     Use this tool when the user needs to:
     - Index new documents into the knowledge base
+    - Index single files into the vector store  
+    - Index entire directories (with optional file filtering)
     - Search for information in indexed documents
     - Get answers based on the knowledge base context
     - Manage the vector store
+
+    The RAG agent supports various text file formats (.py, .js, .ts, .html, .css, .md, .txt, 
+    .json, .xml, .yaml, .yml, .sh, .sql, .env, etc.) and can process directories recursively.
 
     Args:
         query: The instruction for the RAG agent.
