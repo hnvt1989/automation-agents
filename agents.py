@@ -20,16 +20,19 @@ from chromadb import Client, Settings
 import chromadb
 import json
 
+# Import the get_model function to be used for context generation
+from . import get_model # Assuming get_model is in the same directory or adjust path
+
 load_dotenv('local.env')
 
 # ========== Helper function to get model configuration ==========
-def get_model():
-    llm = os.getenv('MODEL_CHOICE', 'gpt-4.1-mini')
-    base_url = os.getenv('BASE_URL', 'https://api.openai.com/v1')
-    api_key = os.getenv('LLM_API_KEY', 'no-api-key-provided')
+# def get_model(): # This function is already defined globally, we'll use the imported one
+#     llm = os.getenv('MODEL_CHOICE', 'gpt-4.1-mini')
+#     base_url = os.getenv('BASE_URL', 'https://api.openai.com/v1')
+#     api_key = os.getenv('LLM_API_KEY', 'no-api-key-provided')
 
-    print(f"Using {llm} model with base URL: {base_url}");
-    return OpenAIModel(llm, provider=OpenAIProvider(base_url=base_url, api_key=api_key))
+#     print(f"Using {llm} model with base URL: {base_url}");
+#     return OpenAIModel(llm, provider=OpenAIProvider(base_url=base_url, api_key=api_key))
 
 # ========== Set up MCP servers for each service ==========
 
@@ -111,7 +114,35 @@ class ChromaDBServer:
             name="knowledge_base",
             metadata={"hnsw:space": "cosine"}
         )
+        # Initialize the model for context generation
+        self.context_gen_model = get_model()
     
+    async def _generate_chunk_context(self, whole_document: str, chunk_content: str) -> str:
+        """Generate context for a chunk using an LLM."""
+        prompt = f"""<document>
+{whole_document}
+</document>
+Here is the chunk we want to situate within the whole document
+<chunk>
+{chunk_content}
+</chunk>
+Please give a short succinct context to situate this chunk within the overall document for the purposes of improving search retrieval of the chunk. Answer only with the succinct context and nothing else."""
+        
+        try:
+            # Using a simple run for context generation, assuming pydantic-ai Agent or similar interface
+            # If get_model() returns a Pydantic-AI model, we might need to wrap it in an Agent
+            # For now, let's assume a direct way to get a response.
+            # This part might need adjustment based on how get_model() and pydantic-ai work for direct calls.
+            # A simpler approach if available:
+            # response = await self.context_gen_model.generate(prompt)
+            # For now, creating a temporary agent to run the prompt:
+            temp_agent = Agent(self.context_gen_model, system_prompt="You are a helpful assistant.")
+            result = await temp_agent.run(prompt)
+            return result.data if result and result.data else ""
+        except Exception as e:
+            print(f"Error generating chunk context: {str(e)}")
+            return ""
+
     def _chunk_text(self, text: str, chunk_size: int = 1000, overlap: int = 200) -> List[str]:
         """Split text into overlapping chunks"""
         if len(text) <= chunk_size:
@@ -202,7 +233,16 @@ class ChromaDBServer:
     
     async def add_documents(self, texts: List[str], metadatas: Optional[List[dict]] = None) -> List[str]:
         """Add documents to the vector store"""
-        ids = [f"doc_{i}" for i in range(len(texts))]
+        # Ensure IDs are unique if this function is called multiple times with new sets of documents
+        # A more robust ID generation might be needed if this function is called externally with overlapping content.
+        # For internal use by add_file, using a simple counter based on current collection size might be an option.
+        # current_max_id = self.collection.count() # Get current number of items to offset new IDs
+        # ids = [f"doc_{current_max_id + i}" for i in range(len(texts))]
+
+        # The original ID generation might lead to collisions if add_documents is called multiple times.
+        # For simplicity, retaining original logic, but this is a point of attention.
+        ids = [f"doc_{i}_{pathlib.Path(metadatas[i]['file_path']).stem if metadatas and 'file_path' in metadatas[i] else ''}_{metadatas[i]['chunk_index'] if metadatas and 'chunk_index' in metadatas[i] else i}" for i in range(len(texts))]
+
         self.collection.add(
             documents=texts,
             metadatas=metadatas if metadatas else [{"source": "user"} for _ in texts],
@@ -211,28 +251,36 @@ class ChromaDBServer:
         return ids
     
     async def add_file(self, file_path: str, chunk_size: int = 1000) -> dict[str, Any]:
-        """Add a single file to the vector store"""
+        """Add a single file to the vector store with contextualized chunks"""
         content = self._read_file_content(file_path)
         if content is None:
             return {"success": False, "error": f"Could not read file: {file_path}"}
         
-        chunks = self._chunk_text(content, chunk_size)
+        original_chunks = self._chunk_text(content, chunk_size)
+        contextualized_chunks = []
+        
+        for chunk_content in original_chunks:
+            context_prefix = await self._generate_chunk_context(content, chunk_content)
+            contextualized_chunks.append(f"{context_prefix}\n{chunk_content}")
+            
         metadatas = [
             {
                 "source": "file",
                 "file_path": file_path,
                 "chunk_index": i,
-                "total_chunks": len(chunks)
+                "total_chunks": len(original_chunks)
+                # Optionally, store original_chunk or context_prefix in metadata if needed later
             }
-            for i in range(len(chunks))
+            for i in range(len(original_chunks))
         ]
         
-        doc_ids = await self.add_documents(chunks, metadatas)
+        # Use the contextualized_chunks for adding to the document store
+        doc_ids = await self.add_documents(contextualized_chunks, metadatas)
         
         return {
             "success": True,
             "file_path": file_path,
-            "chunks_added": len(chunks),
+            "chunks_added": len(contextualized_chunks),
             "document_ids": doc_ids
         }
     
