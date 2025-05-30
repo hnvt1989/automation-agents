@@ -20,19 +20,18 @@ from chromadb import Client, Settings
 import chromadb
 import json
 
-# Import the get_model function to be used for context generation
-from . import get_model # Assuming get_model is in the same directory or adjust path
+# Removed incorrect relative import: from . import get_model
 
 load_dotenv('local.env')
 
 # ========== Helper function to get model configuration ==========
-# def get_model(): # This function is already defined globally, we'll use the imported one
-#     llm = os.getenv('MODEL_CHOICE', 'gpt-4.1-mini')
-#     base_url = os.getenv('BASE_URL', 'https://api.openai.com/v1')
-#     api_key = os.getenv('LLM_API_KEY', 'no-api-key-provided')
+def get_model():
+    llm = os.getenv('MODEL_CHOICE', 'gpt-4o-mini') # Defaulting to gpt-4o-mini as seen in README
+    base_url = os.getenv('BASE_URL', 'https://api.openai.com/v1')
+    api_key = os.getenv('LLM_API_KEY', 'no-api-key-provided')
 
-#     print(f"Using {llm} model with base URL: {base_url}");
-#     return OpenAIModel(llm, provider=OpenAIProvider(base_url=base_url, api_key=api_key))
+    print(f"Using {llm} model with base URL: {base_url}");
+    return OpenAIModel(llm, provider=OpenAIProvider(base_url=base_url, api_key=api_key))
 
 # ========== Set up MCP servers for each service ==========
 
