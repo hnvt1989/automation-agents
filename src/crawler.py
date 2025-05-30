@@ -14,7 +14,6 @@ import hashlib
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 from openai import AsyncOpenAI
 import chromadb
-from chromadb import Settings as ChromaSettings
 
 load_dotenv()
 
@@ -26,76 +25,51 @@ if not openai_api_key:
 else:
     openai_client = AsyncOpenAI(api_key=openai_api_key)
 
-class ChromaDBManager:
-    def __init__(self, persist_dir: str = "./chroma_db", collection_name: str = "knowledge_base"):
-        self.persist_dir = persist_dir
-        self.collection_name = collection_name
-        self.client = None
-        self.collection = None
+async def add_chunk_to_collection(chunk: 'ProcessedChunk', chroma_collection: chromadb.api.models.Collection.Collection):
+    """Adds a processed chunk to the provided ChromaDB collection."""
+    if not chroma_collection:
+        print(f"ChromaDB collection not provided. Cannot add chunk for {chunk.url}.")
+        return None
+    
+    if chunk.embedding is None:
+        print(f"Skipping chunk {chunk.chunk_number} from {chunk.url} due to missing embedding.")
+        return None
 
-        if not os.path.exists(self.persist_dir):
-            try:
-                os.makedirs(self.persist_dir, exist_ok=True)
-                print(f"ChromaDB persist directory '{self.persist_dir}' did not exist, created it.")
-            except OSError as e:
-                print(f"Error creating ChromaDB persist directory '{self.persist_dir}': {e}. ChromaDB will likely fail to initialize.")
+    chroma_metadata = {
+        "source_type": "web_page_contextualized",
+        "url": chunk.url,
+        "title": chunk.title or "N/A",
+        "summary": chunk.summary or "N/A",
+        "web_chunk_number": chunk.chunk_number, 
+        "crawled_at": chunk.metadata.get("crawled_at", datetime.now(timezone.utc).isoformat()),
+        "content_length": len(chunk.content),
+        "original_content_length": chunk.metadata.get("original_content_length", 0),
+        "original_url_path": urlparse(chunk.url).path,
+        "source_domain": urlparse(chunk.url).netloc,
+        "context_prefix_length": chunk.metadata.get("context_prefix_length", 0)
+    }
+    for key, value in chunk.metadata.items():
+        if key not in chroma_metadata and isinstance(value, (str, int, float, bool)):
+            chroma_metadata[key] = value
+    
+    content_hash_short = hashlib.md5(chunk.content.encode('utf-8')).hexdigest()[:8]
+    doc_id = f"web_ctx::{chunk.url}::num_{chunk.chunk_number}::hash_{content_hash_short}"
 
-        try:
-            self.client = chromadb.Client(ChromaSettings(
-                persist_directory=self.persist_dir,
-                is_persistent=True
-            ))
-            self.collection = self.client.get_or_create_collection(
-                name=self.collection_name,
-                metadata={"hnsw:space": "cosine"} 
-            )
-            print(f"ChromaDBManager initialized. Collection '{self.collection_name}' loaded/created from '{self.persist_dir}'.")
-        except Exception as e:
-            print(f"CRITICAL: Error initializing ChromaDBManager for collection '{self.collection_name}' at '{self.persist_dir}': {e}")
-            print("Web crawler data will not be saved to ChromaDB.")
-
-    def add_chunk_to_collection(self, chunk: 'ProcessedChunk'):
-        if not self.collection:
-            print(f"ChromaDB collection '{self.collection_name}' not available. Cannot add chunk for {chunk.url}.")
-            return None
-        
-        if chunk.embedding is None:
-            print(f"Skipping chunk {chunk.chunk_number} from {chunk.url} due to missing embedding.")
-            return None
-
-        chroma_metadata = {
-            "source_type": "web_page", 
-            "url": chunk.url,
-            "title": chunk.title or "N/A",
-            "summary": chunk.summary or "N/A",
-            "web_chunk_number": chunk.chunk_number, 
-            "crawled_at": chunk.metadata.get("crawled_at", datetime.now(timezone.utc).isoformat()),
-            "content_length": len(chunk.content),
-            "original_url_path": urlparse(chunk.url).path,
-            "source_domain": urlparse(chunk.url).netloc
-        }
-        for key, value in chunk.metadata.items():
-            if key not in chroma_metadata and isinstance(value, (str, int, float, bool)):
-                chroma_metadata[key] = value
-        
-        content_hash_short = hashlib.md5(chunk.content.encode('utf-8')).hexdigest()[:8]
-        doc_id = f"web::{chunk.url}::num_{chunk.chunk_number}::hash_{content_hash_short}"
-
-        try:
-            self.collection.add(
-                ids=[doc_id],
-                embeddings=[chunk.embedding],
-                documents=[chunk.content],
-                metadatas=[chroma_metadata]
-            )
-            print(f"Added chunk ID {doc_id} (URL: {chunk.url}, Chunk: {chunk.chunk_number}) to ChromaDB collection '{self.collection_name}'.")
-            return doc_id
-        except chromadb.errors.IDAlreadyExistsError:
-            print(f"Chunk ID {doc_id} already exists in ChromaDB for {chunk.url}. Skipping.")
-            return doc_id 
-        except Exception as e:
-            print(f"Error adding chunk ID {doc_id} for {chunk.url} to ChromaDB: {e}")
-            return None
+    try:
+        chroma_collection.add(
+            ids=[doc_id],
+            embeddings=[chunk.embedding],
+            documents=[chunk.content],
+            metadatas=[chroma_metadata]
+        )
+        print(f"Added contextualized chunk ID {doc_id} (URL: {chunk.url}, Chunk: {chunk.chunk_number}) to ChromaDB collection '{chroma_collection.name}'.")
+        return doc_id
+    except chromadb.errors.IDAlreadyExistsError:
+        print(f"Contextualized chunk ID {doc_id} already exists in ChromaDB for {chunk.url}. Skipping.")
+        return doc_id 
+    except Exception as e:
+        print(f"Error adding contextualized chunk ID {doc_id} for {chunk.url} to ChromaDB: {e}")
+        return None
 
 @dataclass
 class ProcessedChunk:
@@ -104,7 +78,7 @@ class ProcessedChunk:
     title: str
     summary: str
     content: str
-    metadata: Dict[str, Any] 
+    metadata: Dict[str, Any]
     embedding: List[float] | None
 
 def chunk_text(text: str, chunk_size: int = 5000) -> List[str]:
@@ -139,6 +113,54 @@ def chunk_text(text: str, chunk_size: int = 5000) -> List[str]:
             chunks.append(current_chunk_content)
         start = max(start + 1, end) 
     return chunks
+
+async def _generate_web_chunk_context(whole_document_text: str, original_chunk_content: str, url: str) -> str:
+    """Generate situating context for a web chunk using an LLM."""
+    if not openai_client:
+        print(f"OpenAI client not initialized. Cannot generate context for chunk from {url}.")
+        return "" # Return empty string if no context can be generated
+
+    # Limit the size of whole_document_text and original_chunk_content to avoid excessive token usage
+    # These limits are heuristics and might need adjustment.
+    max_doc_len_for_context = 10000 
+    max_chunk_len_for_context = 2000
+
+    truncated_whole_document = whole_document_text
+    if len(whole_document_text) > max_doc_len_for_context:
+        truncated_whole_document = whole_document_text[:max_doc_len_for_context//2] + "\n... (document truncated for context generation) ...\n" + whole_document_text[-max_doc_len_for_context//2:]
+    
+    truncated_chunk_content = original_chunk_content
+    if len(original_chunk_content) > max_chunk_len_for_context:
+        truncated_chunk_content = original_chunk_content[:max_chunk_len_for_context//2] + "... (chunk truncated for context generation) ..." + original_chunk_content[-max_chunk_len_for_context//2:]
+
+    prompt = f"""<document>
+{truncated_whole_document}
+</document>
+
+Here is a specific chunk from the document above:
+<chunk>
+{truncated_chunk_content}
+</chunk>
+
+Please provide a short, succinct context (1-2 sentences) that situates this chunk within the overall document. This context will be prepended to the chunk to improve search retrieval. Focus on the main topic of the chunk and its relation to the broader document theme. Answer ONLY with the succinct context itself and nothing else."""
+    
+    llm_model = os.getenv("CONTEXT_LLM_MODEL", os.getenv("LLM_MODEL", "gpt-4o-mini")) # Allow specific model for this
+
+    try:
+        response = await openai_client.chat.completions.create(
+            model=llm_model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2 # Lower temperature for more factual context
+        )
+        context_prefix = response.choices[0].message.content.strip()
+        # Basic filter for common refusal or non-contextual phrases
+        if not context_prefix or "cannot provide context" in context_prefix.lower() or "unable to fulfill" in context_prefix.lower():
+            print(f"LLM returned non-contextual response for chunk from {url}. Using empty context.")
+            return ""
+        return context_prefix
+    except Exception as e:
+        print(f"Error generating web chunk context for {url} with model {llm_model}: {e}")
+        return "" # Return empty string on error
 
 async def get_title_and_summary(chunk: str, url: str) -> Dict[str, str]:
     if not openai_client:
@@ -182,57 +204,87 @@ async def get_embedding(text: str, model: str = "text-embedding-3-small") -> Lis
         print(f"Error getting embedding for text (first 50 chars: '{text[:50]}...'): {e}")
         return None
 
-async def process_chunk(chunk_content: str, chunk_idx: int, url: str) -> ProcessedChunk | None:
-    extracted_info = await get_title_and_summary(chunk_content, url)
-    embedding_vector = await get_embedding(chunk_content)
+async def process_chunk(original_chunk_content: str, chunk_idx: int, url: str, whole_page_text: str) -> ProcessedChunk | None:
+    # 1. Generate title and summary from the original chunk content
+    # This is done first so it's based on the raw, un-prepended chunk.
+    title_summary = await get_title_and_summary(original_chunk_content, url)
+
+    # 2. Generate situating context based on whole page and original chunk
+    context_prefix = await _generate_web_chunk_context(whole_page_text, original_chunk_content, url)
+    
+    # 3. Prepend context to the original chunk content
+    if context_prefix: # Only prepend if context was generated
+        contextualized_content = f"{context_prefix}\n\n{original_chunk_content}"
+    else:
+        contextualized_content = original_chunk_content
+    
+    # 4. Get embedding for the contextualized content
+    embedding_vector = await get_embedding(contextualized_content)
+    
+    # Base metadata for the chunk
     metadata = {
         "source_domain": urlparse(url).netloc,
-        "chunk_size_original": len(chunk_content), 
+        "original_content_length": len(original_chunk_content),
+        "contextualized_content_length": len(contextualized_content),
         "crawled_at": datetime.now(timezone.utc).isoformat(),
-        "url_path_original": urlparse(url).path 
+        "url_path_original": urlparse(url).path,
+        "context_prefix_length": len(context_prefix)
     }
+    
     return ProcessedChunk(
         url=url,
         chunk_number=chunk_idx,
-        title=extracted_info['title'],
-        summary=extracted_info['summary'],
-        content=chunk_content,
+        title=title_summary['title'],
+        summary=title_summary['summary'],
+        content=contextualized_content, # Storing the contextualized content
         metadata=metadata, 
         embedding=embedding_vector
     )
 
-async def crawl_and_process_url(url: str, web_crawler_instance: AsyncWebCrawler, chroma_manager: ChromaDBManager):
+async def crawl_and_process_url(url: str, web_crawler_instance: AsyncWebCrawler, 
+                                chroma_collection: chromadb.api.models.Collection.Collection):
     print(f"Starting crawl for: {url}")
     crawl_config = CrawlerRunConfig(cache_mode=CacheMode.BYPASS) 
     result = await web_crawler_instance.arun(url=url, config=crawl_config)
+
     if result.success and result.markdown_v2:
         raw_markdown = result.markdown_v2.raw_markdown
         print(f"Successfully crawled: {url}. Raw content length: {len(raw_markdown)}")
         if not raw_markdown.strip():
             print(f"No actual content found at {url} after crawling. Skipping further processing.")
             return
-        text_chunks = chunk_text(raw_markdown)
+
+        text_chunks = chunk_text(raw_markdown) # These are chunks of the original raw_markdown
         print(f"Split content from {url} into {len(text_chunks)} chunks.")
-        for i, chunk_str in enumerate(text_chunks):
-            if not chunk_str.strip():
+        
+        for i, original_chunk_str in enumerate(text_chunks):
+            if not original_chunk_str.strip():
                 print(f"Skipping empty chunk {i} from {url} after chunking.")
                 continue
-            processed_chunk_object = await process_chunk(chunk_str, i, url)
+            
+            # Pass the full raw_markdown as whole_page_text for context generation
+            processed_chunk_object = await process_chunk(original_chunk_str, i, url, raw_markdown)
+            
             if processed_chunk_object:
-                if chroma_manager.collection: 
-                    chroma_manager.add_chunk_to_collection(processed_chunk_object)
+                if chroma_collection: 
+                    await add_chunk_to_collection(processed_chunk_object, chroma_collection)
                 else:
-                    print(f"ChromaDB collection not available. Cannot store chunk {i} from {url}.")
+                    print(f"ChromaDB collection not provided. Cannot store chunk {i} from {url}.")
             else:
                 print(f"Failed to process chunk {i} from {url}. It will not be stored.")
     else:
         print(f"Failed to crawl or get markdown_v2 for: {url}. Error: {result.error_message if result else 'Unknown error during crawl'}")
 
 async def run_crawler(urls_to_crawl: List[str], 
+                      chroma_collection: chromadb.api.models.Collection.Collection, # Now a required arg
                       max_concurrent_crawls: int = 3, 
-                      sitemap_url: str | None = None, 
-                      chroma_persist_dir: str = "./chroma_db", 
-                      chroma_collection_name: str = "knowledge_base"):
+                      sitemap_url: str | None = None):
+    """Main function to run the crawler, storing results in the provided ChromaDB Collection."""
+    if not chroma_collection:
+        print("CRITICAL: ChromaDB collection was not provided to run_crawler. Crawled data will NOT be stored.")
+        # Decide if to proceed or exit. For now, let it "crawl" but not store if URLs are present.
+        # If storing is essential, could raise an error here.
+
     target_urls = list(urls_to_crawl) 
     if sitemap_url:
         print(f"Fetching URLs from sitemap: {sitemap_url}")
@@ -250,26 +302,25 @@ async def run_crawler(urls_to_crawl: List[str],
     if not unique_target_urls:
         print("No valid URLs to crawl after filtering. Exiting.")
         return
-    chroma_db_manager = ChromaDBManager(persist_dir=chroma_persist_dir, collection_name=chroma_collection_name)
-    if not chroma_db_manager.client or not chroma_db_manager.collection:
-        print("CRITICAL: ChromaDB could not be initialized. Crawled data will NOT be stored.")
+
     browser_config = BrowserConfig(
         headless=True,
         verbose=False,
         extra_args=["--disable-gpu", "--disable-dev-shm-usage", "--no-sandbox"]
     )
-    web_crawler = AsyncWebCrawler(config=browser_config)
-    await web_crawler.start()
+    web_crawler_instance = AsyncWebCrawler(config=browser_config) # Renamed for clarity
+    await web_crawler_instance.start()
     semaphore = asyncio.Semaphore(max_concurrent_crawls)
     crawl_tasks = []
     async def crawl_with_semaphore(url: str):
         async with semaphore:
-            await crawl_and_process_url(url, web_crawler, chroma_db_manager)
+            # Pass the provided chroma_collection to each task
+            await crawl_and_process_url(url, web_crawler_instance, chroma_collection)
     for url_to_process in unique_target_urls:
         crawl_tasks.append(crawl_with_semaphore(url_to_process))
     if crawl_tasks:
         await asyncio.gather(*crawl_tasks)
-    await web_crawler.close()
+    await web_crawler_instance.close()
     print("Crawler run finished.")
 
 def get_urls_from_sitemap(sitemap_url: str) -> List[str]:
@@ -304,31 +355,4 @@ def get_urls_from_sitemap(sitemap_url: str) -> List[str]:
         print(f"An unexpected error occurred while processing sitemap {sitemap_url}: {e}")
         return []
 
-async def main_crawl_example():
-    # print("Example 1: Crawling specific URLs...")
-    # await run_crawler(
-    #     urls_to_crawl=["https://docs.pydantic.dev/latest/concepts/models/", "https://docs.pydantic.dev/latest/concepts/validation/"],
-    #     chroma_persist_dir="./chroma_db", 
-    #     chroma_collection_name="knowledge_base" 
-    # )
-    # print("-" * 50)
-    print("Example 2: Crawling Pydantic AI docs sitemap into default 'knowledge_base'...")
-    pydantic_ai_sitemap = "https://ai.pydantic.dev/sitemap.xml"
-    await run_crawler(
-        urls_to_crawl=[], 
-        sitemap_url=pydantic_ai_sitemap
-    )
-    print("-" * 50)
-    # print("Example 3: Crawling Python Dev Guide into a custom ChromaDB setup...")
-    # python_dev_sitemap = "https://devguide.python.org/sitemap.xml"
-    # await run_crawler(
-    #     urls_to_crawl=[], 
-    #     sitemap_url=python_dev_sitemap,
-    #     chroma_persist_dir="./custom_web_store",      
-    #     chroma_collection_name="python_dev_guide_kb" 
-    # )
-
-if __name__ == "__main__":
-    print("Starting web crawler script (configured for ChromaDB)...")
-    # asyncio.run(main_crawl_example())
-    print("Web crawler script finished. Uncomment `asyncio.run(main_crawl_example())` in __main__ to run.") 
+# Removed main_crawl_example and if __name__ == "__main__" block 
