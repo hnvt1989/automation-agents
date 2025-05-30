@@ -115,7 +115,7 @@ class ChromaDBServer:
             metadata={"hnsw:space": "cosine"}
         )
         # Initialize the model for context generation
-        self.context_gen_model = get_model()
+        self.context_gen_model_instance = get_model()
     
     async def _generate_chunk_context(self, whole_document: str, chunk_content: str) -> str:
         """Generate context for a chunk using an LLM."""
@@ -129,16 +129,17 @@ Here is the chunk we want to situate within the whole document
 Please give a short succinct context to situate this chunk within the overall document for the purposes of improving search retrieval of the chunk. Answer only with the succinct context and nothing else."""
         
         try:
-            # Using a simple run for context generation, assuming pydantic-ai Agent or similar interface
-            # If get_model() returns a Pydantic-AI model, we might need to wrap it in an Agent
-            # For now, let's assume a direct way to get a response.
-            # This part might need adjustment based on how get_model() and pydantic-ai work for direct calls.
-            # A simpler approach if available:
-            # response = await self.context_gen_model.generate(prompt)
-            # For now, creating a temporary agent to run the prompt:
-            temp_agent = Agent(self.context_gen_model, system_prompt="You are a helpful assistant.")
-            result = await temp_agent.run(prompt)
-            return result.data if result and result.data else ""
+            # Using a temporary agent to run the prompt with the context_gen_model_instance
+            # Ensure the model instance is compatible with pydantic_ai.Agent
+            temp_agent = Agent(self.context_gen_model_instance, system_prompt="You are a helpful assistant designed to generate context.") # More specific system prompt
+            result = await temp_agent.run(prompt) # No need for message_history for this specific task
+            
+            # Check if result and result.data are not None and result.data is a string
+            if result and hasattr(result, 'data') and isinstance(result.data, str):
+                return result.data.strip() # Strip whitespace
+            else:
+                print(f"Warning: Context generation did not return a string. Result: {result}")
+                return ""
         except Exception as e:
             print(f"Error generating chunk context: {str(e)}")
             return ""
@@ -233,15 +234,23 @@ Please give a short succinct context to situate this chunk within the overall do
     
     async def add_documents(self, texts: List[str], metadatas: Optional[List[dict]] = None) -> List[str]:
         """Add documents to the vector store"""
-        # Ensure IDs are unique if this function is called multiple times with new sets of documents
-        # A more robust ID generation might be needed if this function is called externally with overlapping content.
-        # For internal use by add_file, using a simple counter based on current collection size might be an option.
-        # current_max_id = self.collection.count() # Get current number of items to offset new IDs
-        # ids = [f"doc_{current_max_id + i}" for i in range(len(texts))]
-
-        # The original ID generation might lead to collisions if add_documents is called multiple times.
-        # For simplicity, retaining original logic, but this is a point of attention.
-        ids = [f"doc_{i}_{pathlib.Path(metadatas[i]['file_path']).stem if metadatas and 'file_path' in metadatas[i] else ''}_{metadatas[i]['chunk_index'] if metadatas and 'chunk_index' in metadatas[i] else i}" for i in range(len(texts))]
+        
+        # Robust ID generation to avoid collisions
+        # This uses a combination of file stem, chunk index, and a simple counter based on the number of texts being added.
+        # For more robust global uniqueness, a UUID or hash of the content could be considered.
+        ids = []
+        for i, text_content in enumerate(texts):
+            file_path_stem = "unknown_source"
+            chunk_idx_str = str(i)
+            if metadatas and i < len(metadatas) and metadatas[i]:
+                if 'file_path' in metadatas[i] and metadatas[i]['file_path']:
+                    file_path_stem = pathlib.Path(metadatas[i]['file_path']).stem
+                if 'chunk_index' in metadatas[i]:
+                    chunk_idx_str = str(metadatas[i]['chunk_index'])
+            
+            # Simple hash of the first 50 chars of the content to add more uniqueness
+            content_hash_prefix = hex(hash(text_content[:50]))[2:10] # first 8 hex chars
+            ids.append(f"doc_{file_path_stem}_{chunk_idx_str}_{content_hash_prefix}_{i}")
 
         self.collection.add(
             documents=texts,
@@ -253,28 +262,70 @@ Please give a short succinct context to situate this chunk within the overall do
     async def add_file(self, file_path: str, chunk_size: int = 1000) -> dict[str, Any]:
         """Add a single file to the vector store with contextualized chunks"""
         content = self._read_file_content(file_path)
-        if content is None:
-            return {"success": False, "error": f"Could not read file: {file_path}"}
+        if content is None or not content.strip(): # Also check if content is not just whitespace
+            error_msg = f"Could not read file or file is empty: {file_path}"
+            print(error_msg)
+            return {"success": False, "error": error_msg}
         
         original_chunks = self._chunk_text(content, chunk_size)
+        if not original_chunks:
+            print(f"No chunks generated for file: {file_path}")
+            return {"success": True, "file_path": file_path, "chunks_added": 0, "document_ids": []} # Success but 0 chunks
+
         contextualized_chunks = []
         
+        # Consider batching calls to _generate_chunk_context if possible and beneficial
+        # For now, processing sequentially
         for chunk_content in original_chunks:
+            if not chunk_content.strip(): # Skip empty or whitespace-only chunks
+                print(f"Skipping empty chunk in file {file_path}")
+                continue
             context_prefix = await self._generate_chunk_context(content, chunk_content)
-            contextualized_chunks.append(f"{context_prefix}\n{chunk_content}")
+            contextualized_chunks.append(f"{context_prefix}\\n\\n{chunk_content}") # Add extra newline for clarity
             
+        if not contextualized_chunks: # If all chunks were empty or context gen failed for all
+             print(f"No contextualized chunks to add for file: {file_path}")
+             return {"success": True, "file_path": file_path, "chunks_added": 0, "document_ids": []}
+
+
         metadatas = [
             {
                 "source": "file",
                 "file_path": file_path,
-                "chunk_index": i,
-                "total_chunks": len(original_chunks)
-                # Optionally, store original_chunk or context_prefix in metadata if needed later
+                "chunk_index": i, # This index refers to original_chunks
+                "total_chunks": len(original_chunks),
+                # "original_chunk": original_chunks[i] # Optionally store original chunk if needed
             }
-            for i in range(len(original_chunks))
+            # Ensure metadata list matches the length of contextualized_chunks
+            # If some original chunks were skipped, this needs adjustment
+            # For now, assuming original_chunks and contextualized_chunks will have a direct mapping
+            # or that metadata is generated based on the final list of chunks to be added.
+            # Let's regenerate metadatas based on the length of contextualized_chunks,
+            # assuming chunk_index should correspond to the index in contextualized_chunks.
+            for i in range(len(contextualized_chunks)) 
         ]
         
-        # Use the contextualized_chunks for adding to the document store
+        # Regenerate metadatas if original_chunks were skipped
+        if len(contextualized_chunks) != len(original_chunks):
+            print(f"Notice: Number of contextualized chunks ({len(contextualized_chunks)}) differs from original ({len(original_chunks)}) for file {file_path} due to empty chunk skipping.")
+            current_original_chunk_idx = -1
+            new_metadatas = []
+            temp_original_chunks_for_metadata = [c for c in original_chunks if c.strip()]
+
+            for i in range(len(contextualized_chunks)):
+                 # This assumes a direct 1-to-1 mapping of non-empty original chunks to contextualized chunks
+                 # This metadata generation might need to be more robust if the relationship is complex
+                new_metadatas.append({
+                    "source": "file",
+                    "file_path": file_path,
+                    "original_chunk_index": i, # This mapping might be tricky if original chunks are skipped.
+                                                # Storing the index from the *filtered* original_chunks list.
+                    "total_original_chunks": len(original_chunks), # Total before filtering
+                     # "original_chunk": temp_original_chunks_for_metadata[i] # if storing original
+                })
+            metadatas = new_metadatas
+
+
         doc_ids = await self.add_documents(contextualized_chunks, metadatas)
         
         return {
