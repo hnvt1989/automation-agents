@@ -20,7 +20,7 @@ from chromadb import Client, Settings
 import chromadb
 import json
 
-load_dotenv()
+load_dotenv('local.env')
 
 # ========== Helper function to get model configuration ==========
 def get_model():
@@ -28,6 +28,7 @@ def get_model():
     base_url = os.getenv('BASE_URL', 'https://api.openai.com/v1')
     api_key = os.getenv('LLM_API_KEY', 'no-api-key-provided')
 
+    print(f"Using {llm} model with base URL: {base_url}");
     return OpenAIModel(llm, provider=OpenAIProvider(base_url=base_url, api_key=api_key))
 
 # ========== Set up MCP servers for each service ==========
@@ -40,7 +41,7 @@ brave_server = MCPServerStdio(
 
 # Filesystem MCP server
 filesystem_server = MCPServerStdio(
-    'npx', ['-y', '@modelcontextprotocol/server-filesystem', os.getenv("LOCAL_FILE_DIR")]
+    'npx', ['-y', '@modelcontextprotocol/server-filesystem', os.getenv("LOCAL_FILE_DIR"), os.getenv("LOCAL_FILE_DIR_KNOWLEDGE_BASE")]
 )
 
 # GitHub MCP server
