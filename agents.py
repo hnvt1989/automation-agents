@@ -20,6 +20,8 @@ from chromadb import Client, Settings
 import chromadb
 import json
 
+from src.crawler import run_crawler # Added import for the crawler
+
 # Removed incorrect relative import: from . import get_model
 
 load_dotenv('local.env')
@@ -418,7 +420,11 @@ rag_agent = Agent(
     - Use semantic search to find relevant documents
     - Consider similarity scores
     - Return the most relevant context with source information
-    - Include file paths and chunk information when available""",
+    - Include file paths and chunk information when available
+    
+    - Crawling websites or sitemaps to index their content.
+    
+    Always explain what you're doing and provide relevant excerpts from retrieved documents.""",
     instrument=False
 )
 
@@ -486,6 +492,39 @@ async def search_knowledge_base(query: str, n_results: int = 3) -> dict[str, Any
     """
     results = await chroma_server.search(query, n_results)
     return results
+
+@rag_agent.tool_plain
+async def crawl_website_and_index(url: Optional[str] = None, sitemap_url: Optional[str] = None) -> str:
+    """
+    Crawls a given website URL or a sitemap URL and indexes its content into the ChromaDB knowledge base.
+    Provide either a 'url' to crawl a single page (and pages discovered from it if crawler is configured that way)
+    or a 'sitemap_url' to crawl all pages listed in a sitemap.xml.
+    The content will be added to the 'knowledge_base' collection in ChromaDB.
+
+    Args:
+        url: The base URL of the website to crawl (e.g., 'https://example.com/docs').
+        sitemap_url: The URL of the sitemap.xml file to crawl (e.g., 'https://example.com/sitemap.xml').
+
+    Returns:
+        A string confirming the initiation of the crawling process.
+    """
+    if not url and not sitemap_url:
+        return "Error: Please provide either a 'url' or a 'sitemap_url' to crawl."
+
+    urls_to_crawl_list = [url] if url else []
+    target = url if url else sitemap_url
+
+    print(f"RAG Agent: Received request to crawl and index: {target}")
+    try:
+        # run_crawler will use defaults: chroma_persist_dir="./chroma_db", chroma_collection_name="knowledge_base"
+        await run_crawler(urls_to_crawl=urls_to_crawl_list, sitemap_url=sitemap_url)
+        confirmation_message = f"Crawling and indexing initiated for '{target}'. Check console logs for progress and completion status."
+        print(f"RAG Agent: {confirmation_message}")
+        return confirmation_message
+    except Exception as e:
+        error_message = f"Error during crawling and indexing for '{target}': {str(e)}"
+        print(f"RAG Agent: {error_message}")
+        return error_message
 
 # ========== Create the primary orchestration agent ==========
 primary_agent = Agent(
