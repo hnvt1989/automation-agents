@@ -30,6 +30,7 @@ Our RAG (Retrieval Augmented Generation) agent now supports:
 - **Extension Filtering**: Target specific file types for indexing
 - **Error Handling**: Comprehensive error reporting and recovery
 - **Batch Processing**: Efficient handling of large directory structures
+- **Result Reranking**: Optional reranking of search results for improved relevance
 
 ## 📋 Prerequisites
 
@@ -126,6 +127,11 @@ Index the ./docs directory but only include .md and .txt files
 #### **Search Indexed Content**
 ```
 Find information about user authentication in the indexed codebase
+```
+
+#### **Search with Reranking**
+```
+Find information about caching strategies with rerank:true
 ```
 
 #### **Add Text Documents**
