@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 from rich.markdown import Markdown
 from rich.console import Console
 from rich.live import Live
+
+from src.log_utils import log_info, log_warning, log_error
 import asyncio
 import os
 import pathlib
@@ -33,7 +35,7 @@ def get_model():
     base_url = os.getenv('BASE_URL', 'https://api.openai.com/v1')
     api_key = os.getenv('LLM_API_KEY', 'no-api-key-provided')
 
-    print(f"Using {llm} model with base URL: {base_url}");
+    log_info(f"Using {llm} model with base URL: {base_url}")
     return OpenAIModel(llm, provider=OpenAIProvider(base_url=base_url, api_key=api_key))
 
 # ========== Set up MCP servers for each service ==========
@@ -155,10 +157,10 @@ Please give a short succinct context to situate this chunk within the overall do
             if result and hasattr(result, 'data') and isinstance(result.data, str):
                 return result.data.strip() # Strip whitespace
             else:
-                print(f"Warning: Context generation did not return a string. Result: {result}")
+                log_warning(f"Context generation did not return a string. Result: {result}")
                 return ""
         except Exception as e:
-            print(f"Error generating chunk context: {str(e)}")
+            log_error(f"Error generating chunk context: {str(e)}")
             return ""
 
     def _chunk_text(self, text: str, chunk_size: int = 1000, overlap: int = 200) -> List[str]:
@@ -214,7 +216,7 @@ Please give a short succinct context to situate this chunk within the overall do
             return None
             
         except Exception as e:
-            print(f"Error reading file {file_path}: {str(e)}")
+            log_error(f"Error reading file {file_path}: {str(e)}")
             return None
     
     def _get_directory_files(self, directory_path: str, recursive: bool = True, 
@@ -246,7 +248,7 @@ Please give a short succinct context to situate this chunk within the overall do
             return files
             
         except Exception as e:
-            print(f"Error reading directory {directory_path}: {str(e)}")
+            log_error(f"Error reading directory {directory_path}: {str(e)}")
             return []
     
     async def add_documents(self, texts: List[str], metadatas: Optional[List[dict]] = None) -> List[str]:
@@ -281,12 +283,12 @@ Please give a short succinct context to situate this chunk within the overall do
         content = self._read_file_content(file_path)
         if content is None or not content.strip(): # Also check if content is not just whitespace
             error_msg = f"Could not read file or file is empty: {file_path}"
-            print(error_msg)
+            log_error(error_msg)
             return {"success": False, "error": error_msg}
         
         original_chunks = self._chunk_text(content, chunk_size)
         if not original_chunks:
-            print(f"No chunks generated for file: {file_path}")
+            log_warning(f"No chunks generated for file: {file_path}")
             return {"success": True, "file_path": file_path, "chunks_added": 0, "document_ids": []} # Success but 0 chunks
 
         contextualized_chunks = []
@@ -295,13 +297,13 @@ Please give a short succinct context to situate this chunk within the overall do
         # For now, processing sequentially
         for chunk_content in original_chunks:
             if not chunk_content.strip(): # Skip empty or whitespace-only chunks
-                print(f"Skipping empty chunk in file {file_path}")
+                log_warning(f"Skipping empty chunk in file {file_path}")
                 continue
             context_prefix = await self._generate_chunk_context(content, chunk_content)
             contextualized_chunks.append(f"{context_prefix}\\n\\n{chunk_content}") # Add extra newline for clarity
             
         if not contextualized_chunks: # If all chunks were empty or context gen failed for all
-             print(f"No contextualized chunks to add for file: {file_path}")
+             log_warning(f"No contextualized chunks to add for file: {file_path}")
              return {"success": True, "file_path": file_path, "chunks_added": 0, "document_ids": []}
 
 
@@ -324,7 +326,9 @@ Please give a short succinct context to situate this chunk within the overall do
         
         # Regenerate metadatas if original_chunks were skipped
         if len(contextualized_chunks) != len(original_chunks):
-            print(f"Notice: Number of contextualized chunks ({len(contextualized_chunks)}) differs from original ({len(original_chunks)}) for file {file_path} due to empty chunk skipping.")
+            log_warning(
+                f"Notice: Number of contextualized chunks ({len(contextualized_chunks)}) differs from original ({len(original_chunks)}) for file {file_path} due to empty chunk skipping."
+            )
             current_original_chunk_idx = -1
             new_metadatas = []
             temp_original_chunks_for_metadata = [c for c in original_chunks if c.strip()]
@@ -561,7 +565,7 @@ async def crawl_website_and_index(url: Optional[str] = None, sitemap_url: Option
     urls_to_crawl_list = [url] if url else []
     target = url if url else sitemap_url
 
-    print(f"RAG Agent: Received request to crawl and index: {target}")
+    log_info(f"RAG Agent: Received request to crawl and index: {target}")
     try:
         # Pass the chroma_collection from the chroma_server instance
         await run_crawler(
@@ -570,11 +574,11 @@ async def crawl_website_and_index(url: Optional[str] = None, sitemap_url: Option
             sitemap_url=sitemap_url
         )
         confirmation_message = f"Crawling and indexing initiated for '{target}'. Check console logs for progress and completion status."
-        print(f"RAG Agent: {confirmation_message}")
+        log_info(f"RAG Agent: {confirmation_message}")
         return confirmation_message
     except Exception as e:
         error_message = f"Error during crawling and indexing for '{target}': {str(e)}"
-        print(f"RAG Agent: {error_message}")
+        log_error(f"RAG Agent: {error_message}")
         return error_message
 
 # ========== Create the primary orchestration agent ==========
@@ -600,7 +604,7 @@ async def use_brave_search_agent(query: str) -> dict[str, str]:
     Returns:
         The search results or response from the Brave agent.
     """
-    print(f"Calling Brave agent with query: {query}")
+    log_info(f"Calling Brave agent with query: {query}")
     result = await brave_agent.run(query)
     return {"result": result.data}
 
@@ -617,7 +621,7 @@ async def use_filesystem_agent(query: str) -> dict[str, str]:
     Returns:
         The response from the filesystem agent.
     """
-    print(f"Calling Filesystem agent with query: {query}")
+    log_info(f"Calling Filesystem agent with query: {query}")
     result = await filesystem_agent.run(query)
     return {"result": result.data}
 
@@ -634,7 +638,7 @@ async def use_github_agent(query: str) -> dict[str, str]:
     Returns:
         The response from the GitHub agent.
     """
-    print(f"Calling GitHub agent with query: {query}")
+    log_info(f"Calling GitHub agent with query: {query}")
     result = await github_agent.run(query)
     return {"result": result.data}
 
@@ -651,7 +655,7 @@ async def use_slack_agent(query: str) -> dict[str, str]:
     Returns:
         The response from the Slack agent.
     """
-    print(f"Calling Slack agent with query: {query}")
+    log_info(f"Calling Slack agent with query: {query}")
     result = await slack_agent.run(query)
     return {"result": result.data}
 
@@ -668,7 +672,7 @@ async def use_analyzer_agent(query: str) -> dict[str, str]:
     Returns:
         The response from the analyzer agent.
     """
-    print(f"Calling Analyzer agent with query: {query}")
+    log_info(f"Calling Analyzer agent with query: {query}")
     result = await analyzer_agent.run(query)
     return {"result": result.data}
 
@@ -693,35 +697,35 @@ async def use_rag_agent(query: str) -> dict[str, str]:
     Returns:
         The response from the RAG agent with retrieved context and generated answer.
     """
-    print(f"Calling RAG agent with query: {query}")
+    log_info(f"Calling RAG agent with query: {query}")
     result = await rag_agent.run(query)
     return {"result": result.data}
 
 # ========== Main execution function ==========
 async def main():
     """Run the primary agent with a given query."""
-    print("MCP Agent Army - Multi-agent system using Model Context Protocol")
-    print("Enter 'exit' to quit the program.")
+    log_info("MCP Agent Army - Multi-agent system using Model Context Protocol")
+    log_info("Enter 'exit' to quit the program.")
 
     # Initialize ChromaDB
-    print("Initializing ChromaDB vector store...")
+    log_info("Initializing ChromaDB vector store...")
     try:
         # This will create or load the existing database
         chroma_server = ChromaDBServer()
-        print("ChromaDB initialized successfully!")
+        log_info("ChromaDB initialized successfully!")
     except Exception as e:
-        print(f"Error initializing ChromaDB: {str(e)}")
+        log_error(f"Error initializing ChromaDB: {str(e)}")
         return
 
     # Use AsyncExitStack to manage all MCP servers in one context
     async with AsyncExitStack() as stack:
         # Start all the subagent MCP servers
-        print("Starting MCP servers...")
+        log_info("Starting MCP servers...")
         await stack.enter_async_context(brave_agent.run_mcp_servers())
         await stack.enter_async_context(filesystem_agent.run_mcp_servers())
         await stack.enter_async_context(github_agent.run_mcp_servers())
         await stack.enter_async_context(slack_agent.run_mcp_servers())
-        print("All MCP servers started successfully!")
+        log_info("All MCP servers started successfully!")
 
         console = Console()
         messages = []        
@@ -732,12 +736,12 @@ async def main():
             
             # Check if user wants to exit
             if user_input.lower() in ['exit', 'quit', 'bye', 'goodbye']:
-                print("Goodbye!")
+                log_info("Goodbye!")
                 break
             
             try:
                 # Process the user input and output the response
-                print("\n[Assistant]")
+                log_info("\n[Assistant]")
                 curr_message = ""
                 with Live('', console=console, vertical_overflow='visible') as live:
                     async with primary_agent.run_stream(
@@ -751,7 +755,7 @@ async def main():
                 messages.extend(result.all_messages())
                 
             except Exception as e:
-                print(f"\n[Error] An error occurred: {str(e)}")
+                log_error(f"\n[Error] An error occurred: {str(e)}")
 
 if __name__ == "__main__":
     asyncio.run(main())
