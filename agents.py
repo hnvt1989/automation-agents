@@ -18,6 +18,7 @@ from pydantic_ai.mcp import MCPServerStdio
 from pydantic_ai import Agent, RunContext
 from chromadb import Client, Settings
 import chromadb
+from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
 import json
 
 from src.crawler import run_crawler # Added import for the crawler
@@ -107,13 +108,28 @@ slack_agent = Agent(
 # ========== Create RAG agent with ChromaDB ==========
 class ChromaDBServer:
     def __init__(self, persist_dir: str = "./chroma_db"):
-        self.client = chromadb.Client(Settings(
-            persist_directory=persist_dir,
-            is_persistent=True
-        ))
+        """Initialize the ChromaDB client and collection.
+
+        The collection uses the OpenAI embedding function so that both file
+        indexing and the web crawler can store embeddings with the same
+        dimensionality (1536).
+        """
+
+        openai_api_key = os.getenv("LLM_API_KEY")
+        embedding_function = None
+        if openai_api_key:
+            embedding_function = OpenAIEmbeddingFunction(
+                api_key=openai_api_key,
+                model_name="text-embedding-3-small",
+            )
+
+        self.client = chromadb.Client(
+            Settings(persist_directory=persist_dir, is_persistent=True)
+        )
         self.collection = self.client.get_or_create_collection(
             name="knowledge_base",
-            metadata={"hnsw:space": "cosine"}
+            metadata={"hnsw:space": "cosine"},
+            embedding_function=embedding_function,
         )
         # Initialize the model for context generation
         self.context_gen_model_instance = get_model()
@@ -373,16 +389,40 @@ Please give a short succinct context to situate this chunk within the overall do
             "errors": errors
         }
     
-    async def search(self, query: str, n_results: int = 3) -> List[dict]:
-        """Search for relevant documents"""
+    async def search(self, query: str, n_results: int = 3, *, rerank: bool = False, search_k: Optional[int] = None) -> List[dict]:
+        """Search for relevant documents with optional reranking."""
+        if search_k is None:
+            search_k = max(n_results, 10) if rerank else n_results
+
         results = self.collection.query(
             query_texts=[query],
-            n_results=n_results
+            n_results=search_k,
         )
+
+        documents = results["documents"][0]
+        metadatas = results["metadatas"][0]
+        distances = results["distances"][0]
+
+        if rerank:
+            from difflib import SequenceMatcher
+
+            embed_scores = [1 - d for d in distances]
+            text_scores = [SequenceMatcher(None, query.lower(), doc.lower()).ratio() for doc in documents]
+            combined = [0.5 * e + 0.5 * t for e, t in zip(embed_scores, text_scores)]
+            ranked_indices = sorted(range(len(documents)), key=lambda i: combined[i], reverse=True)
+            top_indices = ranked_indices[:n_results]
+            documents = [documents[i] for i in top_indices]
+            metadatas = [metadatas[i] for i in top_indices]
+            distances = [distances[i] for i in top_indices]
+        else:
+            documents = documents[:n_results]
+            metadatas = metadatas[:n_results]
+            distances = distances[:n_results]
+
         return {
-            "documents": results["documents"][0],
-            "metadatas": results["metadatas"][0],
-            "distances": results["distances"][0]
+            "documents": documents,
+            "metadatas": metadatas,
+            "distances": distances,
         }
 
 # Initialize ChromaDB server
@@ -479,18 +519,29 @@ async def index_directory(directory_path: str, recursive: bool = True,
     return result
 
 @rag_agent.tool_plain
-async def search_knowledge_base(query: str, n_results: int = 3) -> dict[str, Any]:
+async def search_knowledge_base(
+    query: str,
+    n_results: int = 3,
+    *,
+    rerank: bool = False,
+    search_k: Optional[int] = None,
+) -> dict[str, Any]:
     """
     Search the ChromaDB vector store for relevant documents.
     
     Args:
         query: The search query
         n_results: Number of results to return (default: 3)
+        rerank: Whether to apply reranking to the retrieved results
+        search_k: Candidate pool size for reranking. If not provided and
+            rerank is True, defaults to ``max(n_results, 10)``.
         
     Returns:
         Dictionary containing matched documents, their metadata, and similarity scores
     """
-    results = await chroma_server.search(query, n_results)
+    results = await chroma_server.search(
+        query, n_results, rerank=rerank, search_k=search_k
+    )
     return results
 
 @rag_agent.tool_plain
