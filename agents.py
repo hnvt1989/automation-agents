@@ -495,16 +495,12 @@ async def search_knowledge_base(query: str, n_results: int = 3) -> dict[str, Any
 
 @rag_agent.tool_plain
 async def crawl_website_and_index(url: Optional[str] = None, sitemap_url: Optional[str] = None) -> str:
-    """
-    Crawls a given website URL or a sitemap URL and indexes its content into the ChromaDB knowledge base.
-    Provide either a 'url' to crawl a single page (and pages discovered from it if crawler is configured that way)
-    or a 'sitemap_url' to crawl all pages listed in a sitemap.xml.
-    The content will be added to the 'knowledge_base' collection in ChromaDB.
-
+    """Crawls a website and indexes it into the ChromaDB knowledge base.
+    
     Args:
-        url: The base URL of the website to crawl (e.g., 'https://example.com/docs').
-        sitemap_url: The URL of the sitemap.xml file to crawl (e.g., 'https://example.com/sitemap.xml').
-
+        url: Direct URL to crawl (optional)
+        sitemap_url: Sitemap URL to extract URLs from (optional)
+        
     Returns:
         A string confirming the initiation of the crawling process.
     """
@@ -516,8 +512,12 @@ async def crawl_website_and_index(url: Optional[str] = None, sitemap_url: Option
 
     print(f"RAG Agent: Received request to crawl and index: {target}")
     try:
-        # run_crawler will use defaults: chroma_persist_dir="./chroma_db", chroma_collection_name="knowledge_base"
-        await run_crawler(urls_to_crawl=urls_to_crawl_list, sitemap_url=sitemap_url)
+        # Pass the chroma_collection from the chroma_server instance
+        await run_crawler(
+            urls_to_crawl=urls_to_crawl_list, 
+            chroma_collection=chroma_server.collection,  # Pass the required collection parameter
+            sitemap_url=sitemap_url
+        )
         confirmation_message = f"Crawling and indexing initiated for '{target}'. Check console logs for progress and completion status."
         print(f"RAG Agent: {confirmation_message}")
         return confirmation_message

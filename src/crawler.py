@@ -15,12 +15,12 @@ from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 from openai import AsyncOpenAI
 import chromadb
 
-load_dotenv()
+load_dotenv("local.env")
 
 # Initialize OpenAI client
-openai_api_key = os.getenv("OPENAI_API_KEY")
+openai_api_key = os.getenv("LLM_API_KEY")
 if not openai_api_key:
-    print("CRITICAL: OPENAI_API_KEY not found in .env file. The crawler cannot function without it for embeddings and processing.")
+    print("CRITICAL: LLM_API_KEY not found in .env file. The crawler cannot function without it for embeddings and processing.")
     openai_client = None
 else:
     openai_client = AsyncOpenAI(api_key=openai_api_key)
@@ -247,8 +247,9 @@ async def crawl_and_process_url(url: str, web_crawler_instance: AsyncWebCrawler,
     crawl_config = CrawlerRunConfig(cache_mode=CacheMode.BYPASS) 
     result = await web_crawler_instance.arun(url=url, config=crawl_config)
 
-    if result.success and result.markdown_v2:
-        raw_markdown = result.markdown_v2.raw_markdown
+    if result.success and result.markdown:
+        # Use the new markdown API which returns a MarkdownGenerationResult
+        raw_markdown = result.markdown.raw_markdown
         print(f"Successfully crawled: {url}. Raw content length: {len(raw_markdown)}")
         if not raw_markdown.strip():
             print(f"No actual content found at {url} after crawling. Skipping further processing.")
@@ -273,7 +274,7 @@ async def crawl_and_process_url(url: str, web_crawler_instance: AsyncWebCrawler,
             else:
                 print(f"Failed to process chunk {i} from {url}. It will not be stored.")
     else:
-        print(f"Failed to crawl or get markdown_v2 for: {url}. Error: {result.error_message if result else 'Unknown error during crawl'}")
+        print(f"Failed to crawl or get markdown for: {url}. Error: {result.error_message if result else 'Unknown error during crawl'}")
 
 async def run_crawler(urls_to_crawl: List[str], 
                       chroma_collection: chromadb.api.models.Collection.Collection, # Now a required arg
