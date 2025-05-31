@@ -24,6 +24,7 @@ from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
 import json
 
 from src.crawler import run_crawler # Added import for the crawler
+from src.image_processor import run_image_processor, extract_text_from_image, parse_conversation_from_text, process_conversation_and_index # Added import for the image processor
 
 # Removed incorrect relative import: from . import get_model
 
@@ -136,32 +137,54 @@ class ChromaDBServer:
         # Initialize the model for context generation
         self.context_gen_model_instance = get_model()
     
-    async def _generate_chunk_context(self, whole_document: str, chunk_content: str) -> str:
-        """Generate context for a chunk using an LLM."""
-        prompt = f"""<document>
-{whole_document}
-</document>
-Here is the chunk we want to situate within the whole document
-<chunk>
-{chunk_content}
-</chunk>
-Please give a short succinct context to situate this chunk within the overall document for the purposes of improving search retrieval of the chunk. Answer only with the succinct context and nothing else."""
-        
-        try:
-            # Using a temporary agent to run the prompt with the context_gen_model_instance
-            # Ensure the model instance is compatible with pydantic_ai.Agent
-            temp_agent = Agent(self.context_gen_model_instance, system_prompt="You are a helpful assistant designed to generate context.") # More specific system prompt
-            result = await temp_agent.run(prompt) # No need for message_history for this specific task
-            
-            # Check if result and result.data are not None and result.data is a string
-            if result and hasattr(result, 'data') and isinstance(result.data, str):
-                return result.data.strip() # Strip whitespace
+    def _sanitize_metadata(self, metadata: dict) -> dict:
+        """
+        Sanitize metadata to ensure all values are compatible with ChromaDB.
+        ChromaDB only accepts str, int, float, or bool values in metadata.
+        """
+        sanitized = {}
+        for key, value in metadata.items():
+            if isinstance(value, (list, dict)):
+                # Convert complex types to JSON strings
+                sanitized[key] = json.dumps(value)
+            elif isinstance(value, (str, int, float, bool, type(None))):
+                # Keep simple types as-is (None becomes null in JSON, but let's convert to string)
+                sanitized[key] = str(value) if value is None else value
             else:
-                log_warning(f"Context generation did not return a string. Result: {result}")
-                return ""
+                # Convert any other type to string
+                sanitized[key] = str(value)
+        return sanitized
+
+    async def _generate_chunk_context(self, whole_document: str, chunk_content: str) -> str:
+        """Generate a contextualized summary for a chunk"""
+        system_prompt = """You are an expert at creating context summaries. Given a full document and a specific chunk from that document, create a brief context that will help with semantic search and retrieval.
+
+Your context should:
+1. Describe what type of content this chunk contains
+2. Mention relevant topics, concepts, or entities
+3. Be 1-2 sentences maximum
+4. Focus on searchable keywords and concepts
+
+Example output: "Code implementation for user authentication using JWT tokens and middleware validation."
+"""
+        
+        user_prompt = f"""Full document excerpt:
+{whole_document[:2000]}...
+
+Specific chunk to contextualize:
+{chunk_content}
+
+Create a brief context summary:"""
+
+        try:
+            result = await self.context_gen_model_instance.run(
+                user_prompt,
+                message_history=[{"role": "system", "content": system_prompt}]
+            )
+            return result.data
         except Exception as e:
-            log_error(f"Error generating chunk context: {str(e)}")
-            return ""
+            log_warning(f"Failed to generate context for chunk: {str(e)}")
+            return "Document content"
 
     def _chunk_text(self, text: str, chunk_size: int = 1000, overlap: int = 200) -> List[str]:
         """Split text into overlapping chunks"""
@@ -170,89 +193,108 @@ Please give a short succinct context to situate this chunk within the overall do
         
         chunks = []
         start = 0
+        
         while start < len(text):
             end = start + chunk_size
-            if end >= len(text):
-                chunks.append(text[start:])
-                break
             
-            # Try to break at a sentence or paragraph boundary
-            chunk = text[start:end]
-            last_period = chunk.rfind('.')
-            last_newline = chunk.rfind('\n')
+            # If this isn't the last chunk, try to find a good breaking point
+            if end < len(text):
+                # Look for sentence endings in the last 200 characters
+                breaking_zone = text[max(start, end - 200):end]
+                sentence_endings = ['.', '!', '?', '\n\n']
+                
+                best_break = -1
+                for ending in sentence_endings:
+                    pos = breaking_zone.rfind(ending)
+                    if pos > best_break:
+                        best_break = pos
+                
+                if best_break > -1:
+                    end = max(start, end - 200) + best_break + 1
             
-            if last_period > chunk_size * 0.7:
-                end = start + last_period + 1
-            elif last_newline > chunk_size * 0.7:
-                end = start + last_newline + 1
+            chunk = text[start:end].strip()
+            if chunk:
+                chunks.append(chunk)
             
-            chunks.append(text[start:end])
+            # Move start position with overlap
             start = end - overlap
-        
+            if start >= len(text):
+                break
+                
         return chunks
     
     def _read_file_content(self, file_path: str) -> Optional[str]:
-        """Read content from a file based on its type"""
-        try:
-            path = Path(file_path)
-            if not path.exists():
-                return None
-            
-            mime_type, _ = mimetypes.guess_type(file_path)
-            
-            # Handle text files
-            if mime_type and mime_type.startswith('text/'):
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    return f.read()
-            
-            # Handle specific file extensions
+        """Read content from a file with encoding detection"""
+        import mimetypes
+        
+        # Check if file is likely to be text-based
+        mime_type, _ = mimetypes.guess_type(file_path)
+        if mime_type and not mime_type.startswith('text/'):
+            # Additional check for common text file extensions
             text_extensions = {'.py', '.js', '.ts', '.html', '.css', '.md', '.txt', 
                              '.json', '.xml', '.yaml', '.yml', '.sh', '.sql', '.env'}
-            
-            if path.suffix.lower() in text_extensions:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    return f.read()
-            
-            return None
-            
-        except Exception as e:
-            log_error(f"Error reading file {file_path}: {str(e)}")
-            return None
+            if not any(file_path.lower().endswith(ext) for ext in text_extensions):
+                log_warning(f"Skipping binary file: {file_path}")
+                return None
+        
+        encodings = ['utf-8', 'utf-16', 'latin-1', 'cp1252']
+        
+        for encoding in encodings:
+            try:
+                with open(file_path, 'r', encoding=encoding) as file:
+                    return file.read()
+            except (UnicodeDecodeError, UnicodeError):
+                continue
+            except Exception as e:
+                log_error(f"Error reading {file_path}: {str(e)}")
+                return None
+        
+        log_error(f"Could not decode file with any encoding: {file_path}")
+        return None
     
     def _get_directory_files(self, directory_path: str, recursive: bool = True, 
                            include_extensions: Optional[List[str]] = None) -> List[str]:
-        """Get all readable files from a directory"""
+        """Get all files from directory with optional filtering"""
+        import os
+        
+        files = []
         try:
-            path = Path(directory_path)
-            if not path.exists() or not path.is_dir():
-                return []
-            
-            files = []
-            pattern = "**/*" if recursive else "*"
-            
-            for file_path in path.glob(pattern):
-                if file_path.is_file():
-                    # Skip hidden files and common non-text files
-                    if file_path.name.startswith('.'):
+            if recursive:
+                for root, _, filenames in os.walk(directory_path):
+                    for filename in filenames:
+                        if filename.startswith('.'):  # Skip hidden files
+                            continue
+                        
+                        file_path = os.path.join(root, filename)
+                        
+                        if include_extensions:
+                            if any(filename.lower().endswith(ext.lower()) for ext in include_extensions):
+                                files.append(file_path)
+                        else:
+                            files.append(file_path)
+            else:
+                for filename in os.listdir(directory_path):
+                    if filename.startswith('.'):  # Skip hidden files
                         continue
                     
-                    # Filter by extensions if specified
-                    if include_extensions:
-                        if file_path.suffix.lower() not in include_extensions:
-                            continue
-                    
-                    # Check if file is readable
-                    if self._read_file_content(str(file_path)) is not None:
-                        files.append(str(file_path))
-            
-            return files
-            
+                    file_path = os.path.join(directory_path, filename)
+                    if os.path.isfile(file_path):
+                        if include_extensions:
+                            if any(filename.lower().endswith(ext.lower()) for ext in include_extensions):
+                                files.append(file_path)
+                        else:
+                            files.append(file_path)
         except Exception as e:
-            log_error(f"Error reading directory {directory_path}: {str(e)}")
+            log_error(f"Error scanning directory {directory_path}: {str(e)}")
             return []
     
     async def add_documents(self, texts: List[str], metadatas: Optional[List[dict]] = None) -> List[str]:
         """Add documents to the vector store"""
+        
+        # Sanitize metadata to ensure ChromaDB compatibility
+        sanitized_metadatas = None
+        if metadatas:
+            sanitized_metadatas = [self._sanitize_metadata(metadata) for metadata in metadatas]
         
         # Robust ID generation to avoid collisions
         # This uses a combination of file stem, chunk index, and a simple counter based on the number of texts being added.
@@ -261,11 +303,11 @@ Please give a short succinct context to situate this chunk within the overall do
         for i, text_content in enumerate(texts):
             file_path_stem = "unknown_source"
             chunk_idx_str = str(i)
-            if metadatas and i < len(metadatas) and metadatas[i]:
-                if 'file_path' in metadatas[i] and metadatas[i]['file_path']:
-                    file_path_stem = pathlib.Path(metadatas[i]['file_path']).stem
-                if 'chunk_index' in metadatas[i]:
-                    chunk_idx_str = str(metadatas[i]['chunk_index'])
+            if sanitized_metadatas and i < len(sanitized_metadatas) and sanitized_metadatas[i]:
+                if 'file_path' in sanitized_metadatas[i] and sanitized_metadatas[i]['file_path']:
+                    file_path_stem = pathlib.Path(sanitized_metadatas[i]['file_path']).stem
+                if 'chunk_index' in sanitized_metadatas[i]:
+                    chunk_idx_str = str(sanitized_metadatas[i]['chunk_index'])
             
             # Simple hash of the first 50 chars of the content to add more uniqueness
             content_hash_prefix = hex(hash(text_content[:50]))[2:10] # first 8 hex chars
@@ -273,7 +315,7 @@ Please give a short succinct context to situate this chunk within the overall do
 
         self.collection.add(
             documents=texts,
-            metadatas=metadatas if metadatas else [{"source": "user"} for _ in texts],
+            metadatas=sanitized_metadatas if sanitized_metadatas else [{"source": "user"} for _ in texts],
             ids=ids
         )
         return ids
@@ -586,6 +628,22 @@ primary_agent = Agent(
     get_model(),
     system_prompt="""You are a primary orchestration agent that can call upon specialized subagents 
     to perform various tasks. Each subagent is an expert in interacting with a specific third-party service.
+    
+    Available capabilities include:
+    - Web search using Brave Search
+    - File system operations (read, write, list files)
+    - GitHub repository interactions
+    - Slack workspace management
+    - Test report analysis
+    - Document indexing and RAG-based question answering
+    - Image text extraction and OCR processing
+    
+    - **Image Processing Agent**: Extract text from images (screenshots, documents, diagrams) and optionally index the content into the knowledge base. Can also parse conversation logs from chat platform screenshots (Slack, Discord, Teams, etc.) and structure them as searchable conversation data. Can process multiple images concurrently and supports various formats including JPEG, PNG, GIF, BMP, TIFF, WebP. 
+      - For text extraction: Use when users want to extract text from image files or URLs
+      - For conversation parsing: Use when users want to parse chat logs, conversation screenshots, or message histories from images
+    
+    When users want to search for information in documents or need contextual answers, use the RAG agent.
+    
     Analyze the user request and delegate the work to the appropriate subagent.""",
     instrument=False
 )
@@ -700,6 +758,275 @@ async def use_rag_agent(query: str) -> dict[str, str]:
     log_info(f"Calling RAG agent with query: {query}")
     result = await rag_agent.run(query)
     return {"result": result.data}
+
+@primary_agent.tool_plain
+async def use_image_processor(query: str, image_paths: List[str] = None, image_urls: List[str] = None) -> dict[str, str]:
+    """
+    Extract text from images and optionally index them into the knowledge base.
+    Can also parse conversation logs from chat platforms (Slack, Discord, Teams, etc.).
+    
+    Use this tool when the user needs to:
+    - Extract text from image files (PNG, JPG, JPEG, GIF, BMP, TIFF, WebP)
+    - Process images from local file paths or URLs
+    - Index extracted text into the vector store for later search
+    - OCR text from screenshots, documents, charts, or any image with text content
+    - Parse conversation logs from chat platform screenshots
+    - Structure chat messages with speakers, timestamps, and reactions
+
+    Args:
+        query: The instruction for image processing (e.g., "extract text from image", "parse conversation from screenshot")
+        image_paths: Optional list of local file paths to image files
+        image_urls: Optional list of URLs to image files
+
+    Returns:
+        The extracted text content, parsed conversation data, and processing results.
+    """
+    log_info(f"Calling Image Processor with query: {query}")
+    
+    try:
+        # If no specific paths/URLs provided, try to extract them from the query
+        if not image_paths and not image_urls:
+            # Basic pattern matching to find file paths or URLs in the query
+            import re
+            
+            # Look for file paths (ending with image extensions) - multiple patterns to handle different scenarios
+            # Pattern 1: Quoted filenames (with or without quotes)
+            quoted_pattern = r'["\']([^"\']*\.(?:png|jpg|jpeg|gif|bmp|tiff|tif|webp))["\']'
+            # Pattern 2: Unquoted filenames - look for likely filename patterns
+            unquoted_pattern = r'(?:image|file|screenshot)\s+([^"\s]+(?:\s+[^"\s]+)*\.(?:png|jpg|jpeg|gif|bmp|tiff|tif|webp))(?:\s+(?:in|from|at|file|directory|folder)|$)'
+            # Pattern 3: Simple filename without spaces
+            simple_pattern = r'([^\s<>"|?*]+\.(?:png|jpg|jpeg|gif|bmp|tiff|tif|webp))'
+            
+            found_paths = []
+            # Try quoted pattern first
+            found_paths.extend(re.findall(quoted_pattern, query, re.IGNORECASE))
+            # If no quoted paths found, try unquoted pattern
+            if not found_paths:
+                found_paths.extend(re.findall(unquoted_pattern, query, re.IGNORECASE))
+            # Fall back to simple pattern
+            if not found_paths:
+                found_paths.extend(re.findall(simple_pattern, query, re.IGNORECASE))
+            
+            # Look for URLs
+            url_pattern = r'https?://[\w\-._~:/?#[\]@!$&\'()*+,;=%]+'
+            found_urls = re.findall(url_pattern, query, re.IGNORECASE)
+            
+            image_paths = found_paths if found_paths else None
+            image_urls = found_urls if found_urls else None
+            
+            log_info(f"Extracted from query - Paths: {image_paths}, URLs: {image_urls}")
+        
+        # If no specific files found, check if user mentioned a directory
+        if not image_paths and not image_urls:
+            # Look for directory references in the query
+            dir_pattern = r'(?:in|at|from)\s+([^"\s]+/?)'
+            dir_matches = re.findall(dir_pattern, query, re.IGNORECASE)
+            
+            for potential_dir in dir_matches:
+                potential_dir = potential_dir.rstrip('/')  # Remove trailing slash
+                
+                # Check if it's a valid directory
+                if os.path.isdir(potential_dir):
+                    # Find image files in the directory
+                    try:
+                        image_files = [f for f in os.listdir(potential_dir) 
+                                     if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.tif', '.webp'))]
+                        
+                        if image_files:
+                            # Auto-detect based on query context
+                            if len(image_files) == 1:
+                                # Only one image, use it
+                                image_paths = [os.path.join(potential_dir, image_files[0])]
+                                log_info(f"Auto-detected single image in {potential_dir}: {image_files[0]}")
+                            elif 'conversation' in query.lower() or 'chat' in query.lower() or 'screenshot' in query.lower():
+                                # Look for the most recent screenshot-like file
+                                screenshot_files = [f for f in image_files if 'screenshot' in f.lower()]
+                                if screenshot_files:
+                                    # Use the most recent screenshot (lexicographically last, assuming timestamp format)
+                                    latest_screenshot = sorted(screenshot_files)[-1]
+                                    image_paths = [os.path.join(potential_dir, latest_screenshot)]
+                                    log_info(f"Auto-detected latest screenshot in {potential_dir}: {latest_screenshot}")
+                                else:
+                                    # Use the most recent image file
+                                    latest_image = sorted(image_files)[-1]
+                                    image_paths = [os.path.join(potential_dir, latest_image)]
+                                    log_info(f"Auto-detected latest image in {potential_dir}: {latest_image}")
+                            else:
+                                # Multiple images, use all of them
+                                image_paths = [os.path.join(potential_dir, f) for f in image_files]
+                                log_info(f"Auto-detected {len(image_files)} images in {potential_dir}")
+                            break
+                    except Exception as e:
+                        log_warning(f"Error scanning directory {potential_dir}: {e}")
+            
+            log_info(f"After directory detection - Paths: {image_paths}, URLs: {image_urls}")
+        
+        # Prepare image sources
+        image_sources = []
+        
+        if image_paths:
+            for path in image_paths:
+                # Handle relative paths by joining with data directory if needed
+                if not os.path.isabs(path) and not os.path.exists(path):
+                    # Try in data directory
+                    data_path = os.path.join("data", path)
+                    if os.path.exists(data_path):
+                        path = data_path
+                    else:
+                        # If exact match fails, try fuzzy matching in data directory
+                        import difflib
+                        try:
+                            original_basename = os.path.basename(path)
+                            data_files = [f for f in os.listdir("data") if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.tif', '.webp'))]
+                            # Find the closest match
+                            closest_matches = difflib.get_close_matches(os.path.basename(path), data_files, n=1, cutoff=0.8)
+                            if closest_matches:
+                                fuzzy_path = os.path.join("data", closest_matches[0])
+                                if os.path.exists(fuzzy_path):
+                                    path = fuzzy_path
+                                    log_info(f"Using fuzzy match: {closest_matches[0]} for requested: {original_basename}")
+                        except Exception as e:
+                            log_warning(f"Error during fuzzy matching: {e}")
+                
+                if os.path.exists(path):
+                    image_sources.append({'source': path, 'type': 'file'})
+                    log_info(f"Added image file: {path}")
+                else:
+                    log_warning(f"Image file not found: {path}")
+        
+        if image_urls:
+            for url in image_urls:
+                image_sources.append({'source': url, 'type': 'url'})
+                log_info(f"Added image URL: {url}")
+        
+        if not image_sources:
+            return {"result": "No valid image sources found. Please provide image file paths or URLs."}
+        
+        # Determine if we should index the results or just extract text
+        should_index = any(keyword in query.lower() for keyword in ['index', 'store', 'save', 'add to knowledge'])
+        
+        # Determine if this is specifically for conversation parsing
+        is_conversation_request = any(keyword in query.lower() for keyword in [
+            'conversation', 'chat', 'messages', 'slack', 'discord', 'teams', 
+            'conversation log', 'chat log', 'message log', 'parse conversation'
+        ])
+        
+        if is_conversation_request:
+            # Process as conversation logs
+            log_info("Processing images as conversation logs...")
+            conversation_results = []
+            
+            for source_info in image_sources:
+                try:
+                    # First extract text
+                    extracted_text = await extract_text_from_image(
+                        source_info['source'], 
+                        source_info['type']
+                    )
+                    
+                    if extracted_text:
+                        # Parse as conversation
+                        conversation_log = await parse_conversation_from_text(
+                            extracted_text, 
+                            source_info['source']
+                        )
+                        
+                        if conversation_log:
+                            # Index conversation if requested
+                            if should_index:
+                                await process_conversation_and_index(
+                                    conversation_log, 
+                                    chroma_server.collection
+                                )
+                            
+                            conversation_results.append({
+                                'source': source_info['source'],
+                                'platform': conversation_log.platform,
+                                'participants': conversation_log.participants or [],
+                                'message_count': len(conversation_log.messages),
+                                'conversation': conversation_log
+                            })
+                            log_info(f"Parsed {len(conversation_log.messages)} messages from {source_info['source']}")
+                        else:
+                            log_warning(f"Could not parse conversation from {source_info['source']}")
+                    else:
+                        log_warning(f"No text extracted from {source_info['source']}")
+                        
+                except Exception as e:
+                    log_error(f"Error processing conversation from {source_info['source']}: {e}")
+            
+            if conversation_results:
+                if should_index:
+                    result_text = f"Successfully processed and indexed {len(conversation_results)} conversation(s) into the knowledge base:\n\n"
+                else:
+                    result_text = f"Successfully parsed {len(conversation_results)} conversation(s):\n\n"
+                
+                for result in conversation_results:
+                    result_text += f"**Source:** {result['source']}\n"
+                    result_text += f"**Platform:** {result['platform']}\n"
+                    result_text += f"**Participants:** {', '.join(result['participants'])}\n"
+                    result_text += f"**Messages:** {result['message_count']}\n"
+                    
+                    if not should_index:
+                        # Show conversation details if not indexing
+                        result_text += f"**Conversation:**\n"
+                        for msg in result['conversation'].messages:
+                            timestamp_str = f" ({msg.timestamp})" if msg.timestamp else ""
+                            result_text += f"  {msg.speaker}{timestamp_str}: {msg.content}\n"
+                    
+                    result_text += "\n---\n\n"
+            else:
+                result_text = "No conversations could be parsed from the provided images."
+        
+        elif should_index:
+            # Extract and index into knowledge base
+            log_info("Processing images and indexing into knowledge base...")
+            await run_image_processor(
+                image_sources=image_sources,
+                chroma_collection=chroma_server.collection,
+                max_concurrent_processing=3
+            )
+            
+            result_text = f"Successfully processed and indexed {len(image_sources)} image(s) into the knowledge base. "
+            result_text += f"Text has been extracted and stored for future search and retrieval."
+        
+        else:
+            # Just extract text without indexing
+            log_info("Extracting text from images...")
+            extracted_texts = []
+            
+            for source_info in image_sources:
+                try:
+                    extracted_text = await extract_text_from_image(
+                        source_info['source'], 
+                        source_info['type']
+                    )
+                    if extracted_text:
+                        extracted_texts.append({
+                            'source': source_info['source'],
+                            'text': extracted_text,
+                            'length': len(extracted_text)
+                        })
+                        log_info(f"Extracted {len(extracted_text)} characters from {source_info['source']}")
+                    else:
+                        log_warning(f"No text extracted from {source_info['source']}")
+                except Exception as e:
+                    log_error(f"Error processing {source_info['source']}: {e}")
+            
+            if extracted_texts:
+                result_text = f"Successfully extracted text from {len(extracted_texts)} image(s):\n\n"
+                for item in extracted_texts:
+                    result_text += f"**Source:** {item['source']}\n"
+                    result_text += f"**Extracted Text ({item['length']} characters):**\n{item['text']}\n\n---\n\n"
+            else:
+                result_text = "No text could be extracted from the provided images."
+        
+        return {"result": result_text}
+        
+    except Exception as e:
+        error_msg = f"Error during image processing: {str(e)}"
+        log_error(error_msg)
+        return {"result": error_msg}
 
 # ========== Main execution function ==========
 async def main():

@@ -89,3 +89,7 @@ zipp==3.21.0
 crawl4ai
 openai
 # supabase
+
+# For image processing
+Pillow>=10.0.0  # PIL for image handling and validation
+chromadb>=0.4.0  # Vector database for storing embeddings
