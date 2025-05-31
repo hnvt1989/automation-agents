@@ -11,6 +11,8 @@ from urllib.parse import urlparse
 from dotenv import load_dotenv
 import hashlib
 
+from src.log_utils import log_info, log_warning, log_error
+
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 from openai import AsyncOpenAI
 import chromadb
@@ -20,7 +22,9 @@ load_dotenv("local.env")
 # Initialize OpenAI client
 openai_api_key = os.getenv("LLM_API_KEY")
 if not openai_api_key:
-    print("CRITICAL: LLM_API_KEY not found in .env file. The crawler cannot function without it for embeddings and processing.")
+    log_error(
+        "CRITICAL: LLM_API_KEY not found in .env file. The crawler cannot function without it for embeddings and processing."
+    )
     openai_client = None
 else:
     openai_client = AsyncOpenAI(api_key=openai_api_key)
@@ -28,11 +32,11 @@ else:
 async def add_chunk_to_collection(chunk: 'ProcessedChunk', chroma_collection: chromadb.api.models.Collection.Collection):
     """Adds a processed chunk to the provided ChromaDB collection."""
     if not chroma_collection:
-        print(f"ChromaDB collection not provided. Cannot add chunk for {chunk.url}.")
+        log_error(f"ChromaDB collection not provided. Cannot add chunk for {chunk.url}.")
         return None
     
     if chunk.embedding is None:
-        print(f"Skipping chunk {chunk.chunk_number} from {chunk.url} due to missing embedding.")
+        log_warning(f"Skipping chunk {chunk.chunk_number} from {chunk.url} due to missing embedding.")
         return None
 
     chroma_metadata = {
@@ -62,13 +66,19 @@ async def add_chunk_to_collection(chunk: 'ProcessedChunk', chroma_collection: ch
             documents=[chunk.content],
             metadatas=[chroma_metadata]
         )
-        print(f"Added contextualized chunk ID {doc_id} (URL: {chunk.url}, Chunk: {chunk.chunk_number}) to ChromaDB collection '{chroma_collection.name}'.")
+        log_info(
+            f"Added contextualized chunk ID {doc_id} (URL: {chunk.url}, Chunk: {chunk.chunk_number}) to ChromaDB collection '{chroma_collection.name}'."
+        )
         return doc_id
     except chromadb.errors.IDAlreadyExistsError:
-        print(f"Contextualized chunk ID {doc_id} already exists in ChromaDB for {chunk.url}. Skipping.")
-        return doc_id 
+        log_warning(
+            f"Contextualized chunk ID {doc_id} already exists in ChromaDB for {chunk.url}. Skipping."
+        )
+        return doc_id
     except Exception as e:
-        print(f"Error adding contextualized chunk ID {doc_id} for {chunk.url} to ChromaDB: {e}")
+        log_error(
+            f"Error adding contextualized chunk ID {doc_id} for {chunk.url} to ChromaDB: {e}"
+        )
         return None
 
 @dataclass
@@ -117,7 +127,7 @@ def chunk_text(text: str, chunk_size: int = 5000) -> List[str]:
 async def _generate_web_chunk_context(whole_document_text: str, original_chunk_content: str, url: str) -> str:
     """Generate situating context for a web chunk using an LLM."""
     if not openai_client:
-        print(f"OpenAI client not initialized. Cannot generate context for chunk from {url}.")
+        log_error(f"OpenAI client not initialized. Cannot generate context for chunk from {url}.")
         return "" # Return empty string if no context can be generated
 
     # Limit the size of whole_document_text and original_chunk_content to avoid excessive token usage
@@ -155,16 +165,16 @@ Please provide a short, succinct context (1-2 sentences) that situates this chun
         context_prefix = response.choices[0].message.content.strip()
         # Basic filter for common refusal or non-contextual phrases
         if not context_prefix or "cannot provide context" in context_prefix.lower() or "unable to fulfill" in context_prefix.lower():
-            print(f"LLM returned non-contextual response for chunk from {url}. Using empty context.")
+            log_warning(f"LLM returned non-contextual response for chunk from {url}. Using empty context.")
             return ""
         return context_prefix
     except Exception as e:
-        print(f"Error generating web chunk context for {url} with model {llm_model}: {e}")
+        log_error(f"Error generating web chunk context for {url} with model {llm_model}: {e}")
         return "" # Return empty string on error
 
 async def get_title_and_summary(chunk: str, url: str) -> Dict[str, str]:
     if not openai_client:
-        print(f"OpenAI client not initialized. Cannot get title/summary for chunk from {url}.")
+        log_error(f"OpenAI client not initialized. Cannot get title/summary for chunk from {url}.")
         return {"title": "OpenAI client error", "summary": "OpenAI client error"}
     llm_model = os.getenv("LLM_MODEL", "gpt-4o-mini")
     system_prompt = """You are an AI that extracts titles and summaries from documentation chunks.
@@ -187,12 +197,16 @@ async def get_title_and_summary(chunk: str, url: str) -> Dict[str, str]:
         result = json.loads(response.choices[0].message.content)
         return {"title": result.get("title", "N/A"), "summary": result.get("summary", "N/A")}
     except Exception as e:
-        print(f"Error getting title and summary for chunk from {url} with model {llm_model}: {e}")
+        log_error(
+            f"Error getting title and summary for chunk from {url} with model {llm_model}: {e}"
+        )
         return {"title": "Error processing title", "summary": "Error processing summary"}
 
 async def get_embedding(text: str, model: str = "text-embedding-3-small") -> List[float] | None:
     if not openai_client:
-        print(f"OpenAI client not initialized. Cannot get embedding for text (first 50 chars: '{text[:50]}...').")
+        log_error(
+            f"OpenAI client not initialized. Cannot get embedding for text (first 50 chars: '{text[:50]}...')."
+        )
         return None
     try:
         response = await openai_client.embeddings.create(
@@ -201,7 +215,9 @@ async def get_embedding(text: str, model: str = "text-embedding-3-small") -> Lis
         )
         return response.data[0].embedding
     except Exception as e:
-        print(f"Error getting embedding for text (first 50 chars: '{text[:50]}...'): {e}")
+        log_error(
+            f"Error getting embedding for text (first 50 chars: '{text[:50]}...'): {e}"
+        )
         return None
 
 async def process_chunk(original_chunk_content: str, chunk_idx: int, url: str, whole_page_text: str) -> ProcessedChunk | None:
@@ -243,24 +259,24 @@ async def process_chunk(original_chunk_content: str, chunk_idx: int, url: str, w
 
 async def crawl_and_process_url(url: str, web_crawler_instance: AsyncWebCrawler, 
                                 chroma_collection: chromadb.api.models.Collection.Collection):
-    print(f"Starting crawl for: {url}")
+    log_info(f"Starting crawl for: {url}")
     crawl_config = CrawlerRunConfig(cache_mode=CacheMode.BYPASS) 
     result = await web_crawler_instance.arun(url=url, config=crawl_config)
 
     if result.success and result.markdown:
         # Use the new markdown API which returns a MarkdownGenerationResult
         raw_markdown = result.markdown.raw_markdown
-        print(f"Successfully crawled: {url}. Raw content length: {len(raw_markdown)}")
+        log_info(f"Successfully crawled: {url}. Raw content length: {len(raw_markdown)}")
         if not raw_markdown.strip():
-            print(f"No actual content found at {url} after crawling. Skipping further processing.")
+            log_warning(f"No actual content found at {url} after crawling. Skipping further processing.")
             return
 
         text_chunks = chunk_text(raw_markdown) # These are chunks of the original raw_markdown
-        print(f"Split content from {url} into {len(text_chunks)} chunks.")
+        log_info(f"Split content from {url} into {len(text_chunks)} chunks.")
         
         for i, original_chunk_str in enumerate(text_chunks):
             if not original_chunk_str.strip():
-                print(f"Skipping empty chunk {i} from {url} after chunking.")
+                log_warning(f"Skipping empty chunk {i} from {url} after chunking.")
                 continue
             
             # Pass the full raw_markdown as whole_page_text for context generation
@@ -270,11 +286,13 @@ async def crawl_and_process_url(url: str, web_crawler_instance: AsyncWebCrawler,
                 if chroma_collection: 
                     await add_chunk_to_collection(processed_chunk_object, chroma_collection)
                 else:
-                    print(f"ChromaDB collection not provided. Cannot store chunk {i} from {url}.")
+                    log_error(f"ChromaDB collection not provided. Cannot store chunk {i} from {url}.")
             else:
-                print(f"Failed to process chunk {i} from {url}. It will not be stored.")
+                log_error(f"Failed to process chunk {i} from {url}. It will not be stored.")
     else:
-        print(f"Failed to crawl or get markdown for: {url}. Error: {result.error_message if result else 'Unknown error during crawl'}")
+        log_error(
+            f"Failed to crawl or get markdown for: {url}. Error: {result.error_message if result else 'Unknown error during crawl'}"
+        )
 
 async def run_crawler(urls_to_crawl: List[str], 
                       chroma_collection: chromadb.api.models.Collection.Collection, # Now a required arg
@@ -282,26 +300,26 @@ async def run_crawler(urls_to_crawl: List[str],
                       sitemap_url: str | None = None):
     """Main function to run the crawler, storing results in the provided ChromaDB Collection."""
     if not chroma_collection:
-        print("CRITICAL: ChromaDB collection was not provided to run_crawler. Crawled data will NOT be stored.")
+        log_error("CRITICAL: ChromaDB collection was not provided to run_crawler. Crawled data will NOT be stored.")
         # Decide if to proceed or exit. For now, let it "crawl" but not store if URLs are present.
         # If storing is essential, could raise an error here.
 
     target_urls = list(urls_to_crawl) 
     if sitemap_url:
-        print(f"Fetching URLs from sitemap: {sitemap_url}")
-        sitemap_urls = get_urls_from_sitemap(sitemap_url) 
+        log_info(f"Fetching URLs from sitemap: {sitemap_url}")
+        sitemap_urls = get_urls_from_sitemap(sitemap_url)
         if sitemap_urls:
-            print(f"Found {len(sitemap_urls)} URLs from sitemap.")
+            log_info(f"Found {len(sitemap_urls)} URLs from sitemap.")
             target_urls.extend(sitemap_urls)
         else:
-            print(f"No URLs found or error fetching sitemap: {sitemap_url}")
+            log_warning(f"No URLs found or error fetching sitemap: {sitemap_url}")
     if not target_urls:
-        print("No URLs provided and no URLs found from sitemap. Exiting crawler.")
+        log_warning("No URLs provided and no URLs found from sitemap. Exiting crawler.")
         return
     unique_target_urls = sorted(list(set(u for u in target_urls if u and u.strip().startswith(('http://', 'https://')))))
-    print(f"Total unique and valid URLs to crawl: {len(unique_target_urls)}")
+    log_info(f"Total unique and valid URLs to crawl: {len(unique_target_urls)}")
     if not unique_target_urls:
-        print("No valid URLs to crawl after filtering. Exiting.")
+        log_warning("No valid URLs to crawl after filtering. Exiting.")
         return
 
     browser_config = BrowserConfig(
@@ -322,21 +340,25 @@ async def run_crawler(urls_to_crawl: List[str],
     if crawl_tasks:
         await asyncio.gather(*crawl_tasks)
     await web_crawler_instance.close()
-    print("Crawler run finished.")
+    log_info("Crawler run finished.")
 
 def get_urls_from_sitemap(sitemap_url: str) -> List[str]:
     try:
-        print(f"Requesting sitemap: {sitemap_url}")
+        log_info(f"Requesting sitemap: {sitemap_url}")
         response = requests.get(sitemap_url, timeout=20) 
         response.raise_for_status()
         content_type = response.headers.get('Content-Type', '').lower()
         if 'xml' not in content_type:
-            print(f"Warning: Sitemap URL {sitemap_url} returned content type {content_type}, not XML. Trying to parse anyway.")
+            log_warning(
+                f"Warning: Sitemap URL {sitemap_url} returned content type {content_type}, not XML. Trying to parse anyway."
+            )
         namespaces = {'sitemap': 'http://www.sitemaps.org/schemas/sitemap/0.9'}
         try:
             root = ElementTree.fromstring(response.content)
         except ElementTree.ParseError as e:
-            print(f"Failed to parse XML from {sitemap_url}. Error: {e}. Content (first 500 chars): {response.text[:500]}")
+            log_error(
+                f"Failed to parse XML from {sitemap_url}. Error: {e}. Content (first 500 chars): {response.text[:500]}"
+            )
             return []
         url_elements = root.findall('.//sitemap:loc', namespaces)
         if not url_elements:
@@ -344,16 +366,16 @@ def get_urls_from_sitemap(sitemap_url: str) -> List[str]:
         if not url_elements:
              url_elements = root.findall('.//loc')
         extracted_urls = [elem.text.strip() for elem in url_elements if elem.text and elem.text.strip()]
-        print(f"Extracted {len(extracted_urls)} URLs from {sitemap_url}")
+        log_info(f"Extracted {len(extracted_urls)} URLs from {sitemap_url}")
         return extracted_urls
     except requests.exceptions.Timeout:
-        print(f"Timeout error fetching sitemap {sitemap_url}.")
+        log_error(f"Timeout error fetching sitemap {sitemap_url}.")
         return []
     except requests.exceptions.RequestException as e:
-        print(f"Request error fetching sitemap {sitemap_url}: {e}")
+        log_error(f"Request error fetching sitemap {sitemap_url}: {e}")
         return []
     except Exception as e:
-        print(f"An unexpected error occurred while processing sitemap {sitemap_url}: {e}")
+        log_error(f"An unexpected error occurred while processing sitemap {sitemap_url}: {e}")
         return []
 
 # Removed main_crawl_example and if __name__ == "__main__" block 
