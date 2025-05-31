@@ -96,6 +96,7 @@ coverage.xml
 reports/
 assets/
 *.html
+!frontend/public/index.html
 report/
 test-results/
 test-reports/
