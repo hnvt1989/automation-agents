@@ -504,7 +504,7 @@ async def index_file(file_path: str, chunk_size: int = 1000) -> dict[str, Any]:
     return result
 
 @rag_agent.tool_plain
-async def index_directory(directory_path: str, recursive: bool = True, 
+async def index_directory(directory_path: str, recursive: bool = True,
                          include_extensions: Optional[List[str]] = None,
                          chunk_size: int = 1000) -> dict[str, Any]:
     """
@@ -521,6 +521,39 @@ async def index_directory(directory_path: str, recursive: bool = True,
     """
     result = await chroma_server.add_directory(directory_path, recursive, include_extensions, chunk_size)
     return result
+
+@rag_agent.tool_plain
+async def index_path(
+    path: str,
+    recursive: bool = True,
+    include_extensions: Optional[List[str]] = None,
+    chunk_size: int = 1000,
+) -> dict[str, Any]:
+    """Index a single file or an entire directory.
+
+    If ``path`` points to a file, it will be indexed directly. If it is a
+    directory, all files inside will be processed. This provides a convenient
+    wrapper around ``index_file`` and ``index_directory``.
+
+    Args:
+        path: File or directory path to index.
+        recursive: When indexing a directory, include subdirectories.
+        include_extensions: Optional list of file extensions to include when
+            indexing a directory.
+        chunk_size: Size of text chunks for indexing.
+
+    Returns:
+        Dictionary with the indexing results.
+    """
+    resolved = Path(path)
+    if resolved.is_file():
+        return await index_file(str(resolved), chunk_size)
+    if resolved.is_dir():
+        return await index_directory(
+            str(resolved), recursive=recursive,
+            include_extensions=include_extensions, chunk_size=chunk_size
+        )
+    return {"success": False, "error": f"Path not found: {path}"}
 
 @rag_agent.tool_plain
 async def search_knowledge_base(

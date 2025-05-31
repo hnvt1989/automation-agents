@@ -119,6 +119,11 @@ Index the file ./src/main.py
 Index all Python files in the ./src directory recursively
 ```
 
+#### **Index File or Directory Automatically**
+```
+Index ./data (will detect if it's a file or folder)
+```
+
 #### **Index with File Filtering**
 ```
 Index the ./docs directory but only include .md and .txt files
