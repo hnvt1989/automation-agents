@@ -1,7 +1,6 @@
 from __future__ import annotations
 from contextlib import AsyncExitStack
 from typing import Any, Dict, List, Optional
-from dataclasses import dataclass
 from dotenv import load_dotenv
 from rich.markdown import Markdown
 from rich.console import Console
@@ -11,22 +10,19 @@ from src.log_utils import log_info, log_warning, log_error
 import asyncio
 import os
 import pathlib
-import mimetypes
-from pathlib import Path
+import re
 
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.mcp import MCPServerStdio
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent
 from chromadb import Client, Settings
 import chromadb
 from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
 import json
 
-from src.crawler import run_crawler # Added import for the crawler
-from src.image_processor import run_image_processor, extract_text_from_image, parse_conversation_from_text, process_conversation_and_index # Added import for the image processor
-
-# Removed incorrect relative import: from . import get_model
+from src.crawler import run_crawler
+from src.image_processor import run_image_processor, extract_text_from_image, parse_conversation_from_text, process_conversation_and_index
 
 load_dotenv('local.env')
 
@@ -472,7 +468,14 @@ Create a brief context summary:"""
         }
 
 # Initialize ChromaDB server
-chroma_server = ChromaDBServer()
+log_info("Initializing ChromaDB vector store...")
+try:
+    chroma_server = ChromaDBServer()
+    log_info("ChromaDB initialized successfully!")
+except Exception as e:
+    log_error(f"Error initializing ChromaDB: {str(e)}")
+    log_error("The RAG agent and image processing features will not work properly.")
+    chroma_server = None
 
 # Create RAG agent
 rag_agent = Agent(
@@ -527,6 +530,9 @@ async def add_to_knowledge_base(texts: List[str], metadatas: Optional[List[dict]
     Returns:
         Dictionary containing the IDs of added documents
     """
+    if not chroma_server:
+        return {"error": "ChromaDB server not initialized"}
+    
     doc_ids = await chroma_server.add_documents(texts, metadatas)
     return {"document_ids": doc_ids}
 
@@ -542,6 +548,9 @@ async def index_file(file_path: str, chunk_size: int = 1000) -> dict[str, Any]:
     Returns:
         Dictionary containing indexing results and metadata
     """
+    if not chroma_server:
+        return {"error": "ChromaDB server not initialized"}
+    
     result = await chroma_server.add_file(file_path, chunk_size)
     return result
 
@@ -561,6 +570,9 @@ async def index_directory(directory_path: str, recursive: bool = True,
     Returns:
         Dictionary containing indexing results and metadata
     """
+    if not chroma_server:
+        return {"error": "ChromaDB server not initialized"}
+    
     result = await chroma_server.add_directory(directory_path, recursive, include_extensions, chunk_size)
     return result
 
@@ -585,6 +597,9 @@ async def search_knowledge_base(
     Returns:
         Dictionary containing matched documents, their metadata, and similarity scores
     """
+    if not chroma_server:
+        return {"error": "ChromaDB server not initialized"}
+    
     results = await chroma_server.search(
         query, n_results, rerank=rerank, search_k=search_k
     )
@@ -603,6 +618,9 @@ async def crawl_website_and_index(url: Optional[str] = None, sitemap_url: Option
     """
     if not url and not sitemap_url:
         return "Error: Please provide either a 'url' or a 'sitemap_url' to crawl."
+    
+    if not chroma_server:
+        return "Error: ChromaDB server not initialized. Cannot index crawled content."
 
     urls_to_crawl_list = [url] if url else []
     target = url if url else sitemap_url
@@ -868,25 +886,28 @@ async def use_image_processor(query: str, image_paths: List[str] = None, image_u
             for path in image_paths:
                 # Handle relative paths by joining with data directory if needed
                 if not os.path.isabs(path) and not os.path.exists(path):
-                    # Try in data directory
-                    data_path = os.path.join("data", path)
-                    if os.path.exists(data_path):
-                        path = data_path
+                    # Try in data directory first
+                    if os.path.exists("data"):
+                        data_path = os.path.join("data", path)
+                        if os.path.exists(data_path):
+                            path = data_path
+                        else:
+                            # If exact match fails, try fuzzy matching in data directory
+                            import difflib
+                            try:
+                                original_basename = os.path.basename(path)
+                                data_files = [f for f in os.listdir("data") if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.tif', '.webp'))]
+                                # Find the closest match
+                                closest_matches = difflib.get_close_matches(os.path.basename(path), data_files, n=1, cutoff=0.8)
+                                if closest_matches:
+                                    fuzzy_path = os.path.join("data", closest_matches[0])
+                                    if os.path.exists(fuzzy_path):
+                                        path = fuzzy_path
+                                        log_info(f"Using fuzzy match: {closest_matches[0]} for requested: {original_basename}")
+                            except Exception as e:
+                                log_warning(f"Error during fuzzy matching: {e}")
                     else:
-                        # If exact match fails, try fuzzy matching in data directory
-                        import difflib
-                        try:
-                            original_basename = os.path.basename(path)
-                            data_files = [f for f in os.listdir("data") if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.tif', '.webp'))]
-                            # Find the closest match
-                            closest_matches = difflib.get_close_matches(os.path.basename(path), data_files, n=1, cutoff=0.8)
-                            if closest_matches:
-                                fuzzy_path = os.path.join("data", closest_matches[0])
-                                if os.path.exists(fuzzy_path):
-                                    path = fuzzy_path
-                                    log_info(f"Using fuzzy match: {closest_matches[0]} for requested: {original_basename}")
-                        except Exception as e:
-                            log_warning(f"Error during fuzzy matching: {e}")
+                        log_warning("Data directory not found for fallback image search")
                 
                 if os.path.exists(path):
                     image_sources.append({'source': path, 'type': 'file'})
@@ -934,10 +955,13 @@ async def use_image_processor(query: str, image_paths: List[str] = None, image_u
                         if conversation_log:
                             # Index conversation if requested
                             if should_index:
-                                await process_conversation_and_index(
-                                    conversation_log, 
-                                    chroma_server.collection
-                                )
+                                if chroma_server:
+                                    await process_conversation_and_index(
+                                        conversation_log, 
+                                        chroma_server.collection
+                                    )
+                                else:
+                                    log_error("ChromaDB server not initialized. Cannot index conversation.")
                             
                             conversation_results.append({
                                 'source': source_info['source'],
@@ -980,15 +1004,18 @@ async def use_image_processor(query: str, image_paths: List[str] = None, image_u
         
         elif should_index:
             # Extract and index into knowledge base
-            log_info("Processing images and indexing into knowledge base...")
-            await run_image_processor(
-                image_sources=image_sources,
-                chroma_collection=chroma_server.collection,
-                max_concurrent_processing=3
-            )
-            
-            result_text = f"Successfully processed and indexed {len(image_sources)} image(s) into the knowledge base. "
-            result_text += f"Text has been extracted and stored for future search and retrieval."
+            if chroma_server:
+                log_info("Processing images and indexing into knowledge base...")
+                await run_image_processor(
+                    image_sources=image_sources,
+                    chroma_collection=chroma_server.collection,
+                    max_concurrent_processing=3
+                )
+                
+                result_text = f"Successfully processed and indexed {len(image_sources)} image(s) into the knowledge base. "
+                result_text += f"Text has been extracted and stored for future search and retrieval."
+            else:
+                result_text = "Error: ChromaDB server not initialized. Cannot index images into knowledge base."
         
         else:
             # Just extract text without indexing
@@ -1033,16 +1060,6 @@ async def main():
     """Run the primary agent with a given query."""
     log_info("MCP Agent Army - Multi-agent system using Model Context Protocol")
     log_info("Enter 'exit' to quit the program.")
-
-    # Initialize ChromaDB
-    log_info("Initializing ChromaDB vector store...")
-    try:
-        # This will create or load the existing database
-        chroma_server = ChromaDBServer()
-        log_info("ChromaDB initialized successfully!")
-    except Exception as e:
-        log_error(f"Error initializing ChromaDB: {str(e)}")
-        return
 
     # Use AsyncExitStack to manage all MCP servers in one context
     async with AsyncExitStack() as stack:
