@@ -48,18 +48,66 @@ def _compute_free_intervals(
     start_dt = datetime.combine(target_date, datetime.strptime(start_str, "%H:%M").time())
     end_dt = datetime.combine(target_date, datetime.strptime(end_str, "%H:%M").time())
     day_meetings: List[Tuple[datetime, datetime]] = []
+    
     for m in meetings:
         try:
-            st = datetime.fromisoformat(m["start"])
-            et = datetime.fromisoformat(m["end"])
-            if st.tzinfo:
-                st = st.astimezone(None).replace(tzinfo=None)
-            if et.tzinfo:
-                et = et.astimezone(None).replace(tzinfo=None)
+            # Handle new format with date, time, event
+            if "date" in m and "time" in m:
+                meeting_date_str = str(m["date"])
+                meeting_time_str = str(m["time"]).strip('"')  # Remove quotes if present
+                
+                # Parse the date
+                try:
+                    meeting_date = datetime.fromisoformat(meeting_date_str).date()
+                except ValueError:
+                    # Try alternative date format if needed
+                    continue
+                
+                # Only process meetings for the target date
+                if meeting_date != target_date:
+                    continue
+                
+                # Parse the time and create start datetime
+                try:
+                    meeting_time = datetime.strptime(meeting_time_str, "%H:%M").time()
+                    meeting_start = datetime.combine(meeting_date, meeting_time)
+                    # Assume 1 hour duration if not specified
+                    meeting_end = meeting_start + timedelta(hours=1)
+                    day_meetings.append((meeting_start, meeting_end))
+                except ValueError:
+                    # Skip meetings with invalid time format
+                    continue
+            
+            # Handle legacy format with start/end ISO strings
+            elif "start" in m and "end" in m:
+                # Handle both string and datetime object formats
+                start_val = m["start"]
+                end_val = m["end"]
+                
+                if isinstance(start_val, str):
+                    st = datetime.fromisoformat(start_val)
+                else:
+                    st = start_val  # Already a datetime object
+                    
+                if isinstance(end_val, str):
+                    et = datetime.fromisoformat(end_val)
+                else:
+                    et = end_val  # Already a datetime object
+                
+                # Convert to local time if timezone info present
+                if st.tzinfo:
+                    st = st.astimezone(None).replace(tzinfo=None)
+                if et.tzinfo:
+                    et = et.astimezone(None).replace(tzinfo=None)
+                
+                # Only process meetings for the target date (check after timezone conversion)
+                if st.date() == target_date:
+                    day_meetings.append((st, et))
+            
         except Exception:
+            # Skip malformed meeting entries
             continue
-        if st.date() == target_date:
-            day_meetings.append((st, et))
+    
     day_meetings.sort()
     free: List[Tuple[datetime, datetime]] = []
     current = start_dt
