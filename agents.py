@@ -23,8 +23,14 @@ import chromadb
 from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
 import json
 
-from src.crawler import run_crawler # Added import for the crawler
-from src.image_processor import run_image_processor, extract_text_from_image, parse_conversation_from_text, process_conversation_and_index # Added import for the image processor
+from src.crawler import run_crawler  # Added import for the crawler
+from src.image_processor import (
+    run_image_processor,
+    extract_text_from_image,
+    parse_conversation_from_text,
+    process_conversation_and_index,
+)
+from src.planner_agent import PlannerAgent
 
 # Removed incorrect relative import: from . import get_model
 
@@ -107,6 +113,9 @@ slack_agent = Agent(
     mcp_servers=[slack_server],
     instrument=False
 )
+
+# Planner agent (local Python logic)
+planner_agent = PlannerAgent()
 
 # ========== Create RAG agent with ChromaDB ==========
 class ChromaDBServer:
@@ -1022,11 +1031,18 @@ async def use_image_processor(query: str, image_paths: List[str] = None, image_u
                 result_text = "No text could be extracted from the provided images."
         
         return {"result": result_text}
-        
+
     except Exception as e:
         error_msg = f"Error during image processing: {str(e)}"
         log_error(error_msg)
         return {"result": error_msg}
+
+@primary_agent.tool_plain
+async def use_planner_agent(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Generate a markdown summary of yesterday and a plan for tomorrow."""
+    log_info("Calling Planner agent")
+    result = planner_agent.plan(payload)
+    return result
 
 # ========== Main execution function ==========
 async def main():
