@@ -1,0 +1,21 @@
+- id: ONBOARDING-1
+  title: hands on with the 686 / 674 form.
+  priority: high
+  estimate_hours:
+  due_date: 2025-06-03
+  status: in_progress
+  tags: [spike]
+- id: ONBOARDING-2
+  title: reads about Save in Progress menu
+  priority: high
+  estimate_hours:
+  due_date: 2025-06-03
+  status: in_progress
+  tags: [spike]
+- id: ONBOARDING-3
+  title: PIP Card
+  priority: high
+  estimate_hours: 5
+  due_date: 2025-05-30
+  status: completed
+  tags: [onboarding]
