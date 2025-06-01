@@ -25,6 +25,7 @@ import json
 
 from src.crawler import run_crawler # Added import for the crawler
 from src.image_processor import run_image_processor, extract_text_from_image, parse_conversation_from_text, process_conversation_and_index # Added import for the image processor
+from src.planner_agent import plan_day
 
 # Removed incorrect relative import: from . import get_model
 
@@ -758,6 +759,12 @@ async def use_rag_agent(query: str) -> dict[str, str]:
     log_info(f"Calling RAG agent with query: {query}")
     result = await rag_agent.run(query)
     return {"result": result.data}
+
+@primary_agent.tool_plain
+async def use_planner_agent(payload: dict) -> dict[str, str]:
+    """Generate daily plans using the Planner agent."""
+    log_info("Calling Planner agent")
+    return plan_day(payload)
 
 @primary_agent.tool_plain
 async def use_image_processor(query: str, image_paths: List[str] = None, image_urls: List[str] = None) -> dict[str, str]:
