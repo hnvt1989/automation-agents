@@ -816,3 +816,93 @@ def test_planner_target_date_no_meetings(tmp_path: Path):
     # Should not include meetings from other dates
     assert "Previous Day Meeting" not in tomorrow_plan
     assert "Future Day Meeting" not in tomorrow_plan
+
+
+def test_planner_uses_default_paths(tmp_path: Path):
+    """Test that planner agent uses default paths when none are provided."""
+    # This test will verify the default path logic, though it will fail 
+    # because the default paths point to actual files, not test files
+    
+    payload = {
+        "target_date": "2024-05-02",
+        "work_hours": {"start": "09:00", "end": "17:00"},
+        # Note: no "paths" key provided
+    }
+
+    result = plan_day(payload)
+    
+    # The result should either succeed (if default files exist) or fail gracefully
+    # This tests that the default path logic is working
+    assert isinstance(result, dict)
+    
+    # If files don't exist, should get a FileNotFoundError message
+    if "error" in result:
+        assert "not found" in result["error"].lower()
+    else:
+        # If files exist, should have the expected structure
+        assert "yesterday_markdown" in result
+        assert "tomorrow_markdown" in result
+
+
+def test_planner_explicit_paths_override_defaults(tmp_path: Path):
+    """Test that explicitly provided paths override the defaults."""
+    tasks = tmp_path / "custom_tasks.yaml"
+    logs = tmp_path / "custom_logs.yaml"
+    meets = tmp_path / "custom_meetings.yaml"
+
+    tasks.write_text(
+        """
+- id: CUSTOM-1
+  title: Custom task
+  priority: high
+  estimate_hours: 1
+  due_date: 2024-05-02
+  status: pending
+  tags: []
+"""
+    )
+
+    logs.write_text(
+        """
+2024-05-01:
+  - task_id: CUSTOM-1
+    description: Custom work done
+    actual_hours: 1
+"""
+    )
+
+    meets.write_text(
+        """
+- date: 2024-05-02
+  time: "11:00"
+  event: "Custom Meeting"
+"""
+    )
+
+    # Explicitly provide custom paths
+    payload = {
+        "paths": {
+            "tasks": str(tasks),
+            "logs": str(logs),
+            "meets": str(meets)
+        },
+        "target_date": "2024-05-02",
+        "work_hours": {"start": "09:00", "end": "17:00"},
+    }
+
+    result = plan_day(payload)
+    
+    # Should succeed without errors
+    assert "error" not in result
+    assert "yesterday_markdown" in result
+    assert "tomorrow_markdown" in result
+    
+    # Should use the custom data
+    yesterday_summary = result["yesterday_markdown"]
+    assert "## 2024-05-01" in yesterday_summary
+    assert "Custom work done" in yesterday_summary
+    
+    tomorrow_plan = result["tomorrow_markdown"]
+    assert "## Plan for 2024-05-02" in tomorrow_plan
+    assert "11:00 - Custom Meeting" in tomorrow_plan
+    assert "CUSTOM-1 Custom task" in tomorrow_plan

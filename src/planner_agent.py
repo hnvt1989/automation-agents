@@ -333,7 +333,13 @@ def _format_plan(plan: List[Tuple[datetime, datetime, Dict[str, Any]]], target_d
 
 def plan_day(payload: Dict[str, Any]) -> Dict[str, str]:
     try:
-        paths = payload["paths"]
+        # Use default paths if not provided
+        default_paths = {
+            'tasks': 'data/tasks.yaml',
+            'logs': 'data/daily_logs.yaml',
+            'meets': 'data/meetings.yaml'
+        }
+        paths = payload.get("paths", default_paths)
         target_date = datetime.fromisoformat(payload["target_date"]).date()
         work_hours = payload["work_hours"]
     except Exception as exc:
