@@ -83,6 +83,7 @@ typing_extensions==4.13.0
 urllib3==2.3.0
 uvicorn==0.34.0
 wcwidth==0.2.13
+fastapi==0.104.1
 wrapt==1.17.2
 zipp==3.21.0
 # For crawlers
