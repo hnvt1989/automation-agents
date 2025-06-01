@@ -25,6 +25,7 @@ import json
 
 from src.crawler import run_crawler # Added import for the crawler
 from src.image_processor import run_image_processor, extract_text_from_image, parse_conversation_from_text, process_conversation_and_index # Added import for the image processor
+from src.planner_agent import plan_day
 
 # Removed incorrect relative import: from . import get_model
 
@@ -758,6 +759,44 @@ async def use_rag_agent(query: str) -> dict[str, str]:
     log_info(f"Calling RAG agent with query: {query}")
     result = await rag_agent.run(query)
     return {"result": result.data}
+
+@primary_agent.tool_plain
+async def use_planner_agent(target_date: str = None) -> dict[str, str]:
+    """
+    Generate daily plans using the Planner agent.
+    
+    Use this tool when the user asks about:
+    - What to do today/tomorrow
+    - Daily planning
+    - Task scheduling
+    - Time management
+    - Creating a daily agenda
+    
+    Args:
+        target_date: The date to plan for in YYYY-MM-DD format. Defaults to today if not provided.
+    
+    Returns:
+        A dict with 'yesterday_markdown' (summary of yesterday's work) and 'tomorrow_markdown' (planned schedule).
+    """
+    log_info("Calling Planner agent")
+    
+    # If no date provided, use today's date
+    if target_date is None:
+        from datetime import date
+        target_date = date.today().isoformat()
+    
+    # Construct the payload with default paths
+    payload = {
+        'paths': {
+            'tasks': 'data/tasks.yaml',
+            'logs': 'data/daily_logs.yaml',
+            'meets': 'data/meetings.yaml'
+        },
+        'target_date': target_date,
+        'work_hours': {'start': '09:00', 'end': '17:00'}
+    }
+    
+    return plan_day(payload)
 
 @primary_agent.tool_plain
 async def use_image_processor(query: str, image_paths: List[str] = None, image_urls: List[str] = None) -> dict[str, str]:
