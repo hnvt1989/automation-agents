@@ -23,8 +23,9 @@ import chromadb
 from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
 import json
 
-from src.crawler import run_crawler # Added import for the crawler
-from src.image_processor import run_image_processor, extract_text_from_image, parse_conversation_from_text, process_conversation_and_index # Added import for the image processor
+from src.crawler import run_crawler  # Added import for the crawler
+from src.image_processor import run_image_processor, extract_text_from_image, parse_conversation_from_text, process_conversation_and_index  # Added import for the image processor
+from src.planner_agent import plan_day
 
 # Removed incorrect relative import: from . import get_model
 
@@ -637,6 +638,7 @@ primary_agent = Agent(
     - Test report analysis
     - Document indexing and RAG-based question answering
     - Image text extraction and OCR processing
+    - Daily planning through the Planner agent
     
     - **Image Processing Agent**: Extract text from images (screenshots, documents, diagrams) and optionally index the content into the knowledge base. Can also parse conversation logs from chat platform screenshots (Slack, Discord, Teams, etc.) and structure them as searchable conversation data. Can process multiple images concurrently and supports various formats including JPEG, PNG, GIF, BMP, TIFF, WebP. 
       - For text extraction: Use when users want to extract text from image files or URLs
@@ -1027,6 +1029,17 @@ async def use_image_processor(query: str, image_paths: List[str] = None, image_u
         error_msg = f"Error during image processing: {str(e)}"
         log_error(error_msg)
         return {"result": error_msg}
+
+@primary_agent.tool_plain
+async def use_planner_agent(payload_json: str) -> dict[str, str]:
+    """Generate a plan for the given date using the Planner agent."""
+    log_info("Calling Planner agent")
+    try:
+        payload = json.loads(payload_json)
+    except Exception:
+        return {"result": "Invalid JSON"}
+    result = plan_day(payload)
+    return {"result": json.dumps(result)}
 
 # ========== Main execution function ==========
 async def main():
