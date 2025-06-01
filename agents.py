@@ -29,6 +29,62 @@ from src.planner_agent import plan_day
 
 load_dotenv('local.env')
 
+# ========== Helper function to extract date context from user queries ==========
+def extract_date_from_query(query: str) -> str:
+    """
+    Extract date context from user queries.
+    
+    Args:
+        query: The user's query string
+        
+    Returns:
+        A date string that can be parsed by the planner agent
+    """
+    query_lower = query.lower().strip()
+    
+    # Direct date references
+    if "tomorrow" in query_lower:
+        return "tomorrow"
+    elif "yesterday" in query_lower:
+        return "yesterday"
+    elif "today" in query_lower:
+        return "today"
+    elif "next week" in query_lower:
+        return "next week"
+    elif "next monday" in query_lower:
+        return "next monday"
+    elif "this week" in query_lower:
+        return "this week"
+    elif "this monday" in query_lower:
+        return "this monday"
+    
+    # Try to find ISO date patterns (YYYY-MM-DD)
+    import re
+    iso_date_pattern = r'\b(\d{4}-\d{2}-\d{2})\b'
+    iso_match = re.search(iso_date_pattern, query)
+    if iso_match:
+        return iso_match.group(1)
+    
+    # Try to find other common date patterns
+    # MM/DD/YYYY or MM-DD-YYYY
+    us_date_pattern = r'\b(\d{1,2}[/-]\d{1,2}[/-]\d{4})\b'
+    us_match = re.search(us_date_pattern, query)
+    if us_match:
+        # Convert to ISO format if needed (this is basic conversion)
+        date_str = us_match.group(1)
+        try:
+            from datetime import datetime
+            if '/' in date_str:
+                parsed_date = datetime.strptime(date_str, '%m/%d/%Y')
+            else:
+                parsed_date = datetime.strptime(date_str, '%m-%d-%Y')
+            return parsed_date.date().isoformat()
+        except ValueError:
+            pass
+    
+    # Default to today if no date context found
+    return "today"
+
 # ========== Helper function to get model configuration ==========
 def get_model():
     llm = os.getenv('MODEL_CHOICE', 'gpt-4o-mini') # Defaulting to gpt-4o-mini as seen in README
@@ -658,12 +714,32 @@ primary_agent = Agent(
     - Test report analysis
     - Document indexing and RAG-based question answering
     - Image text extraction and OCR processing
+    - Daily planning and task scheduling
     
     - **Image Processing Agent**: Extract text from images (screenshots, documents, diagrams) and optionally index the content into the knowledge base. Can also parse conversation logs from chat platform screenshots (Slack, Discord, Teams, etc.) and structure them as searchable conversation data. Can process multiple images concurrently and supports various formats including JPEG, PNG, GIF, BMP, TIFF, WebP. 
       - For text extraction: Use when users want to extract text from image files or URLs
       - For conversation parsing: Use when users want to parse chat logs, conversation screenshots, or message histories from images
     
+    - **Planner Agent**: Generate daily plans and schedules based on tasks, meetings, and work hours. When users ask about planning, extract and pass the appropriate date context:
+      
+      **Date Extraction Examples:**
+      - "What should I do tomorrow?" → Extract "tomorrow" and call use_planner_agent(target_date="tomorrow")
+      - "Tell me what I should plan to do tomorrow" → Extract "tomorrow" and call use_planner_agent(target_date="tomorrow")
+      - "Plan for today" → Extract "today" and call use_planner_agent(target_date="today")
+      - "What's my schedule for yesterday?" → Extract "yesterday" and call use_planner_agent(target_date="yesterday")
+      - "What should I work on for 2024-01-15?" → Extract "2024-01-15" and call use_planner_agent(target_date="2024-01-15")
+      - "Planning for next week" → Extract "next week" and call use_planner_agent(target_date="next week")
+      
+      **Date Context Priorities:**
+      1. Look for explicit dates (YYYY-MM-DD format)
+      2. Look for relative terms: "tomorrow", "today", "yesterday", "next week", etc.
+      3. If no date context found in planning requests, default to "today"
+      
+      The planner agent handles all date parsing internally, so pass the extracted date reference as-is.
+    
     When users want to search for information in documents or need contextual answers, use the RAG agent.
+    
+    **Critical**: For ALL planning-related requests, analyze the user's query for temporal references and pass the appropriate date context to the planner agent. Never call the planner agent without considering what date the user is asking about.
     
     Analyze the user request and delegate the work to the appropriate subagent.""",
     instrument=False
@@ -794,16 +870,49 @@ async def use_planner_agent(target_date: str = None) -> dict[str, str]:
     
     Args:
         target_date: The date to plan for in YYYY-MM-DD format. Defaults to today if not provided.
+                    Also accepts relative date terms like "today", "tomorrow", "yesterday".
     
     Returns:
         A dict with 'yesterday_markdown' (summary of yesterday's work) and 'tomorrow_markdown' (planned schedule).
     """
     log_info("Calling Planner agent")
     
-    # If no date provided, use today's date
-    if target_date is None:
+    # Parse and resolve date references
+    if target_date is None or target_date.lower().strip() in ["today"]:
         from datetime import date
-        target_date = date.today().isoformat()
+        resolved_date = date.today()
+    elif target_date.lower().strip() == "tomorrow":
+        from datetime import date, timedelta
+        resolved_date = date.today() + timedelta(days=1)
+    elif target_date.lower().strip() == "yesterday":
+        from datetime import date, timedelta
+        resolved_date = date.today() - timedelta(days=1)
+    elif target_date.lower().strip() in ["next week", "next monday"]:
+        from datetime import date, timedelta
+        today = date.today()
+        days_ahead = 7 - today.weekday()  # Days until next Monday
+        if target_date.lower().strip() == "next week":
+            resolved_date = today + timedelta(days=days_ahead)
+        else:  # next monday
+            resolved_date = today + timedelta(days=days_ahead)
+    elif target_date.lower().strip() in ["this week", "this monday"]:
+        from datetime import date, timedelta
+        today = date.today()
+        days_back = today.weekday()  # Days since this Monday
+        resolved_date = today - timedelta(days=days_back)
+    else:
+        # Try to parse as ISO date format (YYYY-MM-DD)
+        try:
+            from datetime import datetime
+            resolved_date = datetime.fromisoformat(target_date).date()
+        except (ValueError, AttributeError):
+            # If parsing fails, default to today and log warning
+            from datetime import date
+            resolved_date = date.today()
+            log_warning(f"Could not parse date '{target_date}', defaulting to today")
+    
+    target_date_str = resolved_date.isoformat()
+    log_info(f"Resolved target date: {target_date_str}")
     
     # Construct the payload with default paths
     payload = {
@@ -812,7 +921,7 @@ async def use_planner_agent(target_date: str = None) -> dict[str, str]:
             'logs': 'data/daily_logs.yaml',
             'meets': 'data/meetings.yaml'
         },
-        'target_date': target_date,
+        'target_date': target_date_str,
         'work_hours': {'start': '09:00', 'end': '17:00'}
     }
     

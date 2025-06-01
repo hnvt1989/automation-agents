@@ -23,20 +23,97 @@ def _load_yaml(path: str) -> Any:
         return yaml.safe_load(fh)
 
 
-def _get_yesterday_summary(logs: Dict[str, Any], target_date: datetime.date) -> str:
-    yesterday = target_date - timedelta(days=1)
-    entries = logs.get(yesterday.isoformat(), []) or []
+def _get_yesterday_summary(logs: Dict[str, Any], target_date: datetime.date, meetings: List[Dict[str, Any]] = None) -> str:
+    # Find the latest entry in logs (most recent working day)
+    latest_date = None
+    latest_entries = []
+    
+    # Sort dates in descending order to find the most recent
+    available_dates = []
+    for date_str in logs.keys():
+        try:
+            date_obj = datetime.fromisoformat(str(date_str)).date()
+            # Only consider dates before the target date
+            if date_obj < target_date:
+                available_dates.append(date_obj)
+        except (ValueError, TypeError):
+            continue
+    
+    if available_dates:
+        # Get the most recent date before target_date
+        latest_date = max(available_dates)
+        latest_entries = logs.get(latest_date.isoformat(), []) or []
+    
+    # If no entries found, fall back to "yesterday" for the header
+    if not latest_date:
+        latest_date = target_date - timedelta(days=1)
+        latest_entries = []
+    
+    # Process work log entries
     bullets: List[str] = []
-    for entry in entries[:5]:
+    for entry in latest_entries[:5]:
         desc = str(entry.get("description", "")).strip()
         if not desc:
             continue
         words = desc.split()
         bullet = " ".join(words[:20])
         bullets.append(f"- {bullet}")
+    
+    # Process meetings for the same date
+    if meetings:
+        meeting_bullets = []
+        for meeting in meetings:
+            try:
+                meeting_date = None
+                meeting_title = ""
+                
+                # Handle new format with date, time, event
+                if "date" in meeting and "event" in meeting:
+                    meeting_date_str = str(meeting["date"])
+                    try:
+                        meeting_date = datetime.fromisoformat(meeting_date_str).date()
+                        meeting_title = str(meeting.get("event", "")).strip()
+                        if meeting.get("time"):
+                            time_str = str(meeting["time"]).strip('"')
+                            meeting_title = f"{time_str} - {meeting_title}"
+                    except ValueError:
+                        continue
+                
+                # Handle legacy format with start/end ISO strings
+                elif "start" in meeting and "title" in meeting:
+                    start_val = meeting["start"]
+                    if isinstance(start_val, str):
+                        meeting_datetime = datetime.fromisoformat(start_val)
+                    else:
+                        meeting_datetime = start_val
+                    
+                    # Convert to local time if timezone info present
+                    if meeting_datetime.tzinfo:
+                        meeting_datetime = meeting_datetime.astimezone(None).replace(tzinfo=None)
+                    
+                    meeting_date = meeting_datetime.date()
+                    meeting_title = str(meeting.get("title", "")).strip()
+                    # Add time info
+                    meeting_title = f"{meeting_datetime.strftime('%H:%M')} - {meeting_title}"
+                
+                # Only include meetings from the latest date
+                if meeting_date == latest_date and meeting_title:
+                    # Truncate long meeting titles
+                    words = meeting_title.split()
+                    meeting_bullet = " ".join(words[:15])
+                    meeting_bullets.append(f"- {meeting_bullet}")
+                    
+            except Exception:
+                # Skip malformed meeting entries
+                continue
+        
+        # Add meeting bullets to the summary (limit to 3 meetings)
+        if meeting_bullets:
+            bullets.extend(meeting_bullets[:3])
+    
     if not bullets:
         bullets.append("- No log entries")
-    return f"## {yesterday.isoformat()}\n" + "\n".join(bullets)
+    return f"## {latest_date.isoformat()}\n" + "\n".join(bullets)
 
 
 def _compute_free_intervals(
@@ -141,7 +218,18 @@ def _pack_tasks(
     plan: List[Tuple[datetime, datetime, Dict[str, Any]]] = []
     i = 0
     for task in tasks:
-        remaining = int(task.get("estimate_hours", 1))
+        # Handle None or missing estimate_hours values
+        estimate_hours = task.get("estimate_hours")
+        if estimate_hours is None or estimate_hours == "":
+            remaining = 1  # Default to 1 hour
+        else:
+            try:
+                remaining = int(estimate_hours)
+                if remaining <= 0:
+                    remaining = 1  # Ensure positive value
+            except (ValueError, TypeError):
+                remaining = 1  # Default to 1 hour if conversion fails
+        
         while remaining > 0 and i < len(free):
             st, et = free[i]
             span = (et - st).total_seconds() / 3600
@@ -161,16 +249,86 @@ def _pack_tasks(
     return plan
 
 
-def _format_plan(plan: List[Tuple[datetime, datetime, Dict[str, Any]]], target_date: datetime.date) -> str:
-    header = f"## Plan for {target_date.isoformat()}\n| Time | Task | Reason |\n| - | - | - |"
-    rows: List[str] = []
+def _get_target_date_meetings(meetings: List[Dict[str, Any]], target_date: datetime.date) -> List[str]:
+    """Get formatted meetings for the target date."""
+    meeting_list = []
+    
+    for meeting in meetings:
+        try:
+            meeting_date = None
+            meeting_title = ""
+            
+            # Handle new format with date, time, event
+            if "date" in meeting and "event" in meeting:
+                meeting_date_str = str(meeting["date"])
+                try:
+                    meeting_date = datetime.fromisoformat(meeting_date_str).date()
+                    meeting_title = str(meeting.get("event", "")).strip()
+                    if meeting.get("time"):
+                        time_str = str(meeting["time"]).strip('"')
+                        meeting_title = f"{time_str} - {meeting_title}"
+                except ValueError:
+                    continue
+            
+            # Handle legacy format with start/end ISO strings
+            elif "start" in meeting and "title" in meeting:
+                start_val = meeting["start"]
+                if isinstance(start_val, str):
+                    meeting_datetime = datetime.fromisoformat(start_val)
+                else:
+                    meeting_datetime = start_val
+                
+                # Convert to local time if timezone info present
+                if meeting_datetime.tzinfo:
+                    meeting_datetime = meeting_datetime.astimezone(None).replace(tzinfo=None)
+                
+                meeting_date = meeting_datetime.date()
+                meeting_title = str(meeting.get("title", "")).strip()
+                # Add time info
+                meeting_title = f"{meeting_datetime.strftime('%H:%M')} - {meeting_title}"
+            
+            # Only include meetings from the target date
+            if meeting_date == target_date and meeting_title:
+                meeting_list.append(meeting_title)
+                
+        except Exception:
+            # Skip malformed meeting entries
+            continue
+    
+    return sorted(meeting_list)  # Sort by time
+
+
+def _format_plan(plan: List[Tuple[datetime, datetime, Dict[str, Any]]], target_date: datetime.date, meetings: List[Dict[str, Any]] = None) -> str:
+    # Get meetings for the target date
+    target_meetings = _get_target_date_meetings(meetings or [], target_date)
+    
+    # Start with the header
+    content = [f"## Plan for {target_date.isoformat()}"]
+    
+    # Add meetings section if there are any
+    if target_meetings:
+        content.append("\n### Meetings")
+        for meeting in target_meetings:
+            content.append(f"- {meeting}")
+        content.append("")  # Empty line before tasks
+    
+    # Add tasks table
+    content.append("### Tasks")
+    content.append("| Time | Task | Reason |")
+    content.append("| - | - | - |")
+    
+    # Add task rows
+    task_rows = []
     for st, et, task in plan:
         block = f"{st.strftime('%H:%M')}-{et.strftime('%H:%M')}"
         reason = f"Priority {task.get('priority')}, due {task.get('due_date')}"
-        rows.append(f"| {block} | {task.get('id')} {task.get('title')} | {reason} |")
-    if not rows:
-        rows.append("No tasks scheduled.")
-    return header + "\n" + "\n".join(rows)
+        task_rows.append(f"| {block} | {task.get('id')} {task.get('title')} | {reason} |")
+    
+    if not task_rows:
+        task_rows.append("| - | No tasks scheduled | - |")
+    
+    content.extend(task_rows)
+    return "\n".join(content)
 
 
 def plan_day(payload: Dict[str, Any]) -> Dict[str, str]:
@@ -193,11 +351,15 @@ def plan_day(payload: Dict[str, Any]) -> Dict[str, str]:
     if not isinstance(tasks, list) or not isinstance(logs, dict) or not isinstance(meetings, list):
         return {"error": "Invalid YAML structure"}
 
-    yesterday_md = _get_yesterday_summary(logs, target_date)
-    pending = [t for t in tasks if t.get("status") != "done"]
+    yesterday_md = _get_yesterday_summary(logs, target_date, meetings)
+    
+    # Filter out completed tasks with any completion status
+    completion_statuses = {"done", "completed", "finished", "complete", "cancelled", "canceled"}
+    pending = [t for t in tasks if t.get("status", "").lower() not in completion_statuses]
+    
     pending.sort(key=lambda t: _score_task(t, target_date), reverse=True)
     free = _compute_free_intervals(meetings, target_date, work_hours["start"], work_hours["end"])
     plan = _pack_tasks(pending, free)
-    tomorrow_md = _format_plan(plan, target_date)
+    tomorrow_md = _format_plan(plan, target_date, meetings)
 
     return {"yesterday_markdown": yesterday_md, "tomorrow_markdown": tomorrow_md}
