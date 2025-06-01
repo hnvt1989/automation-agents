@@ -8,6 +8,7 @@ from rich.console import Console
 from rich.live import Live
 
 from src.log_utils import log_info, log_warning, log_error
+from src.planner_agent import PlannerAgent
 import asyncio
 import os
 import pathlib
@@ -107,6 +108,19 @@ slack_agent = Agent(
     mcp_servers=[slack_server],
     instrument=False
 )
+
+# Planner agent
+planner_agent_core = PlannerAgent()
+planner_agent = Agent(
+    get_model(),
+    system_prompt="You are a planning specialist that creates daily summaries and schedules.",
+    instrument=False,
+)
+
+@planner_agent.tool_plain
+async def generate_plan(payload: dict) -> dict[str, str]:
+    """Generate a plan and summary for the target date."""
+    return planner_agent_core.run(payload)
 
 # ========== Create RAG agent with ChromaDB ==========
 class ChromaDBServer:
@@ -1027,6 +1041,13 @@ async def use_image_processor(query: str, image_paths: List[str] = None, image_u
         error_msg = f"Error during image processing: {str(e)}"
         log_error(error_msg)
         return {"result": error_msg}
+
+@primary_agent.tool_plain
+async def use_planner_agent(payload: dict) -> dict[str, str]:
+    """Generate a daily plan using the Planner agent."""
+    log_info("Calling Planner agent")
+    result = await planner_agent.run(payload)
+    return {"result": json.dumps(result)}
 
 # ========== Main execution function ==========
 async def main():
