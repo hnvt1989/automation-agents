@@ -1,12 +1,8 @@
-import sys
 from pathlib import Path
 import yaml
 import pytest
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT))
-
-from src.calendar_parser import parse_calendar_from_text, save_events_yaml, save_events_simplified_yaml, parse_calendar_from_image, save_parsed_events_yaml
+from src.processors.calendar import parse_calendar_from_text, save_events_yaml, save_events_simplified_yaml, parse_calendar_from_image, save_parsed_events_yaml
 
 
 def test_parse_calendar_and_save(tmp_path: Path):

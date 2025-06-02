@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 from dotenv import load_dotenv
 import hashlib
 
-from src.log_utils import log_info, log_warning, log_error
+from src.utils.logging import log_info, log_warning, log_error
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 from openai import AsyncOpenAI

@@ -6,7 +6,7 @@ from rich.markdown import Markdown
 from rich.console import Console
 from rich.live import Live
 
-from src.log_utils import log_info, log_warning, log_error
+from src.utils.logging import log_info, log_warning, log_error
 import asyncio
 import os
 import pathlib
@@ -21,9 +21,9 @@ import chromadb
 from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
 import json
 
-from src.crawler import run_crawler # Added import for the crawler
-from src.image_processor import run_image_processor, extract_text_from_image, parse_conversation_from_text, process_conversation_and_index # Added import for the image processor
-from src.planner_agent import plan_day
+from src.processors.crawler import run_crawler # Added import for the crawler
+from src.processors.image import run_image_processor, extract_text_from_image, parse_conversation_from_text, process_conversation_and_index # Added import for the image processor
+from src.agents.planner import plan_day
 
 # Removed incorrect relative import: from . import get_model
 

@@ -15,7 +15,7 @@ from PIL import Image
 import io
 import re
 
-from src.log_utils import log_info, log_warning, log_error
+from src.utils.logging import log_info, log_warning, log_error
 
 from openai import AsyncOpenAI
 import chromadb

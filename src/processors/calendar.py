@@ -10,7 +10,7 @@ import os
 import base64
 from openai import AsyncOpenAI
 
-from .image_processor import extract_text_from_image
+from .image import extract_text_from_image
 
 # Initialize OpenAI client for vision processing
 openai_client = None

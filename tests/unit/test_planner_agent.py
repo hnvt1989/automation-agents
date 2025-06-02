@@ -2,13 +2,7 @@ import json
 from datetime import date, timedelta
 from pathlib import Path
 
-import sys
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT))
-
-from src.planner_agent import plan_day
+from src.agents.planner import plan_day
 
 
 def test_planner_success(tmp_path: Path):
