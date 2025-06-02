@@ -857,75 +857,212 @@ async def use_rag_agent(query: str) -> dict[str, str]:
     return {"result": result.data}
 
 @primary_agent.tool_plain
-async def use_planner_agent(target_date: str = None) -> dict[str, str]:
+async def use_planner_agent(query: str = None, target_date: str = None) -> dict[str, Any]:
     """
-    Generate daily plans using the Planner agent.
+    Interact with the Planner agent for daily planning or managing entries in YAML files.
     
     Use this tool when the user asks about:
-    - What to do today/tomorrow
-    - Daily planning
-    - Task scheduling
-    - Time management
-    - Creating a daily agenda
+    - What to do today/tomorrow (planning)
+    - Daily planning or task scheduling
+    - Adding/removing tasks to/from the task list
+    - Scheduling/canceling meetings
+    - Logging/removing work done
+    
+    Examples for adding:
+    - "What should I do tomorrow?" -> generates daily plan
+    - "Add task: finish the report by next week" -> adds to tasks.yaml
+    - "Schedule meeting: team standup tomorrow at 10am" -> adds to meetings.yaml
+    - "Log work: spent 3 hours on TASK-1 implementing the API" -> adds to daily_logs.yaml
+    
+    Examples for removing:
+    - "Remove task TASK-1" -> removes task from tasks.yaml
+    - "Cancel meeting tomorrow at 10am" -> removes meeting from meetings.yaml
+    - "Delete meeting: standup tomorrow" -> removes matching meeting
+    - "Remove log for TASK-1 yesterday" -> removes specific log entry
+    - "Delete all logs for today" -> removes all logs for a date
     
     Args:
-        target_date: The date to plan for in YYYY-MM-DD format. Defaults to today if not provided.
-                    Also accepts relative date terms like "today", "tomorrow", "yesterday".
+        query: The user's request (for adding/removing entries or general planning queries)
+        target_date: The date to plan for in YYYY-MM-DD format. Used for planning requests.
     
     Returns:
-        A dict with 'yesterday_markdown' (summary of yesterday's work) and 'tomorrow_markdown' (planned schedule).
+        A dict with either planning results or confirmation of added/removed entries.
     """
-    log_info("Calling Planner agent")
+    from src.agents.planner import insert_task, insert_meeting, insert_daily_log, remove_task, remove_meeting, remove_daily_log
     
-    # Parse and resolve date references
-    if target_date is None or target_date.lower().strip() in ["today"]:
-        from datetime import date
-        resolved_date = date.today()
-    elif target_date.lower().strip() == "tomorrow":
-        from datetime import date, timedelta
-        resolved_date = date.today() + timedelta(days=1)
-    elif target_date.lower().strip() == "yesterday":
-        from datetime import date, timedelta
-        resolved_date = date.today() - timedelta(days=1)
-    elif target_date.lower().strip() in ["next week", "next monday"]:
-        from datetime import date, timedelta
-        today = date.today()
-        days_ahead = 7 - today.weekday()  # Days until next Monday
-        if target_date.lower().strip() == "next week":
-            resolved_date = today + timedelta(days=days_ahead)
-        else:  # next monday
-            resolved_date = today + timedelta(days=days_ahead)
-    elif target_date.lower().strip() in ["this week", "this monday"]:
-        from datetime import date, timedelta
-        today = date.today()
-        days_back = today.weekday()  # Days since this Monday
-        resolved_date = today - timedelta(days=days_back)
-    else:
-        # Try to parse as ISO date format (YYYY-MM-DD)
-        try:
-            from datetime import datetime
-            resolved_date = datetime.fromisoformat(target_date).date()
-        except (ValueError, AttributeError):
-            # If parsing fails, default to today and log warning
+    log_info(f"Calling Planner agent with query: {query}")
+    
+    # If no query provided, it's a planning request
+    if not query:
+        log_info("No query provided, generating daily plan")
+        # Parse and resolve date references
+        if target_date is None or target_date.lower().strip() in ["today"]:
             from datetime import date
             resolved_date = date.today()
-            log_warning(f"Could not parse date '{target_date}', defaulting to today")
+        elif target_date.lower().strip() == "tomorrow":
+            from datetime import date, timedelta
+            resolved_date = date.today() + timedelta(days=1)
+        elif target_date.lower().strip() == "yesterday":
+            from datetime import date, timedelta
+            resolved_date = date.today() - timedelta(days=1)
+        elif target_date.lower().strip() in ["next week", "next monday"]:
+            from datetime import date, timedelta
+            today = date.today()
+            days_ahead = 7 - today.weekday()  # Days until next Monday
+            if target_date.lower().strip() == "next week":
+                resolved_date = today + timedelta(days=days_ahead)
+            else:  # next monday
+                resolved_date = today + timedelta(days=days_ahead)
+        elif target_date.lower().strip() in ["this week", "this monday"]:
+            from datetime import date, timedelta
+            today = date.today()
+            days_back = today.weekday()  # Days since this Monday
+            resolved_date = today - timedelta(days=days_back)
+        else:
+            # Try to parse as ISO date format (YYYY-MM-DD)
+            try:
+                from datetime import datetime
+                resolved_date = datetime.fromisoformat(target_date).date()
+            except (ValueError, AttributeError):
+                # If parsing fails, default to today and log warning
+                from datetime import date
+                resolved_date = date.today()
+                log_warning(f"Could not parse date '{target_date}', defaulting to today")
+        
+        target_date_str = resolved_date.isoformat()
+        log_info(f"Resolved target date: {target_date_str}")
+        
+        # Construct the payload with default paths
+        payload = {
+            'paths': {
+                'tasks': 'data/tasks.yaml',
+                'logs': 'data/daily_logs.yaml',
+                'meets': 'data/meetings.yaml'
+            },
+            'target_date': target_date_str,
+            'work_hours': {'start': '09:00', 'end': '17:00'}
+        }
+        
+        return plan_day(payload)
     
-    target_date_str = resolved_date.isoformat()
-    log_info(f"Resolved target date: {target_date_str}")
+    # Otherwise, analyze the query to determine the action
+    query_lower = query.lower()
     
-    # Construct the payload with default paths
-    payload = {
-        'paths': {
-            'tasks': 'data/tasks.yaml',
-            'logs': 'data/daily_logs.yaml',
-            'meets': 'data/meetings.yaml'
-        },
-        'target_date': target_date_str,
-        'work_hours': {'start': '09:00', 'end': '17:00'}
-    }
+    # Check if it's a task insertion request
+    if any(keyword in query_lower for keyword in ['add task', 'new task', 'create task', 'task:']):
+        # Extract the task description
+        task_text = query
+        for prefix in ['add task:', 'new task:', 'create task:', 'task:']:
+            if prefix in query_lower:
+                task_text = query[query_lower.find(prefix) + len(prefix):].strip()
+                break
+        
+        result = insert_task(task_text)
+        if result.get("success"):
+            return {"result": f"Task added successfully: {result['task']['title']} (ID: {result['task']['id']}, Due: {result['task']['due_date']})"}
+        else:
+            return {"error": result.get("error", "Failed to add task")}
     
-    return plan_day(payload)
+    # Check if it's a meeting insertion request
+    elif any(keyword in query_lower for keyword in ['add meeting', 'schedule meeting', 'new meeting', 'meeting:', 'schedule:']):
+        # Extract the meeting description
+        meeting_text = query
+        for prefix in ['add meeting:', 'schedule meeting:', 'new meeting:', 'meeting:', 'schedule:']:
+            if prefix in query_lower:
+                meeting_text = query[query_lower.find(prefix) + len(prefix):].strip()
+                break
+        
+        result = insert_meeting(meeting_text)
+        if result.get("success"):
+            meeting = result['meeting']
+            return {"result": f"Meeting scheduled: {meeting['event']} on {meeting['date']} at {meeting['time']}"}
+        else:
+            return {"error": result.get("error", "Failed to schedule meeting")}
+    
+    # Check if it's a daily log insertion request
+    elif any(keyword in query_lower for keyword in ['log work', 'add log', 'work log', 'spent', 'worked on']):
+        # Extract task ID and hours from the query
+        import re
+        
+        # Try to find task ID pattern (e.g., TASK-1, ONBOARDING-1)
+        task_id_match = re.search(r'\b([A-Z]+-\d+)\b', query)
+        if not task_id_match:
+            return {"error": "Could not find task ID in the query. Please specify a task ID like 'TASK-1' or 'ONBOARDING-1'"}
+        
+        task_id = task_id_match.group(1)
+        
+        # Try to find hours pattern
+        hours_match = re.search(r'(\d+(?:\.\d+)?)\s*hours?', query_lower)
+        if not hours_match:
+            return {"error": "Could not find hours in the query. Please specify hours like '3 hours' or '2.5 hours'"}
+        
+        hours = float(hours_match.group(1))
+        
+        # Use the full query as the description
+        result = insert_daily_log(query, task_id, hours)
+        if result.get("success"):
+            return {"result": f"Work logged: {hours} hours on {task_id} for date {result['date']}"}
+        else:
+            return {"error": result.get("error", "Failed to log work")}
+    
+    # Check if it's a task removal request
+    elif any(keyword in query_lower for keyword in ['remove task', 'delete task', 'cancel task']):
+        # Extract task ID
+        import re
+        task_id_match = re.search(r'\b([A-Z]+-\d+)\b', query)
+        if not task_id_match:
+            return {"error": "Could not find task ID in the query. Please specify a task ID like 'TASK-1'"}
+        
+        task_id = task_id_match.group(1)
+        result = remove_task(task_id)
+        if result.get("success"):
+            return {"result": result["message"]}
+        else:
+            return {"error": result.get("error", "Failed to remove task")}
+    
+    # Check if it's a meeting removal request
+    elif any(keyword in query_lower for keyword in ['remove meeting', 'delete meeting', 'cancel meeting']):
+        # Extract the meeting details from query
+        meeting_query = query
+        for prefix in ['remove meeting:', 'delete meeting:', 'cancel meeting:', 'remove meeting', 'delete meeting', 'cancel meeting']:
+            if prefix in query_lower:
+                # Get everything after the prefix
+                idx = query_lower.find(prefix) + len(prefix)
+                meeting_query = query[idx:].strip()
+                if meeting_query.startswith(':'):
+                    meeting_query = meeting_query[1:].strip()
+                break
+        
+        result = remove_meeting(meeting_query)
+        if result.get("success"):
+            return {"result": result["message"]}
+        else:
+            return {"error": result.get("error", "Failed to remove meeting")}
+    
+    # Check if it's a daily log removal request
+    elif any(keyword in query_lower for keyword in ['remove log', 'delete log', 'remove work log', 'delete work log']):
+        # Extract task ID if specified
+        import re
+        task_id_match = re.search(r'\b([A-Z]+-\d+)\b', query)
+        task_id = task_id_match.group(1) if task_id_match else None
+        
+        result = remove_daily_log(query, task_id)
+        if result.get("success"):
+            return {"result": result["message"]}
+        else:
+            return {"error": result.get("error", "Failed to remove log")}
+    
+    # If it's a planning-related query, generate the plan
+    elif any(keyword in query_lower for keyword in ['plan', 'schedule', 'agenda', 'what to do', 'what should i do']):
+        # Extract date from the query if present
+        date_to_plan = extract_date_from_query(query)
+        return await use_planner_agent(query=None, target_date=date_to_plan)
+    
+    # Default: assume it's a planning request
+    else:
+        log_info("Treating as planning request")
+        date_to_plan = extract_date_from_query(query)
+        return await use_planner_agent(query=None, target_date=date_to_plan)
 
 @primary_agent.tool_plain
 async def use_image_processor(query: str, image_paths: List[str] = None, image_urls: List[str] = None) -> dict[str, str]:

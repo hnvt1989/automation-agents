@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime, timedelta
 from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Optional
 
 import yaml
 
@@ -21,6 +22,16 @@ def _load_yaml(path: str) -> Any:
         raise FileNotFoundError(f"YAML file not found: {path}")
     with open(path, "r", encoding="utf-8") as fh:
         return yaml.safe_load(fh)
+
+
+def _save_yaml(path: str, data: Any) -> None:
+    """Save data to a YAML file."""
+    # Convert datetime.date keys to strings for consistency
+    if isinstance(data, dict):
+        data = {str(k): v for k, v in data.items()}
+    
+    with open(path, "w", encoding="utf-8") as fh:
+        yaml.dump(data, fh, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
 
 def _get_yesterday_summary(logs: Dict[str, Any], target_date: datetime.date, meetings: List[Dict[str, Any]] = None) -> str:
@@ -329,6 +340,727 @@ def _format_plan(plan: List[Tuple[datetime, datetime, Dict[str, Any]]], target_d
     
     content.extend(task_rows)
     return "\n".join(content)
+
+
+def _parse_natural_language_date(text: str, reference_date: Optional[datetime.date] = None) -> Optional[datetime.date]:
+    """Parse natural language date expressions."""
+    if reference_date is None:
+        reference_date = datetime.now().date()
+    
+    text_lower = text.lower().strip()
+    
+    # Direct date patterns
+    date_patterns = [
+        (r'(\d{4})-(\d{1,2})-(\d{1,2})', lambda m: datetime(int(m.group(1)), int(m.group(2)), int(m.group(3))).date()),
+        (r'(\d{1,2})/(\d{1,2})/(\d{4})', lambda m: datetime(int(m.group(3)), int(m.group(1)), int(m.group(2))).date()),
+    ]
+    
+    for pattern, parser in date_patterns:
+        match = re.search(pattern, text)
+        if match:
+            try:
+                return parser(match)
+            except ValueError:
+                continue
+    
+    # Relative date patterns
+    if "today" in text_lower:
+        return reference_date
+    elif "tomorrow" in text_lower:
+        return reference_date + timedelta(days=1)
+    elif "yesterday" in text_lower:
+        return reference_date - timedelta(days=1)
+    
+    # Week-based patterns
+    if "next week" in text_lower:
+        return reference_date + timedelta(weeks=1)
+    elif "this week" in text_lower:
+        # Return next Monday
+        days_ahead = 0 - reference_date.weekday()
+        if days_ahead < 0:
+            days_ahead += 7
+        return reference_date + timedelta(days=days_ahead)
+    
+    # Day count patterns
+    days_match = re.search(r'in (\d+) days?', text_lower)
+    if days_match:
+        return reference_date + timedelta(days=int(days_match.group(1)))
+    
+    # Default to a week from now if no pattern matches
+    return reference_date + timedelta(weeks=1)
+
+
+def _parse_natural_language_time(text: str) -> Optional[str]:
+    """Parse natural language time expressions to HH:MM format."""
+    text_lower = text.lower().strip()
+    
+    # Direct time patterns
+    time_patterns = [
+        (r'(\d{1,2}):(\d{2})\s*(am|pm)?', lambda m: _format_time(m)),
+        (r'(\d{1,2})\s*(am|pm)', lambda m: f"{_convert_12_to_24(int(m.group(1)), m.group(2)):02d}:00"),
+    ]
+    
+    for pattern, parser in time_patterns:
+        match = re.search(pattern, text_lower)
+        if match:
+            return parser(match)
+    
+    # Named time patterns - check for more specific patterns first
+    if "afternoon" in text_lower:
+        return "14:00"
+    elif "morning" in text_lower:
+        return "09:00"
+    elif "noon" in text_lower:
+        return "12:00"
+    elif "evening" in text_lower:
+        return "18:00"
+    elif "night" in text_lower:
+        return "20:00"
+    
+    return None
+
+
+def _format_time(match) -> str:
+    """Format time match to HH:MM."""
+    hour = int(match.group(1))
+    minute = int(match.group(2))
+    ampm = match.group(3)
+    
+    if ampm:
+        hour = _convert_12_to_24(hour, ampm)
+    
+    return f"{hour:02d}:{minute:02d}"
+
+
+def _convert_12_to_24(hour: int, ampm: str) -> int:
+    """Convert 12-hour format to 24-hour format."""
+    if ampm == "pm" and hour != 12:
+        return hour + 12
+    elif ampm == "am" and hour == 12:
+        return 0
+    return hour
+
+
+def _parse_priority(text: str) -> str:
+    """Extract priority from natural language."""
+    text_lower = text.lower()
+    
+    # Direct priority mentions
+    if "high priority" in text_lower or "priority: high" in text_lower or "priority high" in text_lower:
+        return "high"
+    elif "medium priority" in text_lower or "priority: medium" in text_lower or "priority medium" in text_lower:
+        return "medium"
+    elif "low priority" in text_lower or "priority: low" in text_lower or "priority low" in text_lower:
+        return "low"
+    
+    # Check for low priority keywords (before high to catch "not urgent")
+    if any(word in text_lower for word in ["whenever", "not urgent"]):
+        return "low"
+    
+    # Check for high priority keywords
+    elif any(word in text_lower for word in ["urgent", "critical", "important", "asap"]):
+        return "high"
+    
+    return "medium"
+
+
+def _generate_task_id(tasks: List[Dict[str, Any]], prefix: str = "TASK") -> str:
+    """Generate a unique task ID."""
+    existing_ids = [task.get("id", "") for task in tasks]
+    counter = 1
+    while f"{prefix}-{counter}" in existing_ids:
+        counter += 1
+    return f"{prefix}-{counter}"
+
+
+def insert_task(text: str, paths: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    """Insert a new task from natural language text."""
+    if paths is None:
+        paths = {'tasks': 'data/tasks.yaml'}
+    
+    try:
+        tasks = _load_yaml(paths["tasks"]) or []
+        if not isinstance(tasks, list):
+            return {"error": "Invalid tasks file structure"}
+        
+        # Extract the actual task title by removing metadata
+        title_text = text.strip()
+        
+        # Remove quotes around the entire text if present
+        if (title_text.startswith('"') and title_text.endswith('"')) or \
+           (title_text.startswith("'") and title_text.endswith("'")):
+            title_text = title_text[1:-1]
+        
+        # Remove "with tag" or "with tags" phrases and everything after
+        title_text = re.sub(r'\s+with\s+tags?\s+.*$', '', title_text, flags=re.IGNORECASE)
+        
+        # Remove priority indicators
+        title_text = re.sub(r'\s*(,\s*)?(and\s+)?(high|medium|low)\s+priority\s*$', '', title_text, flags=re.IGNORECASE)
+        title_text = re.sub(r'\s*priority:\s*(high|medium|low)\s*$', '', title_text, flags=re.IGNORECASE)
+        
+        # Remove standalone priority keywords that are likely metadata
+        if title_text.endswith(' urgent') or title_text.endswith(' critical') or title_text.endswith(' important'):
+            # Only remove if it's at the end and likely metadata
+            title_text = re.sub(r'\s+(urgent|critical|important)\s*$', '', title_text, flags=re.IGNORECASE)
+        
+        # Remove tag indicators
+        title_text = re.sub(r'\s+#\w+', '', title_text)  # Remove hashtags
+        title_text = re.sub(r'\s+tags?:\s*[\w,\s]+$', '', title_text, flags=re.IGNORECASE)  # Remove "tag: word" at end
+        
+        # Remove hour estimates
+        title_text = re.sub(r'\s+\d+(?:\.\d+)?\s*hours?\s*', ' ', title_text, flags=re.IGNORECASE)
+        
+        # Remove due date references
+        title_text = re.sub(r'\s+by\s+(tomorrow|today|yesterday|next\s+week)\s*$', '', title_text, flags=re.IGNORECASE)
+        title_text = re.sub(r'\s+due\s+(tomorrow|today|yesterday|next\s+week)\s*$', '', title_text, flags=re.IGNORECASE)
+        title_text = re.sub(r'\s+by\s+\d{4}-\d{1,2}-\d{1,2}\s*$', '', title_text, flags=re.IGNORECASE)
+        title_text = re.sub(r'\s+in\s+\d+\s+days?\s*$', '', title_text, flags=re.IGNORECASE)
+        
+        # Clean up extra whitespace
+        title_text = re.sub(r'\s+', ' ', title_text).strip()
+        
+        # Remove trailing punctuation that might be left over
+        title_text = title_text.rstrip(',;:')
+        
+        # Remove quotes if they're around the title
+        title_text = title_text.strip('"\'')
+        
+        # Handle nested quotes (e.g., "'title'" becomes "title")
+        if (title_text.startswith('"') and title_text.endswith('"')) or \
+           (title_text.startswith("'") and title_text.endswith("'")):
+            title_text = title_text[1:-1]
+        
+        # If title is empty after cleaning, use a default
+        if not title_text:
+            title_text = "New task"
+        
+        # Parse the natural language input
+        task = {
+            "id": _generate_task_id(tasks),
+            "title": title_text,
+            "priority": _parse_priority(text),
+            "status": "pending",
+            "tags": []
+        }
+        
+        # Extract due date
+        due_date = _parse_natural_language_date(text)
+        task["due_date"] = due_date.isoformat()
+        
+        # Extract estimated hours if mentioned
+        hours_match = re.search(r'(\d+(?:\.\d+)?)\s*hours?', text.lower())
+        if hours_match:
+            task["estimate_hours"] = float(hours_match.group(1))
+        
+        # Extract tags if mentioned
+        tag_matches = []
+        
+        # Pattern 1: #tag format
+        tag_matches.extend(re.findall(r'#(\w+)', text))
+        
+        # Pattern 2: "tags: word1, word2" or "tag: word"
+        tags_colon_match = re.search(r'\btags?:\s*([^,\s]+(?:\s*,\s*[^,\s]+)*)', text, re.IGNORECASE)
+        if tags_colon_match:
+            tags_str = tags_colon_match.group(1)
+            # Split by comma and clean each tag
+            tags = [t.strip().strip('"\'') for t in tags_str.split(',')]
+            tag_matches.extend(tags)
+        
+        # Pattern 3: "with tag(s) word1 and word2" or "with tag word"
+        with_tags_match = re.search(r'\bwith\s+tags?\s+(.+?)(?:\s+(?:and|,)\s+(.+?))?(?:\s+and\s+|,|$)', text, re.IGNORECASE)
+        if with_tags_match:
+            # Get all captured groups
+            for i in range(1, len(with_tags_match.groups()) + 1):
+                tag = with_tags_match.group(i)
+                if tag:
+                    # Clean the tag
+                    tag = tag.strip().strip('"\'')
+                    # Remove any trailing priority/hour indicators
+                    tag = re.sub(r'\s*(high|medium|low)?\s*priority.*$', '', tag, flags=re.IGNORECASE)
+                    tag = re.sub(r'\s*\d+\s*hours?.*$', '', tag, flags=re.IGNORECASE)
+                    if tag and tag not in ['and', ',']:
+                        tag_matches.append(tag)
+        
+        # Pattern 4: standalone "tag 'word'"
+        single_tag_matches = re.findall(r'\btag\s+[\'"]?(\w+)[\'"]?', text, re.IGNORECASE)
+        tag_matches.extend(single_tag_matches)
+        
+        if tag_matches:
+            # Convert to lowercase and remove duplicates
+            task["tags"] = list(set(tag.lower() for tag in tag_matches))
+        
+        # Add the task and save
+        tasks.append(task)
+        _save_yaml(paths["tasks"], tasks)
+        
+        return {"success": True, "task": task}
+    
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def insert_meeting(text: str, paths: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    """Insert a new meeting from natural language text."""
+    if paths is None:
+        paths = {'meets': 'data/meetings.yaml'}
+    
+    try:
+        meetings = _load_yaml(paths["meets"])
+        if meetings is None:
+            meetings = []
+        elif not isinstance(meetings, list):
+            return {"error": "Invalid meetings file structure"}
+        
+        # Parse date and time
+        meeting_date = _parse_natural_language_date(text)
+        meeting_time = _parse_natural_language_time(text)
+        
+        if not meeting_time:
+            # Default to 10:00 if no time specified
+            meeting_time = "10:00"
+        
+        # Extract meeting title/event
+        # Remove date/time references from the text to get cleaner event name
+        event_text = text
+        for pattern in [r'\d{4}-\d{1,2}-\d{1,2}', r'\d{1,2}:\d{2}', r'\b(today|tomorrow|yesterday)\b', 
+                       r'\b(at|on|in)\s+\d+', r'\b\d+\s*(am|pm)\b', r'\bin\s+\d+\s+days?\b']:
+            event_text = re.sub(pattern, '', event_text, flags=re.IGNORECASE)
+        
+        event_text = ' '.join(event_text.split()).strip()
+        if not event_text:
+            event_text = "Meeting"
+        
+        meeting = {
+            "date": meeting_date.isoformat(),
+            "time": meeting_time,
+            "event": event_text
+        }
+        
+        meetings.append(meeting)
+        _save_yaml(paths["meets"], meetings)
+        
+        return {"success": True, "meeting": meeting}
+    
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def insert_daily_log(text: str, task_id: str, hours: float, paths: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    """Insert a new daily log entry."""
+    if paths is None:
+        paths = {'logs': 'data/daily_logs.yaml'}
+    
+    try:
+        logs = _load_yaml(paths["logs"]) or {}
+        if not isinstance(logs, dict):
+            return {"error": "Invalid daily logs file structure"}
+        
+        # Convert any date keys to strings for consistency
+        logs = {str(k): v for k, v in logs.items()}
+        
+        # Use today's date by default
+        log_date = datetime.now().date().isoformat()
+        
+        # Check if date is mentioned in text
+        date_in_text = _parse_natural_language_date(text)
+        # Only override if it's a different date (yesterday, specific date, etc.)
+        if date_in_text and (date_in_text < datetime.now().date() or 
+                           "yesterday" in text.lower() or 
+                           re.search(r'\d{4}-\d{1,2}-\d{1,2}', text)):
+            log_date = date_in_text.isoformat()
+        
+        # Create log entry
+        log_entry = {
+            "task_id": task_id,
+            "description": text.strip(),
+            "actual_hours": hours
+        }
+        
+        # Add to logs
+        if log_date not in logs:
+            logs[log_date] = []
+        logs[log_date].append(log_entry)
+        
+        _save_yaml(paths["logs"], logs)
+        
+        return {"success": True, "log": log_entry, "date": log_date}
+    
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def remove_task(task_id: str, paths: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    """Remove a task by its ID."""
+    if paths is None:
+        paths = {'tasks': 'data/tasks.yaml'}
+    
+    try:
+        tasks = _load_yaml(paths["tasks"]) or []
+        if not isinstance(tasks, list):
+            return {"error": "Invalid tasks file structure"}
+        
+        # Find and remove the task
+        original_count = len(tasks)
+        tasks = [task for task in tasks if task.get("id") != task_id]
+        
+        if len(tasks) == original_count:
+            return {"error": f"Task with ID '{task_id}' not found"}
+        
+        # Save updated tasks
+        _save_yaml(paths["tasks"], tasks)
+        
+        return {"success": True, "message": f"Task '{task_id}' removed successfully"}
+    
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def remove_meeting(query: str, paths: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    """Remove a meeting based on natural language query."""
+    if paths is None:
+        paths = {'meets': 'data/meetings.yaml'}
+    
+    try:
+        meetings = _load_yaml(paths["meets"]) or []
+        if not isinstance(meetings, list):
+            return {"error": "Invalid meetings file structure"}
+        
+        if not meetings:
+            return {"error": "No meetings found"}
+        
+        # Parse date from query
+        target_date = _parse_natural_language_date(query)
+        target_date_str = target_date.isoformat()
+        
+        # Look for time in query
+        target_time = _parse_natural_language_time(query)
+        
+        # Find matching meetings
+        removed_meetings = []
+        remaining_meetings = []
+        
+        for meeting in meetings:
+            meeting_date = meeting.get("date", "")
+            meeting_time = meeting.get("time", "")
+            meeting_event = meeting.get("event", "").lower()
+            
+            # Check if this meeting matches the criteria
+            date_match = meeting_date == target_date_str
+            time_match = not target_time or meeting_time == target_time
+            
+            # Check if any keywords from the query match the event
+            query_lower = query.lower()
+            event_match = any(word in meeting_event for word in query_lower.split() 
+                            if word not in ["remove", "delete", "cancel", "at", "on", "meeting"])
+            
+            if date_match and time_match and (not event_match or event_match):
+                removed_meetings.append(meeting)
+            else:
+                remaining_meetings.append(meeting)
+        
+        if not removed_meetings:
+            return {"error": f"No meetings found matching the criteria"}
+        
+        # If multiple meetings match, be more specific
+        if len(removed_meetings) > 1 and not target_time:
+            meeting_list = []
+            for m in removed_meetings:
+                meeting_list.append(f"- {m['date']} at {m['time']}: {m['event']}")
+            return {
+                "error": f"Multiple meetings found. Please be more specific:\n" + "\n".join(meeting_list)
+            }
+        
+        # Save updated meetings
+        _save_yaml(paths["meets"], remaining_meetings)
+        
+        removed = removed_meetings[0]
+        return {
+            "success": True, 
+            "message": f"Removed meeting: {removed['event']} on {removed['date']} at {removed['time']}"
+        }
+    
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def remove_daily_log(query: str, task_id: Optional[str] = None, paths: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    """Remove a daily log entry based on date and optionally task ID."""
+    if paths is None:
+        paths = {'logs': 'data/daily_logs.yaml'}
+    
+    try:
+        logs = _load_yaml(paths["logs"]) or {}
+        if not isinstance(logs, dict):
+            return {"error": "Invalid daily logs file structure"}
+        
+        # Convert any date keys to strings for consistency
+        logs = {str(k): v for k, v in logs.items()}
+        
+        # Parse date from query
+        target_date = _parse_natural_language_date(query)
+        target_date_str = target_date.isoformat()
+        
+        if target_date_str not in logs:
+            return {"error": f"No logs found for date {target_date_str}"}
+        
+        date_logs = logs[target_date_str]
+        if not isinstance(date_logs, list):
+            return {"error": f"Invalid log structure for date {target_date_str}"}
+        
+        if task_id:
+            # Remove specific task log
+            original_count = len(date_logs)
+            date_logs = [log for log in date_logs if log.get("task_id") != task_id]
+            
+            if len(date_logs) == original_count:
+                return {"error": f"No log found for task '{task_id}' on {target_date_str}"}
+            
+            # Update or remove the date entry
+            if date_logs:
+                logs[target_date_str] = date_logs
+            else:
+                del logs[target_date_str]
+            
+            _save_yaml(paths["logs"], logs)
+            return {"success": True, "message": f"Removed log for task '{task_id}' on {target_date_str}"}
+        else:
+            # Remove all logs for the date
+            del logs[target_date_str]
+            _save_yaml(paths["logs"], logs)
+            return {"success": True, "message": f"Removed all logs for {target_date_str}"}
+    
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _find_task_by_identifier(tasks: List[Dict[str, Any]], identifier: str) -> Optional[Dict[str, Any]]:
+    """Find a task by ID or title (fuzzy match)."""
+    identifier_lower = identifier.lower().strip()
+    
+    # First try exact ID match
+    for task in tasks:
+        if task.get("id", "").lower() == identifier_lower:
+            return task
+    
+    # Then try exact title match
+    for task in tasks:
+        if task.get("title", "").lower() == identifier_lower:
+            return task
+    
+    # Then try partial title match
+    for task in tasks:
+        if identifier_lower in task.get("title", "").lower():
+            return task
+    
+    # Finally try fuzzy matching on title
+    from difflib import get_close_matches
+    titles = [(task.get("title", ""), task) for task in tasks]
+    title_list = [t[0] for t in titles]
+    matches = get_close_matches(identifier_lower, [t.lower() for t in title_list], n=1, cutoff=0.6)
+    
+    if matches:
+        # Find the original task
+        for title, task in titles:
+            if title.lower() == matches[0]:
+                return task
+    
+    return None
+
+
+def update_task(query: str, paths: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    """Update a task's attributes based on natural language query."""
+    if paths is None:
+        paths = {'tasks': 'data/tasks.yaml'}
+    
+    try:
+        tasks = _load_yaml(paths["tasks"]) or []
+        if not isinstance(tasks, list):
+            return {"error": "Invalid tasks file structure"}
+        
+        query_lower = query.lower()
+        
+        # Extract task identifier (ID or title)
+        task_identifier = None
+        task_to_update = None
+        
+        # Pattern 1: "update/change TASK-ID ..."
+        task_id_match = re.search(r'\b([A-Z]+-\d+)\b', query)
+        if task_id_match:
+            task_identifier = task_id_match.group(1)
+        else:
+            # Pattern 2: Extract task name from phrases like "change status of X to Y"
+            # Try various patterns
+            patterns = [
+                r'(?:update|change|modify|set)\s+(?:the\s+)?(\w+)\s+(?:of|for)\s+(.+?)\s+(?:to|as)',
+                r'(?:update|change|modify)\s+(.+?)(?:\s+task)?[\'"]?\s+(\w+)\s+to',
+                r'(?:mark|set)\s+(.+?)\s+(?:as|to)\s+',
+                r'(?:update|change|modify)\s+(.+?)\s+to\s+'
+            ]
+            
+            for pattern in patterns:
+                match = re.search(pattern, query_lower)
+                if match:
+                    # The task name is usually in the second group for first pattern
+                    if 'of' in pattern and match.group(2):
+                        task_identifier = match.group(2).strip().strip('"\'')
+                    elif match.group(1):
+                        task_identifier = match.group(1).strip().strip('"\'')
+                    break
+        
+        if not task_identifier:
+            return {"error": "Could not identify which task to update"}
+        
+        # Find the task
+        task_to_update = _find_task_by_identifier(tasks, task_identifier)
+        if not task_to_update:
+            return {"error": f"Task '{task_identifier}' not found"}
+        
+        # Store original values for summary
+        original_values = {}
+        updated_fields = []
+        
+        # Update status
+        status_patterns = [
+            (r'\b(?:to|as)\s+(pending|in[_\s-]?progress|completed|done|finished)\b', lambda m: m.group(1)),
+            (r'\bstatus\s+(?:to|as|=)\s*["\']?([^"\'\s]+)["\']?', lambda m: m.group(1)),
+            (r'\bmark(?:ed)?\s+(?:as\s+)?(?:task\s+)?(completed|done|finished|in[_\s-]?progress)\b', lambda m: m.group(1))
+        ]
+        
+        for pattern, extractor in status_patterns:
+            match = re.search(pattern, query_lower)
+            if match:
+                new_status = extractor(match).replace(' ', '_').replace('-', '_')
+                # Normalize status values
+                if new_status in ['done', 'finished']:
+                    new_status = 'completed'
+                elif new_status == 'in_progress':
+                    new_status = 'in_progress'
+                
+                if new_status in ['pending', 'in_progress', 'completed']:
+                    original_values['status'] = task_to_update.get('status')
+                    task_to_update['status'] = new_status
+                    updated_fields.append('status')
+                break
+        
+        # Update priority
+        if 'priority' in query_lower:
+            priority_match = re.search(r'priority\s+(?:to|as|=)\s*["\']?(high|medium|low)["\']?', query_lower)
+            if priority_match:
+                original_values['priority'] = task_to_update.get('priority')
+                task_to_update['priority'] = priority_match.group(1)
+                updated_fields.append('priority')
+        
+        # Update due date
+        if any(keyword in query_lower for keyword in ['due', 'deadline', 'by']):
+            # Extract the new date
+            date_match = re.search(r'(?:due|deadline|by)\s+(?:date\s+)?(?:to\s+)?(.+?)(?:\s*$|,)', query_lower)
+            if date_match:
+                date_text = date_match.group(1).strip()
+                new_date = _parse_natural_language_date(date_text)
+                if new_date:
+                    original_values['due_date'] = task_to_update.get('due_date')
+                    task_to_update['due_date'] = new_date.isoformat()
+                    updated_fields.append('due_date')
+        
+        # Update estimated hours
+        if 'hours' in query_lower or 'estimate' in query_lower:
+            hours_match = re.search(r'(?:to|=)\s*(\d+(?:\.\d+)?)\s*hours?', query_lower)
+            if hours_match:
+                original_values['estimate_hours'] = task_to_update.get('estimate_hours')
+                task_to_update['estimate_hours'] = float(hours_match.group(1))
+                updated_fields.append('estimate_hours')
+        
+        # Update tags
+        if any(keyword in query_lower for keyword in ['tag', 'tags', '#']):
+            # Check if we're adding or replacing tags
+            if 'add' in query_lower or 'append' in query_lower:
+                # Add tags to existing
+                original_values['tags'] = task_to_update.get('tags', [])[:]
+                existing_tags = task_to_update.get('tags', [])
+                new_tags = []
+                
+                # Extract new tags
+                tag_matches = re.findall(r'#(\w+)', query)
+                new_tags.extend(tag_matches)
+                
+                # Look for patterns like "tags word1, word2 to TASK-1"
+                tags_match = re.search(r'add\s+tags?\s+(.+?)\s+(?:to|for)\s+', query_lower)
+                if tags_match:
+                    tags_str = tags_match.group(1).strip()
+                    # Split by comma and/or "and"
+                    # First split by comma
+                    parts = [p.strip() for p in tags_str.split(',')]
+                    for part in parts:
+                        # Then check each part for "and"
+                        if ' and ' in part:
+                            new_tags.extend([t.strip() for t in part.split(' and ')])
+                        else:
+                            new_tags.append(part)
+                
+                # Combine and deduplicate
+                task_to_update['tags'] = list(set(existing_tags + [t.lower() for t in new_tags]))
+                updated_fields.append('tags')
+            else:
+                # Replace tags
+                original_values['tags'] = task_to_update.get('tags', [])[:]
+                new_tags = []
+                
+                # Extract new tags
+                tag_matches = re.findall(r'#(\w+)', query)
+                new_tags.extend(tag_matches)
+                
+                tags_match = re.search(r'tags?\s+(?:to\s+)?["\']?([^"\']+)["\']?', query_lower)
+                if tags_match:
+                    tags_str = tags_match.group(1)
+                    new_tags.extend([t.strip() for t in tags_str.split(',')])
+                
+                if new_tags:
+                    task_to_update['tags'] = list(set(t.lower() for t in new_tags))
+                    updated_fields.append('tags')
+        
+        # Update title
+        if 'title' in query_lower or 'rename' in query_lower:
+            # Look for patterns like "rename TASK-1 to new title"
+            title_match = re.search(r'(?:title|rename)\s+[A-Z]+-\d+\s+to\s+(.+?)$', query, re.IGNORECASE)
+            if not title_match:
+                # Try simpler pattern
+                title_match = re.search(r'(?:title|rename)\s+to\s+(.+?)$', query, re.IGNORECASE)
+            
+            if title_match:
+                original_values['title'] = task_to_update.get('title')
+                new_title = title_match.group(1).strip().strip('"\'')
+                task_to_update['title'] = new_title
+                updated_fields.append('title')
+        
+        if not updated_fields:
+            return {"error": "No valid updates found in the query"}
+        
+        # Save the updated tasks
+        _save_yaml(paths["tasks"], tasks)
+        
+        # Prepare summary
+        summary_parts = []
+        for field in updated_fields:
+            old_val = original_values.get(field)
+            if old_val is None:
+                old_val = 'not set'
+            new_val = task_to_update.get(field)
+            if field == 'tags' and isinstance(old_val, list):
+                old_val = ', '.join(old_val) if old_val else 'none'
+            if field == 'tags' and isinstance(new_val, list):
+                new_val = ', '.join(new_val) if new_val else 'none'
+            summary_parts.append(f"{field}: {old_val} → {new_val}")
+        
+        return {
+            "success": True,
+            "task_id": task_to_update['id'],
+            "task_title": task_to_update['title'],
+            "updates": summary_parts,
+            "message": f"Updated task '{task_to_update['title']}' ({task_to_update['id']}): " + "; ".join(summary_parts)
+        }
+    
+    except Exception as e:
+        return {"error": str(e)}
 
 
 def plan_day(payload: Dict[str, Any]) -> Dict[str, str]:

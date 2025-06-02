@@ -16,7 +16,7 @@ sys.path.insert(0, str(project_root))
 from src.core.config import get_settings
 from src.core.exceptions import AutomationAgentError, MCPServerError
 from src.mcp import get_mcp_manager
-from src.utils.logging import log_info, log_error, log_exception, setup_logger
+from src.utils.logging import log_info, log_error, log_exception, setup_logger, log_warning
 from src.agents.primary import PrimaryAgent
 from src.agents.brave_search import BraveSearchAgent
 from src.agents.filesystem import FilesystemAgent
