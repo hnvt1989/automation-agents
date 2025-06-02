@@ -144,164 +144,103 @@ class PrimaryAgent(BaseAgent):
             """
             log_info(f"Handling planner task: {task}")
             try:
-                from src.agents.planner import (
-                    insert_task, insert_meeting, insert_daily_log,
-                    remove_task, remove_meeting, remove_daily_log, 
-                    update_task, plan_day
-                )
-                import re
-                from datetime import datetime, date, timedelta
+                from src.agents.planner_parser import PlannerParser
+                from src.agents.planner_ops import PlannerOperations
+                from src.agents.planner import plan_day
                 
-                task_lower = task.lower().strip()
+                # Initialize the parser and operations
+                parser = PlannerParser(self.model)
+                ops = PlannerOperations()
                 
-                # Check if it's a task insertion
-                if any(keyword in task_lower for keyword in ['add task', 'new task', 'create task', 'task:']):
-                    # Extract the task description
-                    task_text = task
-                    # Try different prefix patterns
-                    prefixes = ['add task:', 'new task:', 'create task:', 'task:', 'add task', 'new task', 'create task']
-                    for prefix in prefixes:
-                        if prefix in task_lower:
-                            idx = task_lower.find(prefix) + len(prefix)
-                            task_text = task[idx:].strip()
-                            # Remove any leading quotes or colons
-                            task_text = task_text.lstrip(':').strip().strip('"\'')
-                            break
-                    
-                    result = insert_task(task_text)
-                    if result.get("success"):
-                        return f"Task added successfully: {result['task']['title']} (ID: {result['task']['id']}, Due: {result['task']['due_date']})"
+                # Parse the natural language query
+                parsed = await parser.parse(task)
+                
+                if parsed["action"] == "error":
+                    return f"Failed to understand request: {parsed['data'].get('message', 'Unknown error')}"
+                
+                action = parsed["action"]
+                data = parsed["data"]
+                
+                # Handle different actions
+                if action == "add_task":
+                    result = ops.add_task(data)
+                    if result["success"]:
+                        task_info = result["task"]
+                        return f"Task added successfully: {task_info['title']} (ID: {task_info['id']}, Due: {task_info['due_date']})"
                     else:
-                        return f"Failed to add task: {result.get('error', 'Unknown error')}"
+                        return f"Failed to add task: {result['error']}"
                 
-                # Check if it's a meeting insertion
-                elif any(keyword in task_lower for keyword in ['add meeting', 'add meetings', 'schedule meeting', 'new meeting', 'meeting:', 'schedule:']):
-                    # Extract the meeting description
-                    meeting_text = task
-                    for prefix in ['add meetings', 'add meeting:', 'schedule meeting:', 'new meeting:', 'meeting:', 'schedule:', 'add meeting']:
-                        if prefix in task_lower:
-                            meeting_text = task[task_lower.find(prefix) + len(prefix):].strip()
-                            break
-                    
-                    result = insert_meeting(meeting_text)
-                    if result.get("success"):
-                        meeting = result['meeting']
-                        return f"Meeting scheduled: {meeting['event']} on {meeting['date']} at {meeting['time']}"
-                    else:
-                        return f"Failed to schedule meeting: {result.get('error', 'Unknown error')}"
-                
-                # Check if it's a daily log insertion
-                elif any(keyword in task_lower for keyword in ['log work', 'add log', 'work log', 'add a daily log', 'add daily log', 'spent', 'worked on']):
-                    # Check if this is a pattern like "add a daily log 'description' took X hours"
-                    # Handle both quoted and unquoted descriptions
-                    daily_log_pattern = re.search(r"add\s+(?:a\s+)?daily\s+log\s+(?:['\"]([^'\"]+)['\"]|(.+?))\s+(?:took|spent|for)\s+(\d+(?:\.\d+)?)\s*hours?", task_lower)
-                    
-                    if daily_log_pattern:
-                        # This is a new daily log without a task ID
-                        # Group 1 is for quoted text, group 2 is for unquoted text
-                        description = (daily_log_pattern.group(1) if daily_log_pattern.group(1) else daily_log_pattern.group(2)).strip()
-                        hours = float(daily_log_pattern.group(3))
-                        
-                        # We need to create a task first, then log work
-                        # Extract just the description for the task title
-                        task_result = insert_task(description)
-                        if task_result.get("success"):
-                            task_id = task_result['task']['id']
-                            # Now log the work with clean description
-                            result = insert_daily_log(description, task_id, hours)
-                            if result.get("success"):
-                                return f"Created task '{description}' ({task_id}) and logged {hours} hours of work"
-                            else:
-                                return f"Task created but failed to log work: {result.get('error', 'Unknown error')}"
-                        else:
-                            return f"Failed to create task: {task_result.get('error', 'Unknown error')}"
-                    else:
-                        # Original pattern - expects a task ID
-                        task_id_match = re.search(r'\b([A-Z]+-\d+)\b', task)
-                        if not task_id_match:
-                            return "Could not find task ID. Please specify a task ID like 'TASK-1' or 'ONBOARDING-1'"
-                        
-                        task_id = task_id_match.group(1)
-                        
-                        hours_match = re.search(r'(\d+(?:\.\d+)?)\s*hours?', task_lower)
-                        if not hours_match:
-                            return "Could not find hours. Please specify hours like '3 hours' or '2.5 hours'"
-                        
-                        hours = float(hours_match.group(1))
-                        
-                        # Extract description - remove the task ID and hours from the text
-                        description = task
-                        # Remove task ID
-                        description = re.sub(r'\b' + task_id + r'\b', '', description)
-                        # Remove hours
-                        description = re.sub(r'\b\d+(?:\.\d+)?\s*hours?\b', '', description)
-                        # Remove common prefixes
-                        for prefix in ['log work', 'add log', 'work log', 'spent', 'worked on']:
-                            if prefix in description.lower():
-                                idx = description.lower().find(prefix)
-                                description = description[:idx] + description[idx + len(prefix):]
-                        # Clean up
-                        description = re.sub(r'\s+', ' ', description).strip()
-                        description = description.strip(':').strip()
-                        
-                        # Use the cleaned description
-                        result = insert_daily_log(description, task_id, hours)
-                        if result.get("success"):
-                            return f"Work logged: {hours} hours on {task_id} for date {result['date']}"
-                        else:
-                            return f"Failed to log work: {result.get('error', 'Unknown error')}"
-                
-                # Check if it's a task update request
-                elif any(keyword in task_lower for keyword in ['update', 'change', 'modify', 'set', 'mark']) and \
-                     not any(keyword in task_lower for keyword in ['add', 'new', 'create', 'schedule']):
-                    # This is likely an update request
-                    result = update_task(task)
-                    if result.get("success"):
+                elif action == "update_task":
+                    identifier = data.get("identifier")
+                    updates = data.get("updates", {})
+                    result = ops.update_task(identifier, updates)
+                    if result["success"]:
                         return result["message"]
                     else:
-                        return f"Failed to update task: {result.get('error', 'Unknown error')}"
+                        return f"Failed to update task: {result['error']}"
                 
-                # Check if it's a removal request
-                elif any(keyword in task_lower for keyword in ['remove task', 'delete task', 'cancel task']):
-                    task_id_match = re.search(r'\b([A-Z]+-\d+)\b', task)
-                    if not task_id_match:
-                        return "Could not find task ID. Please specify a task ID like 'TASK-1'"
-                    
-                    task_id = task_id_match.group(1)
-                    result = remove_task(task_id)
-                    return result.get("message", result.get("error", "Unknown result"))
+                elif action == "remove_task":
+                    identifier = data.get("identifier")
+                    result = ops.remove_task(identifier)
+                    if result["success"]:
+                        return result["message"]
+                    else:
+                        return f"Failed to remove task: {result['error']}"
                 
-                elif any(keyword in task_lower for keyword in ['remove meeting', 'delete meeting', 'cancel meeting']):
-                    meeting_query = task
-                    for prefix in ['remove meeting:', 'delete meeting:', 'cancel meeting:', 'remove meeting', 'delete meeting', 'cancel meeting']:
-                        if prefix in task_lower:
-                            idx = task_lower.find(prefix) + len(prefix)
-                            meeting_query = task[idx:].strip()
-                            if meeting_query.startswith(':'):
-                                meeting_query = meeting_query[1:].strip()
-                            break
-                    
-                    result = remove_meeting(meeting_query)
-                    return result.get("message", result.get("error", "Unknown result"))
+                elif action == "add_meeting":
+                    result = ops.add_meeting(data)
+                    if result["success"]:
+                        meeting = result["meeting"]
+                        return f"Meeting scheduled: {meeting['event']} on {meeting['date']} at {meeting['time']}"
+                    else:
+                        return f"Failed to schedule meeting: {result['error']}"
                 
-                elif any(keyword in task_lower for keyword in ['remove log', 'delete log']):
-                    task_id_match = re.search(r'\b([A-Z]+-\d+)\b', task)
-                    task_id = task_id_match.group(1) if task_id_match else None
-                    
-                    result = remove_daily_log(task, task_id)
-                    return result.get("message", result.get("error", "Unknown result"))
+                elif action == "remove_meeting":
+                    result = ops.remove_meeting(
+                        data.get("date"),
+                        data.get("time"),
+                        data.get("title")
+                    )
+                    if result["success"]:
+                        return result["message"]
+                    else:
+                        return f"Failed to remove meeting: {result['error']}"
                 
-                # Check if it's a planning request
-                elif any(keyword in task_lower for keyword in ['plan', 'schedule', 'agenda', 'what to do', 'what should i do']):
-                    # Extract date from the query
-                    target_date = date.today()  # default
+                elif action == "add_log":
+                    # Check if we need to create a task first
+                    if "task_id" not in data and "description" in data:
+                        # Create task and log in one operation
+                        result = ops.create_task_and_log(
+                            data["description"],
+                            data.get("hours", 0)
+                        )
+                    else:
+                        # Regular log with existing task
+                        result = ops.add_log(data)
                     
-                    if "tomorrow" in task_lower:
-                        target_date = date.today() + timedelta(days=1)
-                    elif "yesterday" in task_lower:
-                        target_date = date.today() - timedelta(days=1)
-                    elif "next week" in task_lower:
-                        target_date = date.today() + timedelta(weeks=1)
+                    if result["success"]:
+                        if "task" in result:
+                            # Created task and logged
+                            return result["message"]
+                        else:
+                            # Just logged
+                            return f"Work logged: {data.get('hours', 0)} hours on {data.get('task_id', 'task')}"
+                    else:
+                        return f"Failed to log work: {result['error']}"
+                
+                elif action == "plan_day":
+                    # For plan_day, we still use the original function
+                    from datetime import date, timedelta
+                    
+                    target_date = date.today()
+                    if "date" in data:
+                        date_str = data["date"].lower()
+                        if "tomorrow" in date_str:
+                            target_date = date.today() + timedelta(days=1)
+                        elif "yesterday" in date_str:
+                            target_date = date.today() - timedelta(days=1)
+                        elif "next week" in date_str:
+                            target_date = date.today() + timedelta(weeks=1)
                     
                     payload = {
                         'paths': {
@@ -320,7 +259,7 @@ class PrimaryAgent(BaseAgent):
                     return f"{result.get('yesterday_markdown', '')}\n\n{result.get('tomorrow_markdown', '')}"
                 
                 else:
-                    return "I couldn't understand what planning action you want. Try 'add task:', 'schedule meeting:', or 'log work:'"
+                    return f"Unknown action: {action}"
                     
             except Exception as e:
                 log_error(f"Error in planner task: {str(e)}")
