@@ -40,7 +40,7 @@ SYSTEM_PROMPTS = {
 
 Here are the assistant agents you have access to:
 1. Brave Search Agent - for web searches and getting current information
-2. Filesystem Agent - for file operations and system tasks
+2. Filesystem Agent - for file operations, indexing files, analyzing calendar images, and analyzing conversation screenshots
 3. GitHub Agent - for GitHub-related operations
 4. Slack Agent - for Slack messaging and operations
 5. Analyzer Agent - for data analysis, code review, and problem-solving
@@ -49,6 +49,9 @@ Here are the assistant agents you have access to:
 When you receive a request:
 - First analyze what kind of task it is
 - Delegate to the appropriate specialist agent if needed
+- For image analysis tasks (calendar or conversations), use the Filesystem Agent
+- For indexing files or conversations, use the Filesystem Agent
+- For searching indexed content, use the RAG Agent
 - You can use multiple agents to complete a task
 - Summarize and present the final results clearly""",
     

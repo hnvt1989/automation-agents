@@ -20,6 +20,7 @@ from src.utils.logging import log_info, log_error, log_exception, setup_logger
 from src.agents.primary import PrimaryAgent
 from src.agents.brave_search import BraveSearchAgent
 from src.agents.filesystem import FilesystemAgent
+from src.agents.rag import RAGAgent
 from src.agents.planner import plan_day
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.models.openai import OpenAIModel
@@ -68,8 +69,9 @@ class AutomationAgentsCLI:
             model = self.get_model()
             
             # Create individual agents
-            self.agents["brave_search"] = BraveSearchAgent(model).agent
-            self.agents["filesystem"] = FilesystemAgent(model).agent
+            self.agents["brave_search"] = BraveSearchAgent(model)
+            self.agents["filesystem"] = FilesystemAgent(model)
+            self.agents["rag"] = RAGAgent(model)
             
             # Create primary agent with access to other agents
             self.primary_agent = PrimaryAgent(model, self.agents)
@@ -130,7 +132,11 @@ class AutomationAgentsCLI:
         
         if query.lower().startswith("plan"):
             # Extract date from query if present
-            date_query = query[4:].strip() if len(query) > 4 else "today"
+            # Remove "plan" and any leading "for" from the query
+            date_part = query[4:].strip()
+            if date_part.lower().startswith("for "):
+                date_part = date_part[4:].strip()
+            date_query = date_part if date_part else "today"
             await self.handle_planning(date_query)
             return True
         
@@ -175,10 +181,34 @@ class AutomationAgentsCLI:
             elif date_query_lower == "yesterday":
                 target_date = date.today() - timedelta(days=1)
             else:
-                # Try to parse as ISO date
+                # Try multiple date formats
+                target_date = None
+                
+                # Try ISO format (YYYY-MM-DD)
                 try:
                     target_date = datetime.fromisoformat(date_query).date()
                 except:
+                    pass
+                
+                # Try MM/DD/YYYY or M/D/YYYY format
+                if not target_date:
+                    date_patterns = [
+                        r'(\d{1,2})/(\d{1,2})/(\d{4})',  # M/D/YYYY or MM/DD/YYYY
+                        r'(\d{1,2})-(\d{1,2})-(\d{4})',  # M-D-YYYY or MM-DD-YYYY
+                    ]
+                    for pattern in date_patterns:
+                        match = re.match(pattern, date_query)
+                        if match:
+                            month, day, year = match.groups()
+                            try:
+                                target_date = date(int(year), int(month), int(day))
+                                break
+                            except ValueError:
+                                pass
+                
+                # Default to today if no valid date found
+                if not target_date:
+                    log_warning(f"Could not parse date '{date_query}', using today")
                     target_date = date.today()
             
             # Create payload for plan_day

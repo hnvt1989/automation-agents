@@ -96,6 +96,9 @@ Guidelines:
         )
         
         # Parse the JSON response
+        if not response.choices or not response.choices[0].message.content:
+            raise Exception("No content in OpenAI response")
+        
         result = json.loads(response.choices[0].message.content)
         
         # Handle different possible response formats

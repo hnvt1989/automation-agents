@@ -22,7 +22,7 @@ class PrimaryAgentDeps(BaseModel):
 class PrimaryAgent(BaseAgent):
     """Primary orchestration agent that coordinates other agents."""
     
-    def __init__(self, model: OpenAIModel, agents: Dict[str, Agent]):
+    def __init__(self, model: OpenAIModel, agents: Dict[str, Any]):
         """Initialize the primary agent.
         
         Args:
