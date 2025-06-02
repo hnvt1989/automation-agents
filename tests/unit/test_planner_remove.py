@@ -170,9 +170,9 @@ class TestRemoveDailyLog:
         today = datetime.now().date().isoformat()
         logs_data = {
             today: [
-                {"task_id": "TASK-1", "description": "First work", "actual_hours": 2},
-                {"task_id": "TASK-2", "description": "Second work", "actual_hours": 3},
-                {"task_id": "TASK-3", "description": "Third work", "actual_hours": 1}
+                {"log_id": "TASK-1", "description": "First work", "actual_hours": 2},
+                {"log_id": "TASK-2", "description": "Second work", "actual_hours": 3},
+                {"log_id": "TASK-3", "description": "Third work", "actual_hours": 1}
             ]
         }
         with open(logs_file, 'w') as f:
@@ -190,7 +190,7 @@ class TestRemoveDailyLog:
         # Convert date keys to strings for consistency
         logs = {str(k): v for k, v in logs.items()}
         assert len(logs[today]) == 2
-        assert all(log["task_id"] != "TASK-2" for log in logs[today])
+        assert all(log["log_id"] != "TASK-2" for log in logs[today])
     
     def test_remove_all_logs_for_date(self, tmp_path):
         """Test removing all logs for a specific date."""
@@ -199,10 +199,10 @@ class TestRemoveDailyLog:
         yesterday = (datetime.now().date() - timedelta(days=1)).isoformat()
         logs_data = {
             yesterday: [
-                {"task_id": "TASK-1", "description": "Yesterday work", "actual_hours": 4}
+                {"log_id": "TASK-1", "description": "Yesterday work", "actual_hours": 4}
             ],
             today: [
-                {"task_id": "TASK-2", "description": "Today work", "actual_hours": 3}
+                {"log_id": "TASK-2", "description": "Today work", "actual_hours": 3}
             ]
         }
         with open(logs_file, 'w') as f:
@@ -229,7 +229,7 @@ class TestRemoveDailyLog:
         today = datetime.now().date().isoformat()
         logs_data = {
             today: [
-                {"task_id": "TASK-1", "description": "Today work", "actual_hours": 3}
+                {"log_id": "TASK-1", "description": "Today work", "actual_hours": 3}
             ]
         }
         with open(logs_file, 'w') as f:
@@ -247,7 +247,7 @@ class TestRemoveDailyLog:
         today = datetime.now().date().isoformat()
         logs_data = {
             today: [
-                {"task_id": "TASK-1", "description": "First work", "actual_hours": 2}
+                {"log_id": "TASK-1", "description": "First work", "actual_hours": 2}
             ]
         }
         with open(logs_file, 'w') as f:
@@ -266,7 +266,7 @@ class TestRemoveDailyLog:
         today = datetime.now().date().isoformat()
         logs_data = {
             today: [
-                {"task_id": "TASK-1", "description": "Only work", "actual_hours": 2}
+                {"log_id": "TASK-1", "description": "Only work", "actual_hours": 2}
             ]
         }
         with open(logs_file, 'w') as f:

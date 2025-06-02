@@ -279,7 +279,7 @@ class TestInsertDailyLog:
         result = insert_daily_log("completed API implementation", "TASK-1", 3.5, paths)
         
         assert result["success"] is True
-        assert result["log"]["task_id"] == "TASK-1"
+        assert result["log"]["log_id"] == "TASK-1"
         assert result["log"]["description"] == "completed API implementation"
         assert result["log"]["actual_hours"] == 3.5
         assert result["date"] == datetime.now().date().isoformat()
@@ -307,7 +307,7 @@ class TestInsertDailyLog:
         existing_date = datetime.now().date().isoformat()
         logs_file = tmp_path / "daily_logs.yaml"
         logs_file.write_text(f"""{existing_date}:
-  - task_id: TASK-1
+  - log_id: TASK-1
     description: First task
     actual_hours: 2
 """)
@@ -321,7 +321,7 @@ class TestInsertDailyLog:
         with open(logs_file) as f:
             logs = yaml.safe_load(f)
         assert len(logs[existing_date]) == 2
-        assert logs[existing_date][1]["task_id"] == "TASK-2"
+        assert logs[existing_date][1]["log_id"] == "TASK-2"
 
 
 class TestErrorHandling:

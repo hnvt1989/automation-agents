@@ -59,7 +59,7 @@ def sample_logs():
     return {
         "2025-06-02": [
             {
-                "task_id": "TASK-1",
+                "log_id": "TASK-1",
                 "description": "Working on API",
                 "actual_hours": 3
             }
@@ -105,6 +105,26 @@ def test_find_task_not_found(sample_tasks):
     assert task is None
 
 
+def test_find_task_fuzzy_match():
+    """Test fuzzy matching for typos."""
+    tasks = [
+        {
+            "id": "106264",
+            "title": "Document 686c/674 form update test scenarios in TestRail"
+        }
+    ]
+    
+    # Should find with typo: "tests" instead of "test"
+    task = find_task(tasks, "tests scenarios")
+    assert task is not None
+    assert task["id"] == "106264"
+    
+    # Should also find with exact match
+    task = find_task(tasks, "test scenarios")
+    assert task is not None
+    assert task["id"] == "106264"
+
+
 @patch('src.agents.planner_ops.load_yaml')
 @patch('src.agents.planner_ops.save_yaml')
 def test_add_task(mock_save, mock_load, planner_ops):
@@ -125,6 +145,44 @@ def test_add_task(mock_save, mock_load, planner_ops):
     
     # Verify save was called
     mock_save.assert_called_once()
+
+
+@patch('src.agents.planner_ops.load_yaml')
+@patch('src.agents.planner_ops.save_yaml')
+def test_add_task_with_custom_id(mock_save, mock_load, planner_ops):
+    """Test adding a task with a custom ID."""
+    mock_load.return_value = []
+    
+    result = planner_ops.add_task({
+        "id": "106264",
+        "title": "Custom ID task",
+        "priority": "high"
+    })
+    
+    assert result["success"] is True
+    assert result["task"]["id"] == "106264"
+    assert result["task"]["title"] == "Custom ID task"
+    
+    mock_save.assert_called_once()
+
+
+@patch('src.agents.planner_ops.load_yaml')
+@patch('src.agents.planner_ops.save_yaml')
+def test_add_task_duplicate_custom_id(mock_save, mock_load, planner_ops):
+    """Test adding a task with a duplicate custom ID fails."""
+    mock_load.return_value = [{"id": "106264", "title": "Existing task"}]
+    
+    result = planner_ops.add_task({
+        "id": "106264",
+        "title": "Duplicate ID task",
+        "priority": "high"
+    })
+    
+    assert result["success"] is False
+    assert "already exists" in result["error"]
+    
+    # Save should not be called
+    mock_save.assert_not_called()
 
 
 @patch('src.agents.planner_ops.load_yaml')
@@ -223,13 +281,13 @@ def test_add_log(mock_save, mock_load, planner_ops):
     mock_load.return_value = {}
     
     result = planner_ops.add_log({
-        "task_id": "TASK-1",
+        "log_id": "TASK-1",
         "description": "Fixed bug",
         "hours": 2.5
     })
     
     assert result["success"] is True
-    assert result["log"]["task_id"] == "TASK-1"
+    assert result["log"]["log_id"] == "TASK-1"
     assert result["log"]["description"] == "Fixed bug"
     assert result["log"]["actual_hours"] == 2.5
     

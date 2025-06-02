@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import os
 import re
+import glob
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple, Optional
 
 import yaml
+from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai import Agent
 
 
 @dataclass
@@ -32,6 +35,257 @@ def _save_yaml(path: str, data: Any) -> None:
     
     with open(path, "w", encoding="utf-8") as fh:
         yaml.dump(data, fh, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+
+def _find_recent_meeting_notes(notes_path: str, target_date: datetime.date, days_back: int = 3) -> List[Dict[str, Any]]:
+    """Find meeting notes within the last N days before the target date."""
+    if not os.path.exists(notes_path):
+        return []
+    
+    recent_notes = []
+    start_date = target_date - timedelta(days=days_back)
+    end_date = target_date
+    
+    # Search for markdown files in the meeting notes directory
+    pattern = os.path.join(notes_path, "**", "*.md")
+    note_files = glob.glob(pattern, recursive=True)
+    
+    for file_path in note_files:
+        try:
+            # Try to extract date from filename or content
+            file_date = _extract_date_from_meeting_note(file_path)
+            if file_date and start_date <= file_date <= end_date:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                recent_notes.append({
+                    'date': file_date,
+                    'file_path': file_path,
+                    'content': content,
+                    'filename': os.path.basename(file_path)
+                })
+        except Exception:
+            # Skip files that can't be read or parsed
+            continue
+    
+    return sorted(recent_notes, key=lambda x: x['date'], reverse=True)
+
+
+def _extract_date_from_meeting_note(file_path: str) -> Optional[datetime.date]:
+    """Extract date from meeting note filename or content."""
+    filename = os.path.basename(file_path)
+    
+    # Try various date patterns in filename
+    date_patterns = [
+        r'(\d{4})-(\d{2})-(\d{2})',  # YYYY-MM-DD
+        r'(\d{4})(\d{2})(\d{2})',    # YYYYMMDD
+        r'(\d{2})-(\d{2})-(\d{4})',  # MM-DD-YYYY
+        r'(\d{1,2})/(\d{1,2})/(\d{4})',  # M/D/YYYY
+        r'June(\d{2})',  # JuneDD
+        r'(\d{1,2})-(\d{1,2})',  # MM-DD (assume current year)
+    ]
+    
+    current_year = datetime.now().year
+    
+    for pattern in date_patterns:
+        match = re.search(pattern, filename)
+        if match:
+            try:
+                if pattern == r'June(\d{2})':
+                    # Special case for JuneDD format
+                    day = int(match.group(1))
+                    return datetime(current_year, 6, day).date()
+                elif len(match.groups()) == 3:
+                    if pattern == r'(\d{4})-(\d{2})-(\d{2})' or pattern == r'(\d{4})(\d{2})(\d{2})':
+                        year, month, day = int(match.group(1)), int(match.group(2)), int(match.group(3))
+                    else:  # MM-DD-YYYY or M/D/YYYY
+                        month, day, year = int(match.group(1)), int(match.group(2)), int(match.group(3))
+                    return datetime(year, month, day).date()
+                elif len(match.groups()) == 2:
+                    # MM-DD format, assume current year
+                    month, day = int(match.group(1)), int(match.group(2))
+                    return datetime(current_year, month, day).date()
+            except ValueError:
+                continue
+    
+    # Try to find date in file content
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            first_lines = f.read(500)  # Read first 500 chars
+            
+        for pattern in date_patterns[:4]:  # Only standard date patterns
+            match = re.search(pattern, first_lines)
+            if match:
+                try:
+                    if pattern == r'(\d{4})-(\d{2})-(\d{2})':
+                        year, month, day = int(match.group(1)), int(match.group(2)), int(match.group(3))
+                        return datetime(year, month, day).date()
+                except ValueError:
+                    continue
+    except Exception:
+        pass
+    
+    return None
+
+
+def _analyze_meeting_notes_for_focus(meeting_notes: List[Dict[str, Any]], tasks: List[Dict[str, Any]]) -> List[str]:
+    """Analyze meeting notes to generate focus points relevant to current tasks."""
+    if not meeting_notes or not tasks:
+        return []
+    
+    # Extract task keywords and topics
+    task_keywords = set()
+    for task in tasks:
+        title = task.get('title', '').lower()
+        tags = task.get('tags', [])
+        
+        # Add title words
+        task_keywords.update(title.split())
+        # Add tags
+        task_keywords.update(tag.lower() for tag in tags)
+    
+    # Remove common stop words
+    stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 
+                  'task', 'work', 'project', 'will', 'be', 'is', 'are', 'was', 'were', 'have', 'has', 'had'}
+    task_keywords = {kw for kw in task_keywords if kw not in stop_words and len(kw) > 2}
+    
+    focus_points = []
+    
+    for note in meeting_notes:
+        content = note['content'].lower()
+        date_str = note['date'].strftime('%Y-%m-%d')
+        
+        # Find relevant sections in the meeting notes
+        relevant_points = []
+        
+        # Split content into sections
+        sections = re.split(r'\n#+\s+', content)
+        
+        for section in sections:
+            lines = section.split('\n')
+            section_title = lines[0] if lines else ""
+            
+            # Check if section contains task-related keywords
+            relevance_score = 0
+            for keyword in task_keywords:
+                if keyword in section.lower():
+                    relevance_score += 1
+            
+            if relevance_score > 0:
+                # Extract key points from this section
+                for line in lines[1:]:
+                    line = line.strip()
+                    if line.startswith('- ') or line.startswith('* '):
+                        # This is a bullet point
+                        bullet_content = line[2:].strip()
+                        # Check if bullet point is relevant
+                        bullet_relevance = sum(1 for kw in task_keywords if kw in bullet_content.lower())
+                        if bullet_relevance > 0:
+                            relevant_points.append({
+                                'point': bullet_content,
+                                'section': section_title,
+                                'relevance': bullet_relevance
+                            })
+        
+        # Add the most relevant points from this meeting
+        if relevant_points:
+            relevant_points.sort(key=lambda x: x['relevance'], reverse=True)
+            for point in relevant_points[:3]:  # Top 3 most relevant points
+                focus_points.append(f"[{date_str}] {point['point']}")
+    
+    return focus_points[:5]  # Return top 5 focus points
+
+
+def _generate_llm_focus_analysis(meeting_notes: List[Dict[str, Any]], tasks: List[Dict[str, Any]]) -> str:
+    """Generate an LLM prompt for analyzing meeting notes and generating focus points."""
+    if not meeting_notes or not tasks:
+        return ""
+    
+    # Prepare meeting notes summary
+    notes_summary = []
+    for note in meeting_notes:
+        date_str = note['date'].strftime('%Y-%m-%d')
+        # Extract key sections (first 1000 chars to keep it manageable)
+        content_preview = note['content'][:1000] + "..." if len(note['content']) > 1000 else note['content']
+        notes_summary.append(f"**{date_str}** ({note['filename']}):\n{content_preview}")
+    
+    # Prepare tasks summary
+    tasks_summary = []
+    for task in tasks[:10]:  # Limit to top 10 tasks
+        priority = task.get('priority', 'medium')
+        due_date = task.get('due_date', 'no due date')
+        title = task.get('title', '')
+        tags = task.get('tags', [])
+        tags_str = f" [tags: {', '.join(tags)}]" if tags else ""
+        tasks_summary.append(f"- {title} (priority: {priority}, due: {due_date}){tags_str}")
+    
+    prompt = f"""# Meeting Notes Analysis for Focus Generation
+
+## Recent Meeting Notes (Last 3 Days):
+{chr(10).join(notes_summary)}
+
+## Current Tasks:
+{chr(10).join(tasks_summary)}
+
+## Task:
+Based on the meeting notes above and the current tasks, generate a focused list of 3-5 key things that should be prioritized or given special attention today. Look for:
+
+1. Items mentioned in meetings that relate to current tasks
+2. Blockers or dependencies mentioned in meetings
+3. Deadlines or urgent items discussed
+4. Team decisions that affect current work
+5. Follow-up actions from meetings
+
+Format your response as a simple bulleted list of focus areas, each with a brief explanation of why it's important based on the meeting context.
+
+## Focus Areas:"""
+    
+    return prompt
+
+
+async def _generate_llm_focus_list(meeting_notes: List[Dict[str, Any]], tasks: List[Dict[str, Any]], model: Optional[OpenAIModel] = None) -> str:
+    """Use LLM to generate a focus list based on meeting notes and tasks."""
+    if not meeting_notes or not tasks:
+        return ""
+    
+    if model is None:
+        model = OpenAIModel('gpt-4')
+    
+    prompt = _generate_llm_focus_analysis(meeting_notes, tasks)
+    
+    try:
+        # Create a simple agent for focus analysis
+        focus_agent = Agent(
+            model=model,
+            system_prompt="You are a productivity assistant that analyzes meeting notes and tasks to generate actionable focus areas. Provide clear, concise, and actionable focus points based on the context provided."
+        )
+        
+        result = await focus_agent.run(prompt)
+        return str(result.data) if hasattr(result, 'data') else str(result)
+    except Exception as e:
+        return f"Error generating LLM focus list: {str(e)}"
+
+
+def generate_focus_list(meeting_notes: List[Dict[str, Any]], tasks: List[Dict[str, Any]], use_llm: bool = True, model: Optional[OpenAIModel] = None) -> Dict[str, Any]:
+    """Generate focus list using both rule-based and optionally LLM approaches."""
+    result = {
+        "rule_based_focus": [],
+        "llm_focus": "",
+        "llm_prompt": ""
+    }
+    
+    # Rule-based analysis
+    result["rule_based_focus"] = _analyze_meeting_notes_for_focus(meeting_notes, tasks)
+    result["llm_prompt"] = _generate_llm_focus_analysis(meeting_notes, tasks)
+    
+    # LLM analysis (if requested and available)
+    if use_llm:
+        try:
+            import asyncio
+            result["llm_focus"] = asyncio.run(_generate_llm_focus_list(meeting_notes, tasks, model))
+        except Exception as e:
+            result["llm_focus"] = f"LLM analysis unavailable: {str(e)}"
+    
+    return result
 
 
 def _get_yesterday_summary(logs: Dict[str, Any], target_date: datetime.date, meetings: List[Dict[str, Any]] = None) -> str:
@@ -309,16 +563,42 @@ def _get_target_date_meetings(meetings: List[Dict[str, Any]], target_date: datet
     return sorted(meeting_list)  # Sort by time
 
 
-def _format_plan(plan: List[Tuple[datetime, datetime, Dict[str, Any]]], target_date: datetime.date, meetings: List[Dict[str, Any]] = None) -> str:
+def _format_plan(plan: List[Tuple[datetime, datetime, Dict[str, Any]]], target_date: datetime.date, meetings: List[Dict[str, Any]] = None, focus_analysis: Dict[str, Any] = None) -> str:
     # Get meetings for the target date
     target_meetings = _get_target_date_meetings(meetings or [], target_date)
     
     # Start with the header
     content = [f"## Plan for {target_date.isoformat()}"]
     
+    # Add focus areas section if available
+    if focus_analysis and (focus_analysis.get('rule_based_focus') or focus_analysis.get('llm_focus')):
+        content.append("\n### Focus Areas (Based on Recent Meetings)")
+        
+        # Add rule-based focus points
+        rule_based = focus_analysis.get('rule_based_focus', [])
+        if rule_based:
+            for point in rule_based:
+                content.append(f"- {point}")
+        
+        # Add LLM focus if available
+        llm_focus = focus_analysis.get('llm_focus', '').strip()
+        if llm_focus and not llm_focus.startswith('Error') and not llm_focus.startswith('LLM analysis unavailable'):
+            content.append("\n**AI Analysis:**")
+            # Split LLM response into lines and format as bullet points if not already formatted
+            llm_lines = llm_focus.split('\n')
+            for line in llm_lines:
+                line = line.strip()
+                if line:
+                    if not line.startswith('•') and not line.startswith('-') and not line.startswith('*'):
+                        content.append(f"- {line}")
+                    else:
+                        content.append(f"{line}")
+        
+        content.append("")  # Empty line before next section
+    
     # Add meetings section if there are any
     if target_meetings:
-        content.append("\n### Meetings")
+        content.append("### Meetings")
         for meeting in target_meetings:
             content.append(f"- {meeting}")
         content.append("")  # Empty line before tasks
@@ -671,7 +951,7 @@ def insert_daily_log(text: str, task_id: str, hours: float, paths: Optional[Dict
         
         # Create log entry
         log_entry = {
-            "task_id": task_id,
+            "log_id": task_id,
             "description": text.strip(),
             "actual_hours": hours
         }
@@ -810,7 +1090,7 @@ def remove_daily_log(query: str, task_id: Optional[str] = None, paths: Optional[
         if task_id:
             # Remove specific task log
             original_count = len(date_logs)
-            date_logs = [log for log in date_logs if log.get("task_id") != task_id]
+            date_logs = [log for log in date_logs if log.get("log_id") != task_id]
             
             if len(date_logs) == original_count:
                 return {"error": f"No log found for task '{task_id}' on {target_date_str}"}
@@ -1069,7 +1349,8 @@ def plan_day(payload: Dict[str, Any]) -> Dict[str, str]:
         default_paths = {
             'tasks': 'data/tasks.yaml',
             'logs': 'data/daily_logs.yaml',
-            'meets': 'data/meetings.yaml'
+            'meets': 'data/meetings.yaml',
+            'meeting_notes': 'data/meeting_notes'
         }
         paths = payload.get("paths", default_paths)
         target_date = datetime.fromisoformat(payload["target_date"]).date()
@@ -1098,6 +1379,27 @@ def plan_day(payload: Dict[str, Any]) -> Dict[str, str]:
     pending.sort(key=lambda t: _score_task(t, target_date), reverse=True)
     free = _compute_free_intervals(meetings, target_date, work_hours["start"], work_hours["end"])
     plan = _pack_tasks(pending, free)
-    tomorrow_md = _format_plan(plan, target_date, meetings)
 
-    return {"yesterday_markdown": yesterday_md, "tomorrow_markdown": tomorrow_md}
+    # Generate focus list from recent meeting notes
+    focus_analysis = {}
+    try:
+        notes_path = paths.get("meeting_notes", "data/meeting_notes")
+        recent_notes = _find_recent_meeting_notes(notes_path, target_date, days_back=3)
+        
+        if recent_notes and pending:
+            # Generate comprehensive focus analysis
+            use_llm = payload.get("use_llm_for_focus", True)
+            focus_analysis = generate_focus_list(recent_notes, pending, use_llm=use_llm)
+        
+    except Exception as e:
+        # Don't fail the entire planning if meeting notes analysis fails
+        focus_analysis = {"error": str(e)}
+
+    # Format the plan with focus analysis included
+    tomorrow_md = _format_plan(plan, target_date, meetings, focus_analysis)
+
+    return {
+        "yesterday_markdown": yesterday_md, 
+        "tomorrow_markdown": tomorrow_md,
+        "focus_analysis": focus_analysis
+    }

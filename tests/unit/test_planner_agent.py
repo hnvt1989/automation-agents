@@ -32,7 +32,7 @@ def test_planner_success(tmp_path: Path):
     logs.write_text(
         """
 2024-05-01:
-  - task_id: T1
+  - log_id: T1
     description: Completed initial draft
     actual_hours: 1
 """
@@ -119,7 +119,7 @@ def test_planner_with_simplified_meetings_format(tmp_path: Path):
     logs.write_text(
         """
 2024-05-01:
-  - task_id: T1
+  - log_id: T1
     description: Completed initial draft
     actual_hours: 1
 """
@@ -453,11 +453,11 @@ def test_planner_finds_latest_log_entry(tmp_path: Path):
     logs.write_text(
         """
 2024-04-28:
-  - task_id: T1
+  - log_id: T1
     description: Older work from Sunday
     actual_hours: 2
 2024-04-30:
-  - task_id: T1
+  - log_id: T1
     description: Latest work from Tuesday
     actual_hours: 4
 # Note: 2024-05-01 (Wednesday) is missing - could be vacation day
@@ -508,7 +508,7 @@ def test_planner_handles_no_previous_logs(tmp_path: Path):
     logs.write_text(
         """
 2024-05-03:
-  - task_id: T1
+  - log_id: T1
     description: Future work
     actual_hours: 2
 """
@@ -557,10 +557,10 @@ def test_planner_includes_meetings_in_yesterday_summary(tmp_path: Path):
     logs.write_text(
         """
 2024-04-30:
-  - task_id: T1
+  - log_id: T1
     description: Completed project review
     actual_hours: 3
-  - task_id: T2
+  - log_id: T2
     description: Updated documentation
     actual_hours: 1
 """
@@ -638,7 +638,7 @@ def test_planner_yesterday_summary_with_legacy_meeting_format(tmp_path: Path):
     logs.write_text(
         """
 2024-05-01:
-  - task_id: T1
+  - log_id: T1
     description: Worked on feature implementation
     actual_hours: 4
 """
@@ -704,7 +704,7 @@ def test_planner_yesterday_summary_no_meetings_on_log_date(tmp_path: Path):
     logs.write_text(
         """
 2024-04-30:
-  - task_id: T1
+  - log_id: T1
     description: Solo work day
     actual_hours: 6
 """
@@ -766,7 +766,7 @@ def test_planner_target_date_no_meetings(tmp_path: Path):
     logs.write_text(
         """
 2024-05-01:
-  - task_id: T1
+  - log_id: T1
     description: Started focus work
     actual_hours: 2
 """
@@ -859,7 +859,7 @@ def test_planner_explicit_paths_override_defaults(tmp_path: Path):
     logs.write_text(
         """
 2024-05-01:
-  - task_id: CUSTOM-1
+  - log_id: CUSTOM-1
     description: Custom work done
     actual_hours: 1
 """

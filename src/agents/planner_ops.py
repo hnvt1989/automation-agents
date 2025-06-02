@@ -54,6 +54,30 @@ def find_task(tasks: List[Dict[str, Any]], identifier: str) -> Optional[Dict[str
         if identifier_lower in task.get("title", "").lower():
             return task
     
+    # Try fuzzy matching for individual words
+    identifier_words = identifier_lower.split()
+    for task in tasks:
+        title_lower = task.get("title", "").lower()
+        # Check if all words from identifier are found in the title (allowing for typos)
+        words_found = 0
+        for word in identifier_words:
+            # Direct match
+            if word in title_lower:
+                words_found += 1
+            # Fuzzy match (allow 1 character difference for words > 3 chars)
+            elif len(word) > 3:
+                for title_word in title_lower.split():
+                    if len(title_word) > 3:
+                        # Simple fuzzy matching: check if most characters match
+                        matches = sum(1 for a, b in zip(word, title_word) if a == b)
+                        if matches >= len(word) - 1 and abs(len(word) - len(title_word)) <= 1:
+                            words_found += 1
+                            break
+        
+        # If most words match, consider it a match
+        if words_found >= len(identifier_words) * 0.8:  # 80% of words must match
+            return task
+    
     return None
 
 
@@ -75,9 +99,20 @@ class PlannerOperations:
             if not isinstance(tasks, list):
                 return {"success": False, "error": "Invalid tasks file structure"}
             
+            # Use custom ID if provided, otherwise generate one
+            custom_id = data.get("id") or data.get("identifier")
+            if custom_id:
+                # Check if the custom ID already exists
+                existing_ids = [task.get("id", "") for task in tasks]
+                if custom_id in existing_ids:
+                    return {"success": False, "error": f"Task with ID '{custom_id}' already exists"}
+                task_id = custom_id
+            else:
+                task_id = generate_task_id(tasks)
+            
             # Create task with defaults
             task = {
-                "id": generate_task_id(tasks),
+                "id": task_id,
                 "title": data.get("title", "New task"),
                 "priority": data.get("priority", "medium"),
                 "status": data.get("status", "pending"),
@@ -221,7 +256,7 @@ class PlannerOperations:
             
             # Create log entry
             log_entry = {
-                "task_id": data.get("task_id", "UNKNOWN"),
+                "log_id": data.get("log_id", data.get("task_id", "UNKNOWN")),
                 "description": data.get("description", ""),
                 "actual_hours": data.get("hours", 0)
             }

@@ -29,6 +29,9 @@ Available actions:
 - add_log: Log work done
 - remove_log: Remove a work log
 - plan_day: Generate daily plan
+- list_tasks: List all tasks
+- find_task: Find tasks by partial title match
+- search_tasks: Search tasks by keyword
 
 Date parsing:
 - "today" -> current date
@@ -42,6 +45,12 @@ Examples:
 Input: "add task 'job search' with high priority"
 Output: {"action": "add_task", "data": {"title": "job search", "priority": "high"}}
 
+Input: "add task with id 106264 description 'Document test scenarios' priority high"
+Output: {"action": "add_task", "data": {"id": "106264", "title": "Document test scenarios", "priority": "high"}}
+
+Input: "add task 'research project' with tag 'work' and high priority"  
+Output: {"action": "add_task", "data": {"title": "research project", "tags": ["work"], "priority": "high"}}
+
 Input: "change status of job search to in progress"
 Output: {"action": "update_task", "data": {"identifier": "job search", "updates": {"status": "in_progress"}}}
 
@@ -52,7 +61,7 @@ Input: "add a daily log 'research automated test analysis' took 2 hours"
 Output: {"action": "add_log", "data": {"description": "research automated test analysis", "hours": 2}}
 
 Input: "log 3 hours on TASK-1 implementing the API"
-Output: {"action": "add_log", "data": {"task_id": "TASK-1", "description": "implementing the API", "hours": 3}}
+Output: {"action": "add_log", "data": {"log_id": "TASK-1", "description": "implementing the API", "hours": 3}}
 
 Input: "schedule meeting team standup tomorrow at 10am"
 Output: {"action": "add_meeting", "data": {"title": "team standup", "date": "tomorrow", "time": "10:00"}}
@@ -68,6 +77,15 @@ Output: {"action": "update_task", "data": {"identifier": "TASK-1", "updates": {"
 
 Input: "add tags urgent, personal to job search task"
 Output: {"action": "update_task", "data": {"identifier": "job search", "updates": {"add_tags": ["urgent", "personal"]}}}
+
+Input: "list all tasks"
+Output: {"action": "list_tasks", "data": {}}
+
+Input: "find task with title including 'test scenarios'"
+Output: {"action": "find_task", "data": {"title": "test scenarios"}}
+
+Input: "search for tasks containing 'documentation'"
+Output: {"action": "search_tasks", "data": {"query": "documentation"}}
 
 Always return valid JSON with "action" and "data" fields.
 For update_task, use "identifier" for task ID or title, and "updates" for changes.

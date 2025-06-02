@@ -258,6 +258,54 @@ class PrimaryAgent(BaseAgent):
                     
                     return f"{result.get('yesterday_markdown', '')}\n\n{result.get('tomorrow_markdown', '')}"
                 
+                elif action == "list_tasks" or action == "get_tasks":
+                    # List all tasks
+                    from src.agents.planner_ops import load_yaml
+                    try:
+                        tasks = load_yaml('data/tasks.yaml') or []
+                        if not tasks:
+                            return "No tasks found."
+                        
+                        task_list = []
+                        for task in tasks:
+                            status = task.get('status', 'pending')
+                            priority = task.get('priority', 'medium')
+                            title = task.get('title', 'Untitled')
+                            task_id = task.get('id', 'Unknown')
+                            task_list.append(f"- {task_id}: {title} ({status}, {priority} priority)")
+                        
+                        return f"Current tasks:\n" + "\n".join(task_list)
+                    except Exception as e:
+                        return f"Error loading tasks: {str(e)}"
+                
+                elif action == "find_task" or action == "search_tasks":
+                    # Enhanced task search with LLM option
+                    from src.agents.planner_ops import load_yaml
+                    try:
+                        tasks = load_yaml('data/tasks.yaml') or []
+                        search_query = data.get('title', data.get('query', '')).lower()
+                        
+                        if not search_query:
+                            return "No search query provided."
+                        
+                        # Determine if we should use LLM for complex queries
+                        use_llm = self._should_use_llm_search(search_query)
+                        
+                        if use_llm:
+                            # Use LLM for sophisticated search
+                            matches = await self._llm_search_tasks(tasks, search_query)
+                        else:
+                            # Use traditional keyword search
+                            matches = self._keyword_search_tasks(tasks, search_query)
+                        
+                        if matches:
+                            search_type = "LLM-powered" if use_llm else "keyword"
+                            return f"Tasks matching '{search_query}' ({search_type} search):\n" + "\n".join(matches)
+                        else:
+                            return f"No tasks found matching '{search_query}'"
+                    except Exception as e:
+                        return f"Error searching tasks: {str(e)}"
+                
                 else:
                     return f"Unknown action: {action}"
                     
@@ -282,3 +330,145 @@ class PrimaryAgent(BaseAgent):
         )
         
         return await super().run(prompt, deps=deps, **kwargs)
+    
+    def _should_use_llm_search(self, query: str) -> bool:
+        """Determine if we should use LLM for search based on query complexity."""
+        # Use LLM for complex queries that involve:
+        # - Natural language questions
+        # - Comparisons or conditions
+        # - Multiple criteria
+        # - Fuzzy matching needs
+        
+        llm_indicators = [
+            "how many", "count", "list all", "show me", "find tasks that",
+            "tasks with", "highest", "lowest", "most", "least", "urgent",
+            "overdue", "due soon", "completed", "in progress", "pending",
+            "similar to", "like", "related to", "about", "containing"
+        ]
+        
+        query_lower = query.lower()
+        return any(indicator in query_lower for indicator in llm_indicators)
+    
+    def _keyword_search_tasks(self, tasks: List[Dict], search_query: str) -> List[str]:
+        """Enhanced keyword search across all task fields."""
+        matches = []
+        
+        for task in tasks:
+            # Get all searchable fields
+            title = task.get('title', '').lower()
+            description = task.get('description', '').lower()  # If tasks have description
+            priority = task.get('priority', '').lower()
+            status = task.get('status', '').lower()
+            tags = task.get('tags', [])
+            task_id = str(task.get('id', '')).lower()
+            
+            # Check if query matches any field
+            title_match = search_query in title
+            desc_match = search_query in description
+            priority_match = search_query in priority
+            status_match = search_query in status
+            id_match = search_query in task_id
+            tag_match = any(search_query in str(tag).lower() for tag in tags)
+            
+            if any([title_match, desc_match, priority_match, status_match, id_match, tag_match]):
+                # Format the task for display
+                status_display = task.get('status', 'pending')
+                priority_display = task.get('priority', 'medium')
+                task_id_display = task.get('id', 'Unknown')
+                tags_str = f" [tags: {', '.join(str(tag) for tag in tags)}]" if tags else ""
+                
+                match_info = []
+                if title_match:
+                    match_info.append("title")
+                if desc_match:
+                    match_info.append("description")
+                if priority_match:
+                    match_info.append("priority")
+                if status_match:
+                    match_info.append("status")
+                if id_match:
+                    match_info.append("ID")
+                if tag_match:
+                    match_info.append("tags")
+                
+                match_fields = f" (matched: {', '.join(match_info)})" if match_info else ""
+                matches.append(f"- {task_id_display}: {task.get('title', 'Untitled')} ({status_display}, {priority_display} priority){tags_str}{match_fields}")
+        
+        return matches
+    
+    async def _llm_search_tasks(self, tasks: List[Dict], search_query: str) -> List[str]:
+        """Use LLM to perform sophisticated task search."""
+        try:
+            # Prepare task data for LLM
+            task_summaries = []
+            for i, task in enumerate(tasks):
+                summary = f"{i}: {task.get('id', 'Unknown')} - {task.get('title', 'Untitled')} "
+                summary += f"(status: {task.get('status', 'pending')}, priority: {task.get('priority', 'medium')}"
+                
+                if task.get('tags'):
+                    summary += f", tags: {', '.join(str(tag) for tag in task.get('tags', []))}"
+                
+                if task.get('due_date'):
+                    summary += f", due: {task.get('due_date')}"
+                
+                if task.get('description'):
+                    summary += f", description: {task.get('description')}"
+                
+                summary += ")"
+                task_summaries.append(summary)
+            
+            # Create LLM prompt for search
+            prompt = f"""Given this list of tasks:
+
+{chr(10).join(task_summaries)}
+
+User query: "{search_query}"
+
+Please identify which tasks match the user's query. Consider:
+- Semantic meaning, not just exact keywords
+- Task content, priority, status, tags, and context
+- Natural language understanding
+
+Return ONLY the task indices (numbers) that match, separated by commas. For example: "1,3,5" or "0" or "none" if no matches.
+
+Task indices:"""
+
+            # Use LLM to find matches
+            from pydantic_ai import Agent
+            search_agent = Agent(
+                self.model,
+                system_prompt="You are a task search assistant. You help find tasks based on natural language queries by understanding semantic meaning and context."
+            )
+            
+            result = await search_agent.run(prompt)
+            indices_text = str(result.data).strip().lower()
+            
+            # Parse the result
+            matches = []
+            if indices_text and indices_text != "none":
+                try:
+                    # Extract indices
+                    indices = [int(x.strip()) for x in indices_text.split(',') if x.strip().isdigit()]
+                    
+                    for idx in indices:
+                        if 0 <= idx < len(tasks):
+                            task = tasks[idx]
+                            status_display = task.get('status', 'pending')
+                            priority_display = task.get('priority', 'medium')
+                            task_id_display = task.get('id', 'Unknown')
+                            tags = task.get('tags', [])
+                            tags_str = f" [tags: {', '.join(str(tag) for tag in tags)}]" if tags else ""
+                            
+                            matches.append(f"- {task_id_display}: {task.get('title', 'Untitled')} ({status_display}, {priority_display} priority){tags_str}")
+                
+                except (ValueError, IndexError) as e:
+                    # Fall back to keyword search if LLM parsing fails
+                    log_error(f"LLM search result parsing failed: {str(e)}, falling back to keyword search")
+                    return self._keyword_search_tasks(tasks, search_query)
+            
+            return matches
+            
+        except Exception as e:
+            log_error(f"LLM search failed: {str(e)}, falling back to keyword search")
+            # Fall back to keyword search if LLM fails
+            return self._keyword_search_tasks(tasks, search_query)

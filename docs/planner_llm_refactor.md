@@ -36,6 +36,7 @@ The planner now supports the same natural language commands as before:
 ```
 # Tasks
 "add task 'job search' with tag 'personal' and high priority"
+"add task with id 106264 description 'Document test scenarios' priority high"
 "update job search task status to in progress"
 "mark task TASK-1 as completed"
 "remove task TASK-1"
@@ -50,9 +51,16 @@ The planner now supports the same natural language commands as before:
 "log 3 hours on TASK-1 implementing the API"
 "spent 4 hours on TASK-2"
 
+Note: Daily logs now use `log_id` instead of `task_id` in the YAML files.
+
 # Planning
 "plan for tomorrow"
 "what's on my agenda today"
+
+# Task Search and Listing
+"list all tasks"
+"find task with title including 'test scenarios'"
+"search for tasks containing 'documentation'"
 ```
 
 ## Implementation Details
@@ -77,6 +85,29 @@ The parser uses a detailed system prompt that includes:
 ## Migration Notes
 
 The original `planner.py` file still contains the regex-based functions for backward compatibility. These can be removed once the new implementation is fully validated.
+
+## Custom Task IDs
+
+The planner now supports custom task IDs when creating tasks. This is useful for tracking tasks from external systems like TestRail, Jira, etc.
+
+```
+"add task with id 106264 description 'Document test scenarios' priority high"
+```
+
+- If a custom ID is provided, it will be used instead of auto-generating one
+- Duplicate IDs are rejected with an error message
+- Both `id` and `identifier` fields are supported in the parsed data
+
+## Improved Task Matching
+
+The system now includes enhanced task matching capabilities:
+
+- **Exact matching**: Direct ID or title matches
+- **Partial matching**: Substring matching in titles
+- **Fuzzy matching**: Handles small typos (e.g., "tests scenarios" matches "test scenarios")
+- **Word-based matching**: Matches when 80% of words are found
+
+This makes it easier to update tasks even with slight variations in how you refer to them.
 
 ## Future Enhancements
 
