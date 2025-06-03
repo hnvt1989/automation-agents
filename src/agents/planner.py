@@ -11,6 +11,17 @@ import yaml
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai import Agent
 
+# Import task details functionality
+from .planner_task_details import (
+    get_enhanced_task_info,
+    get_task_progress_summary,
+    format_task_detail_markdown,
+    list_tasks_with_details
+)
+
+# Import brainstorming functionality
+from .task_brainstorm import BrainstormManager
+
 
 @dataclass
 class PlannerInput:
@@ -1343,6 +1354,111 @@ def update_task(query: str, paths: Optional[Dict[str, str]] = None) -> Dict[str,
         return {"error": str(e)}
 
 
+def get_task_details(task_id: str, paths: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    """Get detailed information about a task including breakdown."""
+    if paths is None:
+        paths = {
+            'tasks': 'data/tasks.yaml',
+            'task_details': 'data/task_details.yaml'
+        }
+    
+    return get_task_progress_summary(task_id, paths)
+
+
+def get_task_details_markdown(task_id: str, paths: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    """Get task details formatted as markdown."""
+    if paths is None:
+        paths = {
+            'tasks': 'data/tasks.yaml',
+            'task_details': 'data/task_details.yaml'
+        }
+    
+    try:
+        markdown = format_task_detail_markdown(task_id, paths)
+        return {"success": True, "markdown": markdown}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def list_all_tasks_with_details(paths: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    """List all tasks and indicate which have detailed breakdowns."""
+    if paths is None:
+        paths = {
+            'tasks': 'data/tasks.yaml',
+            'task_details': 'data/task_details.yaml'
+        }
+    
+    return list_tasks_with_details(paths)
+
+
+async def brainstorm_task(query: str, paths: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    """Brainstorm a task using RAG and LLM capabilities.
+    
+    Args:
+        query: Natural language query like "brainstorm task id 111025" or "brainstorm task title TestRail"
+        paths: Optional file paths for tasks, task_details, and brainstorms
+        
+    Returns:
+        Dictionary with brainstorm result
+    """
+    if paths is None:
+        paths = {
+            'tasks': 'data/tasks.yaml',
+            'task_details': 'data/task_details.yaml',
+            'brainstorms': 'task_brainstorms.md'
+        }
+    
+    try:
+        manager = BrainstormManager(
+            brainstorm_file=paths.get('brainstorms', 'task_brainstorms.md'),
+            tasks_file=paths.get('tasks', 'data/tasks.yaml'),
+            task_details_file=paths.get('task_details', 'data/task_details.yaml')
+        )
+        
+        return await manager.process_brainstorm_query(query)
+    
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f"Error processing brainstorm query: {str(e)}"
+        }
+
+
+async def get_task_brainstorm(task_id: str, paths: Optional[Dict[str, str]] = None, 
+                             force_regenerate: bool = False) -> Dict[str, Any]:
+    """Get existing brainstorm for a task by ID.
+    
+    Args:
+        task_id: Task ID to get brainstorm for
+        paths: Optional file paths for tasks, task_details, and brainstorms
+        force_regenerate: Whether to force regeneration of brainstorm
+        
+    Returns:
+        Dictionary with brainstorm content
+    """
+    if paths is None:
+        paths = {
+            'tasks': 'data/tasks.yaml',
+            'task_details': 'data/task_details.yaml',
+            'brainstorms': 'task_brainstorms.md'
+        }
+    
+    try:
+        manager = BrainstormManager(
+            brainstorm_file=paths.get('brainstorms', 'task_brainstorms.md'),
+            tasks_file=paths.get('tasks', 'data/tasks.yaml'),
+            task_details_file=paths.get('task_details', 'data/task_details.yaml')
+        )
+        
+        return await manager.get_brainstorm('id', task_id, force_regenerate=force_regenerate)
+    
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f"Error getting task brainstorm: {str(e)}"
+        }
+
+
 def plan_day(payload: Dict[str, Any]) -> Dict[str, str]:
     try:
         # Use default paths if not provided
@@ -1350,7 +1466,8 @@ def plan_day(payload: Dict[str, Any]) -> Dict[str, str]:
             'tasks': 'data/tasks.yaml',
             'logs': 'data/daily_logs.yaml',
             'meets': 'data/meetings.yaml',
-            'meeting_notes': 'data/meeting_notes'
+            'meeting_notes': 'data/meeting_notes',
+            'task_details': 'data/task_details.yaml'
         }
         paths = payload.get("paths", default_paths)
         target_date = datetime.fromisoformat(payload["target_date"]).date()

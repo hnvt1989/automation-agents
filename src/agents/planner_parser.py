@@ -32,6 +32,7 @@ Available actions:
 - list_tasks: List all tasks
 - find_task: Find tasks by partial title match
 - search_tasks: Search tasks by keyword
+- brainstorm_task: Generate brainstorm for a task using RAG and AI
 
 Date parsing:
 - "today" -> current date
@@ -86,6 +87,15 @@ Output: {"action": "find_task", "data": {"title": "test scenarios"}}
 
 Input: "search for tasks containing 'documentation'"
 Output: {"action": "search_tasks", "data": {"query": "documentation"}}
+
+Input: "brainstorm task 111025"
+Output: {"action": "brainstorm_task", "data": {"task_id": "111025"}}
+
+Input: "brainstorm task with title job search"
+Output: {"action": "brainstorm_task", "data": {"task_title": "job search"}}
+
+Input: "improve brainstorm for task ONBOARDING-1"
+Output: {"action": "brainstorm_task", "data": {"task_id": "ONBOARDING-1", "force_regenerate": true}}
 
 Always return valid JSON with "action" and "data" fields.
 For update_task, use "identifier" for task ID or title, and "updates" for changes.
