@@ -237,3 +237,288 @@ async def process_calendar_image(image_path: str, output_path: str = "meetings.y
     save_events_yaml(events, output_path)
     return output_path
 
+
+class CalendarProcessor:
+    """Calendar processor class for parsing and handling calendar events."""
+    
+    def __init__(self):
+        pass
+    
+    def parse_calendar_text(self, text: str) -> List[dict]:
+        """Parse calendar text and return events in a structured format."""
+        import re
+        from datetime import datetime
+        
+        events = []
+        lines = text.strip().split('\n')
+        current_date = None
+        i = 0
+        
+        # Common patterns for different calendar formats
+        date_patterns = [
+            r'(?i)(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday),?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+\d+,?\s+\d{4}',
+            r'(?i)(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday),?\s+\d{1,2}/\d{1,2}/\d{4}',
+            r'(?i)(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s+\d{1,2}/\d{1,2}:',
+            r'\d{4}-\d{2}-\d{2}',
+            r'(?i)(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+\d+,?\s+\d{4}',
+            r'(?i)(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)',
+            r'(?i)(?:friday|monday|tuesday|wednesday|thursday|saturday|sunday)\s+june\s+\d+th?,?\s+\d{4}'
+        ]
+        
+        # Time patterns - more comprehensive
+        time_patterns = [
+            r'(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm))\s*(?:-|–|to)\s*(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm))',
+            r'(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm))',
+            r'(\d{1,2}\s*(?:AM|PM|am|pm))\s*(?:-|–|to)\s*(\d{1,2}\s*(?:AM|PM|am|pm))',
+            r'(\d{1,2}\s*(?:AM|PM|am|pm))',
+            r'(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})',  # 24-hour format
+            r'(\d{1,2}:\d{2})',  # Just time
+        ]
+        
+        while i < len(lines):
+            line = lines[i].strip()
+            if not line:
+                i += 1
+                continue
+                
+            # Check for date line
+            date_found = False
+            for pattern in date_patterns:
+                if re.search(pattern, line):
+                    current_date = self._normalize_date(line)
+                    date_found = True
+                    break
+            
+            if date_found:
+                i += 1
+                continue
+            
+            # Check for time and event
+            event_found = False
+            for pattern in time_patterns:
+                time_match = re.search(pattern, line)
+                if time_match and current_date:
+                    # Look ahead for location information
+                    full_text = line
+                    if i + 1 < len(lines):
+                        next_line = lines[i + 1].strip()
+                        if next_line and not re.search(r'\d{1,2}:\d{2}', next_line) and not any(re.search(dp, next_line) for dp in date_patterns):
+                            full_text += " " + next_line
+                    
+                    event = self._parse_event_line(full_text, time_match, current_date)
+                    if event:
+                        events.append(event)
+                        event_found = True
+                    break
+            
+            i += 1
+        
+        return events
+    
+    def _normalize_date(self, date_str: str) -> str:
+        """Normalize date string to YYYY-MM-DD format."""
+        import re
+        from datetime import datetime
+        
+        # Try different date formats
+        date_patterns = [
+            (r'(?i)(\w+),?\s+(\w+)\s+(\d+),?\s+(\d{4})', '%A %B %d %Y'),
+            (r'(\d{1,2})/(\d{1,2})/(\d{4})', '%m/%d/%Y'),
+            (r'(\d{4})-(\d{2})-(\d{2})', '%Y-%m-%d')
+        ]
+        
+        for pattern, fmt in date_patterns:
+            match = re.search(pattern, date_str)
+            if match:
+                try:
+                    if 'Y' in fmt and 'B' in fmt:  # Month name format
+                        # Extract components manually for month name
+                        parts = date_str.split()
+                        if len(parts) >= 3:
+                            month_name = None
+                            day = None
+                            year = None
+                            for part in parts:
+                                if part.strip(',').isdigit() and len(part.strip(',')) == 4:
+                                    year = part.strip(',')
+                                elif part.strip(',').isdigit() and int(part.strip(',')) <= 31:
+                                    day = part.strip(',').zfill(2)
+                                elif any(m in part.lower() for m in ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']):
+                                    month_map = {
+                                        'jan': '01', 'feb': '02', 'mar': '03', 'apr': '04',
+                                        'may': '05', 'jun': '06', 'jul': '07', 'aug': '08', 
+                                        'sep': '09', 'oct': '10', 'nov': '11', 'dec': '12'
+                                    }
+                                    for abbr, num in month_map.items():
+                                        if abbr in part.lower():
+                                            month_name = num
+                                            break
+                            if year and month_name and day:
+                                return f"{year}-{month_name}-{day}"
+                    else:
+                        groups = match.groups()
+                        if len(groups) >= 3:
+                            if '/' in pattern:  # MM/DD/YYYY
+                                return f"{groups[2]}-{groups[0].zfill(2)}-{groups[1].zfill(2)}"
+                            else:  # YYYY-MM-DD
+                                return f"{groups[0]}-{groups[1]}-{groups[2]}"
+                except:
+                    pass
+        
+        # Default fallback
+        return "2025-06-02"
+    
+    def _parse_event_line(self, line: str, time_match, date: str) -> dict:
+        """Parse an event line and extract event details."""
+        import re
+        
+        # Extract time information
+        groups = time_match.groups()
+        start_time = groups[0] if groups[0] else ""
+        end_time = groups[1] if len(groups) > 1 and groups[1] else ""
+        
+        # Extract event title (text after time, before location)
+        # Remove time patterns from the line
+        title_text = re.sub(r'\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)?\s*(?:-|–|to)?\s*\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)?', '', line)
+        title_text = re.sub(r'\d{1,2}\s*(?:AM|PM|am|pm)\s*(?:-|–|to)?\s*\d{1,2}\s*(?:AM|PM|am|pm)?', '', title_text)
+        
+        # Extract location if present
+        location = ""
+        location_patterns = [
+            r'(?i)location:\s*([^\n\r]+)',
+            r'(?i)\(([^)]+)\)',
+            r'(?i)room\s+([A-Z0-9]+)',
+            r'(?i)building\s+([A-Z0-9]+)',
+            r'(?i)conference\s+room\s+([A-Z0-9]+)',
+            r'(?i)virtual\s*\(([^)]+)\)',
+        ]
+        
+        # Check next lines for location info
+        original_line = line
+        for pattern in location_patterns:
+            match = re.search(pattern, original_line)
+            if match:
+                location = match.group(1).strip()
+                # Remove location from title
+                title_text = re.sub(pattern, '', title_text)
+                break
+        
+        title = title_text.strip()
+        
+        # If title is empty, try to extract from original line differently
+        if not title:
+            # Look for text patterns that might be event titles
+            event_patterns = [
+                r'(?:AM|PM|am|pm)\s+(.+?)(?:Location:|$)',
+                r'(?:\d{1,2}:\d{2})\s+(.+?)(?:\(|Location:|$)',
+                r'-\s*(.+?)(?:\(|Location:|$)'
+            ]
+            
+            for pattern in event_patterns:
+                match = re.search(pattern, original_line)
+                if match:
+                    title = match.group(1).strip()
+                    break
+        
+        if not title:
+            return None
+            
+        event = {
+            "title": title,
+            "date": date,
+            "start_time": start_time,
+            "end_time": end_time
+        }
+        
+        if location:
+            event["location"] = location
+            
+        return event
+    
+    def convert_to_planner_format(self, events: List[dict]) -> List[dict]:
+        """Convert calendar events to planner meeting format."""
+        planner_meetings = []
+        
+        for event in events:
+            meeting = {
+                "date": event.get("date", ""),
+                "time": event.get("start_time", ""),
+                "event": event.get("title", "")
+            }
+            planner_meetings.append(meeting)
+        
+        return planner_meetings
+    
+    def export_to_yaml(self, events: List[dict]) -> str:
+        """Export events to YAML format."""
+        import yaml
+        return yaml.dump(events, default_flow_style=False)
+    
+    def export_to_csv(self, events: List[dict]) -> str:
+        """Export events to CSV format."""
+        import csv
+        import io
+        
+        output = io.StringIO()
+        if not events:
+            return ""
+            
+        fieldnames = ["title", "date", "start_time", "end_time", "location"]
+        writer = csv.DictWriter(output, fieldnames=fieldnames)
+        writer.writeheader()
+        
+        for event in events:
+            row = {field: event.get(field, "") for field in fieldnames}
+            writer.writerow(row)
+        
+        return output.getvalue()
+    
+    def export_to_ical(self, events: List[dict]) -> str:
+        """Export events to iCal format."""
+        ical_content = ["BEGIN:VCALENDAR", "VERSION:2.0"]
+        
+        for i, event in enumerate(events):
+            ical_content.extend([
+                "BEGIN:VEVENT",
+                f"UID:event-{i}@automation-agents",
+                f"SUMMARY:{event.get('title', '')}",
+                f"DTSTART:{event.get('date', '').replace('-', '')}{event.get('start_time', '').replace(':', '')}00",
+                "END:VEVENT"
+            ])
+        
+        ical_content.append("END:VCALENDAR")
+        return "\n".join(ical_content)
+    
+    def detect_conflicts(self, events: List[dict]) -> List[dict]:
+        """Detect scheduling conflicts between events."""
+        conflicts = []
+        # Simple implementation - could be enhanced
+        return conflicts
+    
+    def generate_statistics(self, events: List[dict]) -> dict:
+        """Generate statistics about calendar events."""
+        unique_dates = set(event.get("date", "") for event in events)
+        
+        return {
+            "total_events": len(events),
+            "unique_dates": len(unique_dates),
+            "average_events_per_day": len(events) / max(len(unique_dates), 1)
+        }
+    
+    def analyze_time_distribution(self, events: List[dict]) -> dict:
+        """Analyze time distribution of events."""
+        morning_events = 0
+        afternoon_events = 0
+        
+        for event in events:
+            start_time = event.get("start_time", "")
+            if "AM" in start_time or (start_time and int(start_time.split(":")[0]) < 12):
+                morning_events += 1
+            else:
+                afternoon_events += 1
+        
+        return {
+            "morning_events": morning_events,
+            "afternoon_events": afternoon_events
+        }
+

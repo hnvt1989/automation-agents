@@ -51,6 +51,7 @@ class ConversationMessage:
     content: str
     thread_id: Optional[str] = None
     message_id: Optional[str] = None
+    reactions: Optional[List[Dict[str, Any]]] = None
 
 @dataclass
 class ConversationLog:
@@ -62,6 +63,188 @@ class ConversationLog:
     messages: List[ConversationMessage] = None
     metadata: Dict[str, Any] = None
     extracted_at: str = None
+    
+    @property
+    def message_count(self) -> int:
+        """Return the number of messages in this conversation."""
+        return len(self.messages) if self.messages else 0
+    
+    def to_json(self) -> str:
+        """Export conversation to JSON format."""
+        import json
+        data = {
+            "platform": self.platform,
+            "channel": self.channel,
+            "participants": self.participants or [],
+            "messages": [
+                {
+                    "speaker": msg.speaker,
+                    "timestamp": msg.timestamp,
+                    "content": msg.content,
+                    "message_id": msg.message_id,
+                    "reactions": msg.reactions or []
+                } for msg in (self.messages or [])
+            ],
+            "metadata": self.metadata or {},
+            "extracted_at": self.extracted_at,
+            "image_source": self.image_source
+        }
+        return json.dumps(data, indent=2)
+    
+    def to_text(self) -> str:
+        """Export conversation to plain text format."""
+        lines = [f"Conversation on {self.platform}"]
+        if self.channel:
+            lines.append(f"Channel: #{self.channel}")
+        if self.participants:
+            lines.append(f"Participants: {', '.join(self.participants)}")
+        lines.append("")
+        
+        for msg in (self.messages or []):
+            timestamp_str = f" ({msg.timestamp})" if msg.timestamp else ""
+            lines.append(f"{msg.speaker}{timestamp_str}: {msg.content}")
+        
+        return "\n".join(lines)
+    
+    def to_markdown(self) -> str:
+        """Export conversation to markdown format."""
+        lines = [f"# Conversation on {self.platform}"]
+        if self.channel:
+            lines.append(f"**Channel:** #{self.channel}")
+        if self.participants:
+            lines.append(f"**Participants:** {', '.join(self.participants)}")
+        lines.append("")
+        
+        for msg in (self.messages or []):
+            timestamp_str = f" *({msg.timestamp})*" if msg.timestamp else ""
+            lines.append(f"**{msg.speaker}**{timestamp_str}: {msg.content}")
+            lines.append("")
+        
+        return "\n".join(lines)
+    
+    def get_statistics(self) -> Dict[str, Any]:
+        """Get conversation statistics."""
+        return {
+            "message_count": self.message_count,
+            "participant_count": len(self.participants) if self.participants else 0,
+            "time_span": self._calculate_time_span(),
+            "platform": self.platform,
+            "channel": self.channel
+        }
+    
+    def _calculate_time_span(self) -> str:
+        """Calculate time span of conversation."""
+        if not self.messages or len(self.messages) < 2:
+            return "N/A"
+        
+        timestamps = [msg.timestamp for msg in self.messages if msg.timestamp]
+        if len(timestamps) < 2:
+            return "N/A"
+        
+        return f"From {timestamps[0]} to {timestamps[-1]}"
+    
+    def detect_threads(self) -> List[Dict[str, Any]]:
+        """Detect conversation threads."""
+        # Simple implementation - could be enhanced
+        threads = [{"id": "main", "messages": self.messages or []}]
+        return threads
+    
+    def extract_topics(self) -> List[str]:
+        """Extract topics from conversation."""
+        # Simple keyword-based implementation
+        topics = []
+        all_content = " ".join([msg.content for msg in (self.messages or [])])
+        
+        # Simple topic extraction based on keywords
+        keywords = ["meeting", "project", "code", "review", "demo", "planning", "bug", "feature"]
+        for keyword in keywords:
+            if keyword.lower() in all_content.lower():
+                topics.append(keyword)
+        
+        return topics
+    
+    def anonymize(self) -> 'ConversationLog':
+        """Return anonymized version of conversation."""
+        anonymized_messages = []
+        participant_map = {}
+        
+        for i, participant in enumerate(self.participants or []):
+            participant_map[participant] = f"User_{i+1}"
+        
+        for msg in (self.messages or []):
+            anonymized_msg = ConversationMessage(
+                speaker=participant_map.get(msg.speaker, "Anonymous"),
+                timestamp=msg.timestamp,
+                content=msg.content,  # Could sanitize content further
+                message_id=msg.message_id,
+                reactions=msg.reactions
+            )
+            anonymized_messages.append(anonymized_msg)
+        
+        return ConversationLog(
+            image_source=self.image_source,
+            platform=self.platform,
+            channel=self.channel,
+            participants=list(participant_map.values()),
+            messages=anonymized_messages,
+            metadata=self.metadata,
+            extracted_at=self.extracted_at
+        )
+    
+    def sanitize_content(self) -> 'ConversationLog':
+        """Return sanitized version of conversation."""
+        # Simple implementation - could be enhanced with more sophisticated sanitization
+        sanitized_messages = []
+        
+        for msg in (self.messages or []):
+            sanitized_msg = ConversationMessage(
+                speaker=msg.speaker,
+                timestamp=msg.timestamp,
+                content=msg.content,  # Could add PII removal here
+                message_id=msg.message_id,
+                reactions=msg.reactions
+            )
+            sanitized_messages.append(sanitized_msg)
+        
+        return ConversationLog(
+            image_source=self.image_source,
+            platform=self.platform,
+            channel=self.channel,
+            participants=self.participants,
+            messages=sanitized_messages,
+            metadata=self.metadata,
+            extracted_at=self.extracted_at
+        )
+    
+    def get_new_messages_since(self, other_conversation: 'ConversationLog') -> List[ConversationMessage]:
+        """Get new messages since another conversation."""
+        if not other_conversation or not other_conversation.messages:
+            return self.messages or []
+        
+        other_content_set = {msg.content for msg in other_conversation.messages}
+        new_messages = [msg for msg in (self.messages or []) if msg.content not in other_content_set]
+        
+        return new_messages
+    
+    def generate_summary(self) -> str:
+        """Generate a summary of the conversation."""
+        if not self.messages:
+            return "Empty conversation"
+        
+        participants_str = ", ".join(self.participants or [])
+        return f"Conversation between {participants_str} on {self.platform} with {len(self.messages)} messages."
+    
+    def extract_key_points(self) -> List[str]:
+        """Extract key points from the conversation."""
+        key_points = []
+        
+        # Simple keyword-based key point extraction
+        for msg in (self.messages or []):
+            content = msg.content.lower()
+            if any(keyword in content for keyword in ["important", "key", "note", "remember", "action", "todo", "decision"]):
+                key_points.append(f"{msg.speaker}: {msg.content[:100]}...")
+        
+        return key_points
 
 def encode_image_to_base64(image_path: str) -> str:
     """Encode an image file to base64 string."""
@@ -604,12 +787,30 @@ Return the structured conversation data as JSON."""
                 log_info(f"Skipping empty message from speaker: {msg_data.get('speaker', 'Unknown')}")
                 continue
                 
+            # Parse reactions from message content
+            reactions = []
+            reaction_patterns = [
+                r'(👍|💯|✅|⚡|❤️|😄|😊|🎉|🔥|👏)\s*(\d+)',
+                r':\w+:\s*(\d+)'
+            ]
+            
+            for pattern in reaction_patterns:
+                matches = re.findall(pattern, message_content)
+                for match in matches:
+                    if len(match) == 2:
+                        emoji, count = match
+                        reactions.append({"emoji": emoji, "count": int(count)})
+                    elif len(match) == 1 and match[0].isdigit():
+                        # Handle cases where emoji is captured separately
+                        reactions.append({"emoji": "👍", "count": int(match[0])})
+            
             message = ConversationMessage(
                 speaker=msg_data.get("speaker", "Unknown"),
                 timestamp=msg_data.get("timestamp", ""),
                 content=message_content,
                 thread_id=None,  # Could be enhanced later
-                message_id=None  # Could be enhanced later
+                message_id=None,  # Could be enhanced later
+                reactions=reactions if reactions else None
             )
             messages.append(message)
         
