@@ -52,10 +52,11 @@ Here are the assistant agents and tools you have access to:
    - Logging work done (e.g., "spent 3 hours on TASK-1")
    - Removing tasks/meetings/logs
    - Creating daily plans
+   - Brainstorming tasks using RAG and AI (e.g., "brainstorm task 111025", "lets brainstorm task with title job search")
 
 When you receive a request:
 - First analyze what kind of task it is
-- For meeting scheduling, task management, or work logging, use the Planner Tool
+- For meeting scheduling, task management, work logging, or brainstorming tasks, use the Planner Tool
 - Delegate to the appropriate specialist agent for other tasks
 - For image analysis tasks (calendar or conversations), use the Filesystem Agent
 - For indexing files or conversations, use the Filesystem Agent

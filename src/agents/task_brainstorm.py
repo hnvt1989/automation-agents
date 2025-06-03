@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import re
 import yaml
+import json
 from datetime import datetime
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Union
@@ -11,10 +12,12 @@ from pathlib import Path
 
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.providers.openai import OpenAIProvider
 
 from src.agents.rag import RAGAgent
 from src.storage.chromadb_client import get_chromadb_client
 from src.utils.logging import log_info, log_error, log_warning
+from src.core.config import get_settings
 
 
 @dataclass
@@ -251,8 +254,13 @@ async def generate_brainstorm_content(task_info: Dict[str, Any],
         sources = []
         
         try:
-            # Initialize RAG agent
-            model = OpenAIModel('gpt-4o-mini')
+            # Initialize RAG agent with configured API key
+            settings = get_settings()
+            provider = OpenAIProvider(
+                base_url=settings.base_url,
+                api_key=settings.llm_api_key
+            )
+            model = OpenAIModel('gpt-4o-mini', provider=provider)
             rag_agent = RAGAgent(model)
             
             # Create search queries based on task information
@@ -348,27 +356,51 @@ Focus on practical, actionable insights. Consider technical aspects, resource re
 Response format: Return only a valid JSON object with the five sections above.
 """
             
-            # Generate brainstorm using LLM
+            # Generate brainstorm using LLM with configured API key
+            settings = get_settings()
+            provider = OpenAIProvider(
+                base_url=settings.base_url,
+                api_key=settings.llm_api_key
+            )
+            brainstorm_model = OpenAIModel('gpt-4o', provider=provider)
             brainstorm_agent = Agent(
-                model=OpenAIModel('gpt-4o'),
+                model=brainstorm_model,
                 system_prompt="You are an expert project analyst specializing in task breakdown and strategic brainstorming. Provide structured, actionable insights for complex technical tasks."
             )
             
             llm_result = await brainstorm_agent.run(brainstorm_prompt)
             
             if hasattr(llm_result, 'data') and llm_result.data:
-                brainstorm_content = llm_result.data
-                
-                # Create TaskBrainstorm object
-                return TaskBrainstorm(
-                    task_id=task_id,
-                    task_title=task_title,
-                    brainstorm_type=brainstorm_type,
-                    generated_at=datetime.now(),
-                    content=brainstorm_content,
-                    rag_context=rag_context,
-                    sources=sources
-                )
+                # Parse the JSON response from LLM
+                try:
+                    # If llm_result.data is a string, parse it as JSON
+                    if isinstance(llm_result.data, str):
+                        brainstorm_content = json.loads(llm_result.data)
+                    else:
+                        brainstorm_content = llm_result.data
+                    
+                    # Validate that we have a dictionary
+                    if not isinstance(brainstorm_content, dict):
+                        log_error(f"Brainstorm content is not a dictionary: {type(brainstorm_content)}")
+                        return None
+                    
+                    # Create TaskBrainstorm object
+                    return TaskBrainstorm(
+                        task_id=task_id,
+                        task_title=task_title,
+                        brainstorm_type=brainstorm_type,
+                        generated_at=datetime.now(),
+                        content=brainstorm_content,
+                        rag_context=rag_context,
+                        sources=sources
+                    )
+                except json.JSONDecodeError as e:
+                    log_error(f"Failed to parse JSON from LLM response: {str(e)}")
+                    log_error(f"Raw response: {llm_result.data}")
+                    return None
+                except Exception as e:
+                    log_error(f"Error processing LLM response: {str(e)}")
+                    return None
             else:
                 log_error("LLM did not return valid brainstorm content")
                 return None
@@ -407,6 +439,31 @@ def save_brainstorm_to_file(brainstorm: TaskBrainstorm, file_path: str) -> Dict[
         return {'success': False, 'error': str(e)}
 
 
+def save_brainstorm_to_individual_file(brainstorm: TaskBrainstorm, data_dir: str = "data") -> Dict[str, Any]:
+    """Save brainstorm to individual markdown file named with task ID."""
+    try:
+        # Ensure data directory exists
+        os.makedirs(data_dir, exist_ok=True)
+        
+        # Create file path with task ID
+        file_path = os.path.join(data_dir, f"{brainstorm.task_id}_brainstorm.md")
+        
+        # Generate markdown content
+        markdown_content = brainstorm.to_markdown()
+        
+        # Write to individual file (overwrite if exists)
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(f"# Brainstorm for Task {brainstorm.task_id}\n\n")
+            f.write(markdown_content)
+        
+        log_info(f"Brainstorm for task {brainstorm.task_id} saved to individual file: {file_path}")
+        return {'success': True, 'file_path': file_path}
+    
+    except Exception as e:
+        log_error(f"Error saving brainstorm to individual file: {str(e)}")
+        return {'success': False, 'error': str(e)}
+
+
 def load_existing_brainstorm(task_id: str, file_path: str) -> Optional[str]:
     """Load existing brainstorm for a task from file."""
     if not os.path.exists(file_path):
@@ -427,6 +484,24 @@ def load_existing_brainstorm(task_id: str, file_path: str) -> Optional[str]:
     
     except Exception as e:
         log_error(f"Error loading existing brainstorm: {str(e)}")
+        return None
+
+
+def load_existing_individual_brainstorm(task_id: str, data_dir: str = "data") -> Optional[str]:
+    """Load existing brainstorm from individual task file."""
+    file_path = os.path.join(data_dir, f"{task_id}_brainstorm.md")
+    
+    if not os.path.exists(file_path):
+        return None
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        return content.strip()
+    
+    except Exception as e:
+        log_error(f"Error loading individual brainstorm file: {str(e)}")
         return None
 
 
@@ -461,12 +536,23 @@ class BrainstormManager:
         
         # Check for existing brainstorm unless forced to regenerate
         if not force_regenerate:
+            # First check individual file
+            existing = load_existing_individual_brainstorm(task_id)
+            if existing:
+                return {
+                    'success': True,
+                    'content': existing,
+                    'source': 'existing_individual',
+                    'newly_generated': False
+                }
+            
+            # Then check collective file
             existing = load_existing_brainstorm(task_id, self.brainstorm_file)
             if existing:
                 return {
                     'success': True,
                     'content': existing,
-                    'source': 'existing',
+                    'source': 'existing_collective',
                     'newly_generated': False
                 }
         
@@ -480,7 +566,7 @@ class BrainstormManager:
                 'error': 'Failed to generate brainstorm content'
             }
         
-        # Save to file
+        # Save to collective file
         save_result = save_brainstorm_to_file(brainstorm, self.brainstorm_file)
         if not save_result['success']:
             return {
@@ -488,12 +574,20 @@ class BrainstormManager:
                 'error': f"Failed to save brainstorm: {save_result.get('error')}"
             }
         
+        # Save to individual file
+        individual_save_result = save_brainstorm_to_individual_file(brainstorm)
+        if not individual_save_result['success']:
+            log_warning(f"Failed to save individual brainstorm file: {individual_save_result.get('error')}")
+        else:
+            log_info(f"Brainstorm saved to individual file: {individual_save_result.get('file_path')}")
+        
         return {
             'success': True,
             'content': brainstorm.to_markdown(),
             'source': 'generated',
             'newly_generated': True,
-            'brainstorm': brainstorm
+            'brainstorm': brainstorm,
+            'individual_file': individual_save_result.get('file_path')
         }
     
     async def process_brainstorm_query(self, query: str) -> Dict[str, Any]:

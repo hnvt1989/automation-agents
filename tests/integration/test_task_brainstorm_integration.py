@@ -442,6 +442,59 @@ Old brainstorm content that will be replaced.
             # Should fail gracefully
             assert result['success'] is False
             assert 'error generating brainstorm' in result['error'].lower()
+    
+    @patch('src.agents.task_brainstorm.RAGAgent')
+    @patch('src.agents.task_brainstorm.OpenAIModel')
+    @patch('src.agents.task_brainstorm.Agent')
+    @patch('src.agents.task_brainstorm.get_chromadb_client')
+    def test_llm_json_string_response(self, mock_chroma, mock_agent_class, mock_model, mock_rag_agent):
+        """Test handling when LLM returns JSON as string (the bug that was fixed)."""
+        # Mock ChromaDB client
+        mock_chroma.return_value = Mock()
+        
+        # Mock RAG agent
+        mock_rag_instance = Mock()
+        mock_rag_instance.run.return_value = Mock(
+            data="TestRail API context from RAG"
+        )
+        mock_rag_agent.return_value = mock_rag_instance
+        
+        # Mock LLM agent returning JSON as string (the case that caused the error)
+        mock_llm_result = Mock()
+        # This is what was causing the "string indices must be integers" error
+        mock_llm_result.data = '''{
+            "overview": "This task involves integrating automated test coverage with TestRail",
+            "considerations": ["API limits", "Authentication"],
+            "approaches": ["Direct API", "Batch processing"],
+            "risks": ["Performance impact"],
+            "recommendations": ["Start with pilot"]
+        }'''
+        
+        mock_agent_instance = Mock()
+        mock_agent_instance.run.return_value = mock_llm_result
+        mock_agent_class.return_value = mock_agent_instance
+        
+        # Create manager and test workflow
+        manager = BrainstormManager(
+            brainstorm_file=self.paths['brainstorms'],
+            tasks_file=self.paths['tasks'],
+            task_details_file=self.paths['task_details']
+        )
+        
+        # Test brainstorming - should NOT fail with string indices error
+        result = manager.process_brainstorm_query('brainstorm task id 111025')
+        
+        assert result['success'] is True
+        assert result['newly_generated'] is True
+        assert 'This task involves integrating automated test coverage' in result['content']
+        assert 'API limits' in result['content']
+        
+        # Verify the brainstorm was saved correctly
+        with open(self.paths['brainstorms'], 'r') as f:
+            file_content = f.read()
+        
+        assert 'This task involves integrating automated test coverage' in file_content
+        assert '- API limits' in file_content
 
 
 class TestPlannerIntegration:

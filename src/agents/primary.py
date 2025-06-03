@@ -306,6 +306,45 @@ class PrimaryAgent(BaseAgent):
                     except Exception as e:
                         return f"Error searching tasks: {str(e)}"
                 
+                elif action == "brainstorm_task":
+                    # Handle task brainstorming
+                    try:
+                        from src.agents.planner import brainstorm_task
+                        
+                        # Construct query for brainstorm function
+                        if "task_id" in data:
+                            query = f"brainstorm task id {data['task_id']}"
+                        elif "task_title" in data:
+                            query = f"brainstorm task title {data['task_title']}"
+                        else:
+                            return "No task ID or title provided for brainstorming"
+                        
+                        # Check if force regenerate is requested
+                        if data.get("force_regenerate", False):
+                            query = f"improve {query}"
+                        
+                        result = await brainstorm_task(query)
+                        
+                        if result.get('success'):
+                            content = result.get('content', '')
+                            individual_file = result.get('individual_file')
+                            newly_generated = result.get('newly_generated', False)
+                            
+                            response = content
+                            if individual_file:
+                                response += f"\n\n📝 **Brainstorm saved to:** `{individual_file}`"
+                            if newly_generated:
+                                response += "\n\n✨ **New brainstorm generated using RAG and AI analysis**"
+                            else:
+                                response += "\n\n📄 **Loaded existing brainstorm**"
+                            
+                            return response
+                        else:
+                            return f"Failed to generate brainstorm: {result.get('error')}"
+                    
+                    except Exception as e:
+                        return f"Error generating brainstorm: {str(e)}"
+                
                 else:
                     return f"Unknown action: {action}"
                     
