@@ -7,14 +7,14 @@ A sophisticated multi-agent system using the Model Context Protocol (MCP) for au
 ### **Multi-Agent Architecture**
 - **Primary Orchestration Agent**: Intelligently routes requests to specialized subagents
 - **Brave Search Agent**: Web search and research capabilities
-- **Filesystem Agent**: File and directory management operations  
+- **Filesystem Agent**: File and directory management, document indexing, and image analysis (calendar & conversations)
 - **GitHub Agent**: Repository and development workflow integration
 - **Slack Agent**: Team communication and notifications
 - **Analyzer Agent**: Test report analysis and insights
-- **RAG Agent**: Enhanced document indexing and contextual retrieval
+- **RAG Agent**: Enhanced document search and contextual retrieval
 
 ### **Enhanced RAG System**
-Our RAG (Retrieval Augmented Generation) agent now supports:
+Our RAG (Retrieval Augmented Generation) agent supports:
 
 #### **Document Indexing Capabilities**
 - **Single File Indexing**: Index individual files with intelligent content parsing
@@ -23,6 +23,11 @@ Our RAG (Retrieval Augmented Generation) agent now supports:
 - **Smart Chunking**: Overlapping text chunks with intelligent boundary detection
 - **Rich Metadata**: Tracks file paths, chunk indices, and source information
 
+#### **Image Analysis Features**
+- **Calendar Screenshot Analysis**: Extract events from calendar images using OpenAI Vision API
+- **Conversation Screenshot Analysis**: Parse chat conversations and index them for retrieval
+- **Automatic Text Extraction**: Convert images to searchable text
+
 #### **Advanced Features**
 - **ChromaDB Vector Store**: Persistent, high-performance semantic search
 - **File Type Detection**: Automatic MIME type and extension-based filtering
@@ -30,12 +35,11 @@ Our RAG (Retrieval Augmented Generation) agent now supports:
 - **Extension Filtering**: Target specific file types for indexing
 - **Error Handling**: Comprehensive error reporting and recovery
 - **Batch Processing**: Efficient handling of large directory structures
-- **Result Reranking**: Optional reranking of search results for improved relevance
 
 ## 📋 Prerequisites
 
 - Python 3.8+
-- Node.js (for MCP servers)
+- Node.js and npm (for MCP servers)
 - Required API keys (see Environment Setup)
 
 ## 🛠️ Installation
@@ -57,39 +61,45 @@ Our RAG (Retrieval Augmented Generation) agent now supports:
    pip install -r requirements.txt
    ```
 
-4. **Install MCP servers**
+4. **For development (optional)**
    ```bash
-   npm install -g @modelcontextprotocol/server-brave-search
-   npm install -g @modelcontextprotocol/server-filesystem
-   npm install -g @modelcontextprotocol/server-github
-   npm install -g @modelcontextprotocol/server-slack
+   pip install -r requirements-dev.txt
+   pip install -e .  # Install package in development mode
    ```
 
 ## ⚙️ Environment Setup
 
-Create a `.env` file in the project root with the following variables:
+Create a `local.env` file in the project root with the following variables:
 
 ```env
 # Model Configuration
 MODEL_CHOICE=gpt-4o-mini
 BASE_URL=https://api.openai.com/v1
 LLM_API_KEY=your_openai_api_key
+OPENAI_API_KEY=your_openai_api_key  # For embeddings
+VISION_LLM_MODEL=gpt-4o  # For image analysis
 
 # Agent API Keys
 BRAVE_API_KEY=your_brave_search_api_key
 GITHUB_TOKEN=your_github_personal_access_token
 SLACK_BOT_TOKEN=your_slack_bot_token
+SLACK_APP_TOKEN=your_slack_app_token
 SLACK_TEAM_ID=your_slack_team_id
 
 # File System Configuration
 LOCAL_FILE_DIR=/path/to/your/local/files
+LOCAL_FILE_DIR_KNOWLEDGE_BASE=/path/to/knowledge/base
+
+# Optional Configuration
+DEBUG=false
+LOG_LEVEL=INFO
 ```
 
 ### **Required API Keys**
 
 | Service | Purpose | How to Get |
 |---------|---------|------------|
-| **OpenAI** | Primary language model | [OpenAI API](https://platform.openai.com/api-keys) |
+| **OpenAI** | Primary language model & vision | [OpenAI API](https://platform.openai.com/api-keys) |
 | **Brave Search** | Web search capabilities | [Brave Search API](https://api.search.brave.com/) |
 | **GitHub** | Repository access | [GitHub Personal Access Token](https://github.com/settings/tokens) |
 | **Slack** | Team communication | [Slack App Dashboard](https://api.slack.com/apps) |
@@ -98,45 +108,73 @@ LOCAL_FILE_DIR=/path/to/your/local/files
 
 ### **Starting the System**
 
+**Option 1: New Modular Application (Recommended)**
+```bash
+./run.sh
+# Or directly:
+python -m src.main
+```
+
+**Option 2: Simple Mode (without MCP servers)**
+```bash
+./run_simple.sh
+# Or directly:
+python -m src.main_simple
+```
+
+**Option 3: Legacy Mode**
 ```bash
 python agents.py
 ```
 
 The system will:
 1. Initialize ChromaDB vector store
-2. Start all MCP servers
+2. Start all MCP servers (using npx to auto-download if needed)
 3. Launch interactive chat interface
 
-### **RAG Agent Commands**
+### **Core Commands**
 
-#### **Index Single File**
+#### **File Indexing**
 ```
-Index the file ./src/main.py
-```
+# Index a single file
+index the file at /path/to/document.txt
 
-#### **Index Directory**
-```
-Index all Python files in the ./src directory recursively
-```
+# Index a directory
+index all Python files in ./src directory
 
-#### **Index with File Filtering**
-```
-Index the ./docs directory but only include .md and .txt files
+# Index with filtering
+index all .md and .txt files in ./docs directory
 ```
 
-#### **Search Indexed Content**
+#### **Document Search**
 ```
-Find information about user authentication in the indexed codebase
+# Search indexed content
+what is Huy's job title?
+
+# Search with context
+find information about authentication in the codebase
 ```
 
-#### **Search with Reranking**
+#### **Image Analysis**
+
+**Calendar Events:**
 ```
-Find information about caching strategies with rerank:true
+analyze the image data/calendar.png and write the calendar events to data/meetings.yaml
 ```
 
-#### **Add Text Documents**
+**Conversation Analysis:**
 ```
-Add this documentation to the knowledge base: [your text content]
+analyze the conversations from data/chat.png and index to the knowledge base
+```
+
+#### **Planning**
+```
+# Create daily plan
+plan
+
+# Plan for specific date
+plan tomorrow
+plan 2025-01-15
 ```
 
 ### **Other Agent Examples**
@@ -149,11 +187,13 @@ Search for the latest Python best practices
 #### **File Operations**
 ```
 List all Python files in the current directory
+Create a file summary.txt with the project overview
 ```
 
 #### **GitHub Integration**
 ```
 Get the latest issues from my repository
+Create a new issue about the bug in authentication
 ```
 
 #### **Slack Communication**
@@ -163,8 +203,25 @@ Send a message to the #general channel about deployment status
 
 ## 🏗️ Architecture
 
-### **Agent Communication Flow**
+### **Project Structure**
+```
+automation-agents/
+├── src/
+│   ├── agents/          # Individual agent implementations
+│   ├── core/            # Configuration, constants, exceptions
+│   ├── mcp/             # MCP server management
+│   ├── processors/      # Data processors (crawler, image, calendar)
+│   ├── storage/         # Storage layer (ChromaDB)
+│   ├── utils/           # Utilities (logging)
+│   └── main.py          # Main application entry point
+├── tests/               # Test suite
+├── data/                # Data files (tasks, logs, meetings)
+├── docs/                # Documentation
+├── scripts/             # Utility scripts
+└── requirements.txt     # Python dependencies
+```
 
+### **Agent Communication Flow**
 ```
 User Input → Primary Agent → Specialized Subagent → External Service/Tool
                 ↓
@@ -172,82 +229,108 @@ User Input → Primary Agent → Specialized Subagent → External Service/Tool
 ```
 
 ### **RAG System Architecture**
-
 ```
 Files/Directories → Content Reader → Text Chunker → ChromaDB → Vector Search → Context Retrieval
 ```
 
-### **Supported File Types**
+## 📊 Data Files
 
-The RAG system automatically detects and processes:
+The system uses YAML files in the `data/` directory:
 
-- **Code Files**: .py, .js, .ts, .html, .css, .sh, .sql
-- **Documentation**: .md, .txt, .rst
-- **Configuration**: .json, .xml, .yaml, .yml, .env
-- **Text Files**: Any file with `text/*` MIME type
-
-## 📊 ChromaDB Features
-
-### **Vector Store Capabilities**
-- **Persistent Storage**: Data persists between sessions in `./chroma_db/`
-- **Cosine Similarity**: Optimized for semantic search
-- **Metadata Filtering**: Search by file type, source, or custom attributes
-- **Scalable**: Handles large document collections efficiently
-
-### **Search Quality**
-- **Semantic Understanding**: Goes beyond keyword matching
-- **Context Preservation**: Overlapping chunks maintain narrative flow
-- **Source Attribution**: Every result includes file path and chunk information
-- **Relevance Scoring**: Similarity scores help assess result quality
+- **tasks.yaml**: Task management with priorities and due dates
+- **daily_logs.yaml**: Completed work logs
+- **meetings.yaml**: Meeting schedule (can be auto-populated from calendar images)
 
 ## 🔧 Configuration
 
-### **Chunk Size Configuration**
-Adjust text chunking in RAG operations:
-- **Default**: 1000 characters
-- **Overlap**: 200 characters
-- **Customizable**: Specify in indexing commands
+### **Logging**
+Logs are stored in the `logs/` directory with rotation. Configure log level via `LOG_LEVEL` environment variable.
 
-### **Search Parameters**
-- **Default Results**: 3 most relevant chunks
-- **Configurable**: Adjust `n_results` in search queries
-- **Similarity Threshold**: ChromaDB handles relevance automatically
+### **ChromaDB**
+Vector database files are stored in `chroma_db/` directory. The database persists between sessions.
 
-## 🤝 Contributing
+### **MCP Servers**
+MCP servers are automatically managed using `npx`. No manual installation required - they download on first use.
 
-1. Fork the repository
-2. Create a feature branch
-3. Implement your changes
-4. Add tests for new functionality
-5. Submit a pull request
+## 🧪 Testing
+
+Run tests with:
+```bash
+pytest tests/
+```
+
+For coverage report:
+```bash
+pytest tests/ --cov=src --cov-report=html
+```
+
+## 🔧 Development
+
+### **Code Quality**
+```bash
+# Format code
+black src/ tests/
+
+# Sort imports
+isort src/ tests/
+
+# Type checking
+mypy src/
+
+# Linting
+flake8 src/ tests/
+```
+
+### **Pre-commit Hooks**
+```bash
+pre-commit install
+pre-commit run --all-files
+```
 
 ## 📝 Troubleshooting
 
 ### **Common Issues**
 
+**MCP Server Connection Fails**
+- The system uses `npx` to auto-download MCP servers
+- Ensure Node.js and npm are installed
+- Check API keys in environment variables
+
 **ChromaDB Initialization Error**
 - Ensure write permissions for `./chroma_db/` directory
 - Check available disk space
 
-**MCP Server Connection Fails**
-- Verify Node.js packages are installed globally
-- Check API keys in environment variables
+**Image Analysis Not Working**
+- Verify OPENAI_API_KEY is set
+- Check VISION_LLM_MODEL is set (default: gpt-4o)
+- Ensure image files exist and are readable
 
-**File Indexing Errors**
-- Verify file permissions and existence
-- Check supported file formats
-- Review error messages in output
+**Planning Feature Issues**
+- Ensure data/*.yaml files exist
+- Check date formats in YAML files
 
-**Memory Issues with Large Directories**
-- Use file extension filtering
-- Process subdirectories separately
-- Adjust chunk sizes
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes following the code style
+4. Add tests for new functionality
+5. Run tests and code quality checks
+6. Commit your changes (`git commit -m 'Add amazing feature'`)
+7. Push to the branch (`git push origin feature/amazing-feature`)
+8. Open a Pull Request
 
 ## 📄 License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
+## 🚀 Migration from Legacy Code
+
+If you're migrating from the monolithic `agents.py`:
+1. The new structure provides better modularity and maintainability
+2. All functionality has been preserved
+3. See `MIGRATION.md` for detailed migration instructions
+
 ---
 
 **Built with** ❤️ **using PydanticAI, ChromaDB, and Model Context Protocol**
-
