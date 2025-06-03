@@ -177,3 +177,74 @@
 6. Fix all type hints warnings
 7. Remove unused imports and dead code
 8. Standardize naming conventions
+
+## 16. ChromaDB Collection Management
+Based on recent findings, the current system uses a single collection for all content types, causing ID collisions and search limitations.
+
+### Issues Identified
+1. **Single Collection Limitation**
+   - All content types (files, conversations, tasks) share one collection
+   - ID collisions when re-indexing content (e.g., "Add of existing embedding ID")
+   - Cannot search specific content types efficiently
+   - RAG searches everything, reducing precision
+
+2. **No Multi-Collection Support**
+   - RAG agent only searches default `automation_agents` collection
+   - No way to specify which collection to search
+   - No federated search across collections
+
+### Recommended Improvements
+
+#### Short Term
+1. **Add Metadata Filtering**
+   - Use `source_type` metadata to filter searches
+   - Enable queries like "search files for X" or "search conversations about Y"
+   - Implement in RAG agent's search_knowledge_base function
+
+2. **Fix ID Collision Issues**
+   - Check for existing IDs before adding documents
+   - Use content-type prefixes for IDs (file::, conv::, task::)
+   - Add timestamp or hash to ensure uniqueness
+
+#### Medium Term
+1. **Implement Multiple Collections**
+   ```
+   automation_agents_files       # For indexed documents
+   automation_agents_conversations  # For chat logs
+   automation_agents_tasks         # For task-related content
+   automation_agents_code          # For code snippets
+   ```
+
+2. **Collection-Aware Commands**
+   ```
+   You: create collection "project_docs"
+   You: index file.md to collection "project_docs"
+   You: search in collection "project_docs" for "API"
+   ```
+
+3. **Enhanced RAG Search**
+   - Add collection parameter to search function
+   - Support searching specific collections
+   - Implement collection routing based on query type
+
+#### Long Term
+1. **Federated Search**
+   - Search across multiple collections
+   - Merge and re-rank results by relevance
+   - Attribute sources clearly
+
+2. **Smart Collection Routing**
+   - Auto-detect appropriate collection from query
+   - Parallel search across relevant collections
+   - Intelligent result merging
+
+3. **Collection Management UI**
+   - Web interface to manage collections
+   - Visualize collection contents and statistics
+   - Bulk operations (clear, export, import)
+
+### Implementation Priority
+1. **Immediate**: Fix ID collision warnings with deduplication
+2. **High**: Add metadata filtering for content types
+3. **Medium**: Implement multiple collections support
+4. **Low**: Build federated search and management UI

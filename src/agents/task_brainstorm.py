@@ -18,6 +18,14 @@ from src.agents.rag import RAGAgent
 from src.storage.chromadb_client import get_chromadb_client
 from src.utils.logging import log_info, log_error, log_warning
 from src.core.config import get_settings
+from src.agents.enhanced_rag import (
+    extract_key_terms,
+    generate_search_queries,
+    deduplicate_contexts,
+    calculate_relevance_score,
+    rank_contexts_by_relevance,
+    get_enhanced_rag_context
+)
 
 
 @dataclass
@@ -249,49 +257,52 @@ async def generate_brainstorm_content(task_info: Dict[str, Any],
         
         log_info(f"Generating brainstorm for task {task_id}: {task_title}")
         
-        # Step 1: Gather context from RAG
+        # Step 1: Gather enhanced context from RAG
         rag_context = []
         sources = []
         
         try:
-            # Initialize RAG agent with configured API key
-            settings = get_settings()
-            provider = OpenAIProvider(
-                base_url=settings.base_url,
-                api_key=settings.llm_api_key
-            )
-            model = OpenAIModel('gpt-4o-mini', provider=provider)
-            rag_agent = RAGAgent(model)
+            # Use enhanced RAG context retrieval
+            enhanced_contexts = await get_enhanced_rag_context(task_info, max_contexts=5)
             
-            # Create search queries based on task information
-            search_queries = [task_title]
-            
-            if task_detail:
-                # Add objective and tasks to search queries
-                if task_detail.get('objective'):
-                    search_queries.append(task_detail['objective'])
-                
-                if task_detail.get('tasks'):
-                    search_queries.extend(task_detail['tasks'][:3])  # Limit to first 3 subtasks
-            
-            # Search for relevant context
-            for query in search_queries[:3]:  # Limit total searches
-                try:
-                    rag_result = await rag_agent.run(
-                        f"Find relevant information about: {query}",
-                        deps=None
-                    )
+            # Extract content and sources from enhanced contexts
+            for ctx in enhanced_contexts:
+                content = ctx.get('content', '')
+                if content:
+                    rag_context.append(content)
                     
-                    if hasattr(rag_result, 'data') and rag_result.data:
-                        rag_context.append(str(rag_result.data))
-                        sources.append(f"RAG search: {query}")
-                        
-                except Exception as e:
-                    log_warning(f"RAG search failed for query '{query}': {str(e)}")
-                    continue
+                    # Add source information
+                    metadata = ctx.get('metadata', {})
+                    source = metadata.get('source', 'RAG search')
+                    relevance = ctx.get('relevance_score', 0)
+                    sources.append(f"{source} (relevance: {relevance:.2f})")
+            
+            log_info(f"Retrieved {len(rag_context)} enhanced RAG contexts")
         
         except Exception as e:
-            log_warning(f"RAG initialization failed: {str(e)}")
+            log_warning(f"Enhanced RAG retrieval failed: {str(e)}")
+            # Fall back to basic search if enhanced fails
+            try:
+                # Initialize RAG agent with configured API key
+                settings = get_settings()
+                provider = OpenAIProvider(
+                    base_url=settings.base_url,
+                    api_key=settings.llm_api_key
+                )
+                model = OpenAIModel('gpt-4o-mini', provider=provider)
+                rag_agent = RAGAgent(model)
+                
+                # Basic search with just the title
+                rag_result = await rag_agent.run(
+                    f"Find relevant information about: {task_title}",
+                    deps=None
+                )
+                
+                if hasattr(rag_result, 'data') and rag_result.data:
+                    rag_context.append(str(rag_result.data))
+                    sources.append(f"RAG search: {task_title}")
+            except Exception as e2:
+                log_error(f"Fallback RAG search also failed: {str(e2)}")
         
         # Step 2: Generate brainstorm using LLM
         try:
@@ -328,11 +339,13 @@ async def generate_brainstorm_content(task_info: Dict[str, Any],
                         else:
                             context_parts.append(f"  {i}. {criteria}")
             
-            # RAG context
+            # Enhanced RAG context with relevance info
             if rag_context:
-                context_parts.append("Relevant Context from Knowledge Base:")
+                context_parts.append("Relevant Context from Knowledge Base (ranked by relevance):")
                 for i, context in enumerate(rag_context, 1):
-                    context_parts.append(f"  {i}. {context}")
+                    # Truncate long contexts for prompt
+                    truncated = context[:500] + "..." if len(context) > 500 else context
+                    context_parts.append(f"  {i}. {truncated}")
             
             task_context = "\n".join(context_parts)
             
@@ -353,7 +366,7 @@ Please provide a structured brainstorm in JSON format with the following section
 
 Focus on practical, actionable insights. Consider technical aspects, resource requirements, timeline implications, and potential dependencies.
 
-Response format: Return only a valid JSON object with the five sections above.
+IMPORTANT: Return ONLY a valid JSON object with the five sections above. Do NOT wrap the JSON in markdown code blocks or any other formatting. Just return the raw JSON.
 """
             
             # Generate brainstorm using LLM with configured API key
@@ -375,7 +388,18 @@ Response format: Return only a valid JSON object with the five sections above.
                 try:
                     # If llm_result.data is a string, parse it as JSON
                     if isinstance(llm_result.data, str):
-                        brainstorm_content = json.loads(llm_result.data)
+                        # Strip markdown code blocks if present
+                        response_text = llm_result.data.strip()
+                        if response_text.startswith('```'):
+                            # Find the end of the opening code block marker
+                            first_newline = response_text.find('\n')
+                            if first_newline > -1:
+                                response_text = response_text[first_newline+1:]
+                            # Remove closing code block
+                            if response_text.rstrip().endswith('```'):
+                                response_text = response_text.rstrip()[:-3].rstrip()
+                        
+                        brainstorm_content = json.loads(response_text)
                     else:
                         brainstorm_content = llm_result.data
                     
