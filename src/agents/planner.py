@@ -19,6 +19,9 @@ from .planner_task_details import (
     list_tasks_with_details
 )
 
+# Import brainstorming functionality
+from .task_brainstorm import BrainstormManager
+
 
 @dataclass
 class PlannerInput:
@@ -1386,6 +1389,74 @@ def list_all_tasks_with_details(paths: Optional[Dict[str, str]] = None) -> Dict[
         }
     
     return list_tasks_with_details(paths)
+
+
+async def brainstorm_task(query: str, paths: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    """Brainstorm a task using RAG and LLM capabilities.
+    
+    Args:
+        query: Natural language query like "brainstorm task id 111025" or "brainstorm task title TestRail"
+        paths: Optional file paths for tasks, task_details, and brainstorms
+        
+    Returns:
+        Dictionary with brainstorm result
+    """
+    if paths is None:
+        paths = {
+            'tasks': 'data/tasks.yaml',
+            'task_details': 'data/task_details.yaml',
+            'brainstorms': 'task_brainstorms.md'
+        }
+    
+    try:
+        manager = BrainstormManager(
+            brainstorm_file=paths.get('brainstorms', 'task_brainstorms.md'),
+            tasks_file=paths.get('tasks', 'data/tasks.yaml'),
+            task_details_file=paths.get('task_details', 'data/task_details.yaml')
+        )
+        
+        return await manager.process_brainstorm_query(query)
+    
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f"Error processing brainstorm query: {str(e)}"
+        }
+
+
+async def get_task_brainstorm(task_id: str, paths: Optional[Dict[str, str]] = None, 
+                             force_regenerate: bool = False) -> Dict[str, Any]:
+    """Get existing brainstorm for a task by ID.
+    
+    Args:
+        task_id: Task ID to get brainstorm for
+        paths: Optional file paths for tasks, task_details, and brainstorms
+        force_regenerate: Whether to force regeneration of brainstorm
+        
+    Returns:
+        Dictionary with brainstorm content
+    """
+    if paths is None:
+        paths = {
+            'tasks': 'data/tasks.yaml',
+            'task_details': 'data/task_details.yaml',
+            'brainstorms': 'task_brainstorms.md'
+        }
+    
+    try:
+        manager = BrainstormManager(
+            brainstorm_file=paths.get('brainstorms', 'task_brainstorms.md'),
+            tasks_file=paths.get('tasks', 'data/tasks.yaml'),
+            task_details_file=paths.get('task_details', 'data/task_details.yaml')
+        )
+        
+        return await manager.get_brainstorm('id', task_id, force_regenerate=force_regenerate)
+    
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f"Error getting task brainstorm: {str(e)}"
+        }
 
 
 def plan_day(payload: Dict[str, Any]) -> Dict[str, str]:
