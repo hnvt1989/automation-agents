@@ -366,7 +366,7 @@ Please provide a structured brainstorm in JSON format with the following section
 
 Focus on practical, actionable insights. Consider technical aspects, resource requirements, timeline implications, and potential dependencies.
 
-Response format: Return only a valid JSON object with the five sections above.
+IMPORTANT: Return ONLY a valid JSON object with the five sections above. Do NOT wrap the JSON in markdown code blocks or any other formatting. Just return the raw JSON.
 """
             
             # Generate brainstorm using LLM with configured API key
@@ -388,7 +388,18 @@ Response format: Return only a valid JSON object with the five sections above.
                 try:
                     # If llm_result.data is a string, parse it as JSON
                     if isinstance(llm_result.data, str):
-                        brainstorm_content = json.loads(llm_result.data)
+                        # Strip markdown code blocks if present
+                        response_text = llm_result.data.strip()
+                        if response_text.startswith('```'):
+                            # Find the end of the opening code block marker
+                            first_newline = response_text.find('\n')
+                            if first_newline > -1:
+                                response_text = response_text[first_newline+1:]
+                            # Remove closing code block
+                            if response_text.rstrip().endswith('```'):
+                                response_text = response_text.rstrip()[:-3].rstrip()
+                        
+                        brainstorm_content = json.loads(response_text)
                     else:
                         brainstorm_content = llm_result.data
                     
