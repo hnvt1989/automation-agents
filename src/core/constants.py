@@ -93,6 +93,18 @@ DEFAULT_CHUNK_OVERLAP = 100
 DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
 DEFAULT_COLLECTION_NAME = "automation_agents"
 
+# Collection names for different content types
+COLLECTION_WEBSITES = "automation_agents_websites"
+COLLECTION_CONVERSATIONS = "automation_agents_conversations"
+COLLECTION_KNOWLEDGE = "automation_agents_knowledge"
+
+# Collection-specific chunk configurations
+COLLECTION_CHUNK_CONFIGS = {
+    COLLECTION_WEBSITES: {"size": 1500, "overlap": 200},
+    COLLECTION_CONVERSATIONS: {"size": 500, "overlap": 50},
+    COLLECTION_KNOWLEDGE: {"size": 1000, "overlap": 100}
+}
+
 # Timeouts (in seconds)
 MCP_SERVER_STARTUP_TIMEOUT = 30
 AGENT_EXECUTION_TIMEOUT = 300
