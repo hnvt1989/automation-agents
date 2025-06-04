@@ -11,66 +11,51 @@ class AgentError(AutomationAgentError):
     pass
 
 
-class AgentInitializationError(AgentError):
-    """Raised when an agent fails to initialize."""
+class MCPError(AutomationAgentError):
+    """Exception for MCP-related errors."""
     pass
 
 
-class AgentExecutionError(AgentError):
-    """Raised when an agent fails during execution."""
-    pass
-
-
-class MCPServerError(AutomationAgentError):
-    """Base exception for MCP server errors."""
+class MCPServerError(MCPError):
+    """Exception for MCP server-related errors."""
     pass
 
 
 class MCPServerStartupError(MCPServerError):
-    """Raised when an MCP server fails to start."""
+    """Exception for MCP server startup errors."""
     pass
 
 
 class MCPServerConnectionError(MCPServerError):
-    """Raised when connection to MCP server fails."""
+    """Exception for MCP server connection errors."""
+    pass
+
+
+class ChromaDBError(AutomationAgentError):
+    """Exception for ChromaDB-related errors."""
+    pass
+
+
+class GraphDBError(AutomationAgentError):
+    """Exception for Graph database (Neo4j) related errors."""
     pass
 
 
 class ConfigurationError(AutomationAgentError):
-    """Raised when there's a configuration error."""
+    """Exception for configuration-related errors."""
     pass
 
 
 class ValidationError(AutomationAgentError):
-    """Raised when input validation fails."""
+    """Exception for validation errors."""
     pass
 
 
 class StorageError(AutomationAgentError):
-    """Base exception for storage-related errors."""
-    pass
-
-
-class ChromaDBError(StorageError):
-    """Raised when ChromaDB operations fail."""
+    """Exception for storage-related errors."""
     pass
 
 
 class ProcessingError(AutomationAgentError):
-    """Base exception for processing errors."""
-    pass
-
-
-class ImageProcessingError(ProcessingError):
-    """Raised when image processing fails."""
-    pass
-
-
-class CrawlerError(ProcessingError):
-    """Raised when web crawling fails."""
-    pass
-
-
-class PlannerError(ProcessingError):
-    """Raised when planning operations fail."""
+    """Exception for processing-related errors."""
     pass

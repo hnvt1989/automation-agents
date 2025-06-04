@@ -41,6 +41,23 @@ class Settings(BaseSettings):
         default_factory=lambda: Path(__file__).parent.parent.parent / "chroma_db"
     )
     
+    # Neo4j settings for knowledge graph
+    neo4j_uri: Optional[str] = Field(
+        default=None,
+        env="NEO4J_URI",
+        description="Neo4j connection URI (e.g., bolt://localhost:7687)"
+    )
+    neo4j_user: str = Field(
+        default="neo4j",
+        env="NEO4J_USER",
+        description="Neo4j username"
+    )
+    neo4j_password: Optional[str] = Field(
+        default=None,
+        env="NEO4J_PASSWORD",
+        description="Neo4j password"
+    )
+    
     # Application settings
     debug: bool = Field(default=False, env="DEBUG")
     log_level: str = Field(default="INFO", env="LOG_LEVEL")

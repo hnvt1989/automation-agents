@@ -12,18 +12,33 @@ from src.core.constants import (
 )
 from src.utils.logging import log_info, log_error, log_warning
 
+# Optional graph integration
+try:
+    from src.storage.graph_knowledge_manager import GraphKnowledgeManager
+    GRAPH_AVAILABLE = True
+except ImportError:
+    GraphKnowledgeManager = None
+    GRAPH_AVAILABLE = False
+
 
 class CollectionManager:
     """Manages multiple ChromaDB collections with type-specific logic."""
     
-    def __init__(self, chromadb_client: ChromaDBClient):
+    def __init__(self, chromadb_client: ChromaDBClient, graph_manager: Optional[Any] = None):
         """Initialize collection manager.
         
         Args:
             chromadb_client: ChromaDB client instance
+            graph_manager: Optional GraphKnowledgeManager instance
         """
         self.client = chromadb_client
+        self.graph_manager = graph_manager
         self._ensure_collections_exist()
+        
+        if self.graph_manager:
+            log_info("CollectionManager initialized with knowledge graph support")
+        else:
+            log_info("CollectionManager initialized without knowledge graph")
     
     def _ensure_collections_exist(self):
         """Ensure all required collections exist."""
@@ -99,6 +114,29 @@ class CollectionManager:
         )
         
         log_info(f"Indexed {len(chunks)} chunks from {url}")
+        
+        # Add to knowledge graph if available
+        if self.graph_manager and GRAPH_AVAILABLE:
+            try:
+                import asyncio
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # Schedule as task if loop is already running
+                    asyncio.create_task(self._add_to_graph_async(
+                        content=content,
+                        metadata=base_metadata,
+                        name=f"Website: {title or url}"
+                    ))
+                else:
+                    # Run directly if no loop
+                    loop.run_until_complete(self._add_to_graph_async(
+                        content=content,
+                        metadata=base_metadata,
+                        name=f"Website: {title or url}"
+                    ))
+            except Exception as e:
+                log_warning(f"Failed to add website to knowledge graph: {str(e)}")
+        
         return ids
     
     def index_conversation(
@@ -167,6 +205,29 @@ class CollectionManager:
         )
         
         log_info(f"Indexed {len(chunks)} chunks from conversation with {len(messages)} messages")
+        
+        # Add to knowledge graph if available
+        if self.graph_manager and GRAPH_AVAILABLE:
+            try:
+                import asyncio
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(self._add_conversation_to_graph_async(
+                        messages=messages,
+                        conversation_id=conversation_id or self._generate_conversation_id(),
+                        platform=platform or "unknown",
+                        metadata=base_metadata
+                    ))
+                else:
+                    loop.run_until_complete(self._add_conversation_to_graph_async(
+                        messages=messages,
+                        conversation_id=conversation_id or self._generate_conversation_id(),
+                        platform=platform or "unknown",
+                        metadata=base_metadata
+                    ))
+            except Exception as e:
+                log_warning(f"Failed to add conversation to knowledge graph: {str(e)}")
+        
         return ids
     
     def index_knowledge(
@@ -227,6 +288,27 @@ class CollectionManager:
         )
         
         log_info(f"Indexed {len(chunks)} chunks from {file_path}")
+        
+        # Add to knowledge graph if available
+        if self.graph_manager and GRAPH_AVAILABLE:
+            try:
+                import asyncio
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(self._add_to_graph_async(
+                        content=content,
+                        metadata=base_metadata,
+                        name=f"Document: {file_path.name}"
+                    ))
+                else:
+                    loop.run_until_complete(self._add_to_graph_async(
+                        content=content,
+                        metadata=base_metadata,
+                        name=f"Document: {file_path.name}"
+                    ))
+            except Exception as e:
+                log_warning(f"Failed to add document to knowledge graph: {str(e)}")
+        
         return ids
     
     def search_all(
@@ -477,3 +559,34 @@ class CollectionManager:
         stats['total'] = len(websites)
         log_info(f"Batch indexed websites: {stats['success']} success, {stats['errors']} errors")
         return stats
+    
+    async def _add_to_graph_async(self, content: str, metadata: Dict[str, Any], name: str):
+        """Async helper to add content to knowledge graph."""
+        if self.graph_manager:
+            try:
+                await self.graph_manager.add_document_episode(
+                    content=content,
+                    metadata=metadata,
+                    name=name
+                )
+            except Exception as e:
+                log_error(f"Failed to add to graph: {str(e)}")
+    
+    async def _add_conversation_to_graph_async(
+        self,
+        messages: List[Dict[str, Any]],
+        conversation_id: str,
+        platform: str,
+        metadata: Dict[str, Any]
+    ):
+        """Async helper to add conversation to knowledge graph."""
+        if self.graph_manager:
+            try:
+                await self.graph_manager.add_conversation_episode(
+                    messages=messages,
+                    conversation_id=conversation_id,
+                    platform=platform,
+                    metadata=metadata
+                )
+            except Exception as e:
+                log_error(f"Failed to add conversation to graph: {str(e)}")
