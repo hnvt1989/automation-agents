@@ -55,6 +55,14 @@ class TestTaskDetailsIntegration:
                 'status': 'pending',
                 'due_date': '2025-06-10',
                 'estimate_hours': 1
+            },
+            {
+                'id': 'TASK-2',
+                'title': 'Complete project documentation',
+                'priority': 'medium',
+                'status': 'pending',
+                'due_date': '2025-06-12',
+                'estimate_hours': 3
             }
         ]
         
@@ -423,6 +431,67 @@ class TestTaskDetailsIntegration:
             assert 'TestRail API endpoints' in markdown
             assert 'automated test coverage reports' in markdown
         
+        finally:
+            self.teardown_test_data()
+    
+    def test_task_detail_with_information_attribute(self):
+        """Test task detail with information attribute."""
+        self.setup_test_data()
+        
+        try:
+            # Create a task detail with information
+            result = create_task_detail(
+                task_id='TASK-2',
+                title='Complete project documentation',
+                objective='Create comprehensive documentation for the automation project',
+                tasks=[
+                    'Write API documentation',
+                    'Create user guide',
+                    'Add code examples'
+                ],
+                acceptance_criteria=[
+                    'All APIs are documented',
+                    'User guide covers all features',
+                    'Code examples are tested'
+                ],
+                information=[
+                    'Reference: https://docs.example.com/style-guide',
+                    'Meeting notes from 2025-06-04 discussion',
+                    'Include diagrams for complex workflows',
+                    'Priority: Focus on RAG system documentation first'
+                ],
+                paths=self.paths
+            )
+            
+            assert result['success'] is True
+            assert 'information' in result['task_detail']
+            assert len(result['task_detail']['information']) == 4
+            
+            # Test get_task_details includes information
+            details_result = get_task_details('TASK-2', self.paths)
+            
+            # Debug print to see what's returned
+            if 'error' in details_result:
+                print(f"Error in get_task_details: {details_result['error']}")
+            
+            # The function returns get_task_progress_summary which may not have 'success' key
+            # but should have 'summary' if successful or 'error' if failed
+            assert 'error' not in details_result
+            assert 'summary' in details_result
+            assert 'information' in details_result['summary']
+            assert details_result['summary']['information_count'] == 4
+            
+            # Test markdown formatting includes information
+            markdown_result = get_task_details_markdown('TASK-2', self.paths)
+            assert markdown_result['success'] is True
+            markdown = markdown_result['markdown']
+            
+            assert '## Information' in markdown
+            assert '- Reference: https://docs.example.com/style-guide' in markdown
+            assert '- Meeting notes from 2025-06-04 discussion' in markdown
+            assert '- Include diagrams for complex workflows' in markdown
+            assert '- Priority: Focus on RAG system documentation first' in markdown
+            
         finally:
             self.teardown_test_data()
 

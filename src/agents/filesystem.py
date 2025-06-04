@@ -15,6 +15,14 @@ from src.utils.logging import log_info, log_error, log_warning
 from src.processors.calendar import parse_calendar_from_image, save_parsed_events_yaml
 from src.processors.image import extract_text_from_image, parse_conversation_from_text, process_conversation_and_index
 
+# Optional graph support
+try:
+    from src.storage.graph_knowledge_manager import GraphKnowledgeManager
+    GRAPH_SUPPORT = True
+except ImportError:
+    GraphKnowledgeManager = None
+    GRAPH_SUPPORT = False
+
 
 class FilesystemAgentDeps(BaseModel):
     """Dependencies for the filesystem agent."""
@@ -41,12 +49,36 @@ class FilesystemAgent(BaseAgent):
         # Initialize ChromaDB client and collection manager for indexing
         try:
             self.chromadb_client = get_chromadb_client()
-            self.collection_manager = CollectionManager(self.chromadb_client)
+            
+            # Initialize graph manager if available and Neo4j is configured
+            self.graph_manager = None
+            if GRAPH_SUPPORT:
+                try:
+                    from src.core.config import get_settings
+                    settings = get_settings()
+                    if hasattr(settings, 'neo4j_uri') and settings.neo4j_uri:
+                        self.graph_manager = GraphKnowledgeManager(
+                            neo4j_uri=settings.neo4j_uri,
+                            neo4j_user=settings.neo4j_user,
+                            neo4j_password=settings.neo4j_password,
+                            openai_api_key=settings.llm_api_key
+                        )
+                        log_info("Filesystem agent initialized with knowledge graph support")
+                    else:
+                        log_info("Filesystem agent initialized without knowledge graph (Neo4j not configured)")
+                except Exception as e:
+                    log_info(f"Filesystem agent initialized without knowledge graph: {str(e)}")
+            else:
+                log_info("Filesystem agent initialized without knowledge graph (Graphiti not installed)")
+            
+            # Now create CollectionManager with graph_manager
+            self.collection_manager = CollectionManager(self.chromadb_client, graph_manager=self.graph_manager)
             log_info("Filesystem agent initialized with ChromaDB multi-collection indexing")
         except Exception as e:
             log_warning(f"ChromaDB not available for indexing: {str(e)}")
             self.chromadb_client = None
             self.collection_manager = None
+            self.graph_manager = None
         
         # Update system prompt to include indexing and image analysis capabilities
         enhanced_prompt = SYSTEM_PROMPTS[AgentType.FILESYSTEM] + """
@@ -151,11 +183,48 @@ You can analyze conversation screenshots using the analyze_conversation_image to
                 
                 # Index using collection manager for knowledge collection
                 if hasattr(ctx.deps, 'collection_manager') and ctx.deps.collection_manager:
-                    ctx.deps.collection_manager.index_knowledge(
-                        file_path=path,
-                        content=content,
-                        metadata={'indexed_via': 'filesystem_agent'}
-                    )
+                    # Check if contextual indexing is enabled
+                    if ctx.deps.collection_manager.enable_contextual:
+                        # Use contextual indexing for better retrieval
+                        context_metadata = {
+                            'source_type': 'knowledge_base',
+                            'filename': path.name,
+                            'file_path': str(path.absolute()),
+                            'file_type': path.suffix,
+                            'category': ctx.deps.collection_manager._infer_category(path),
+                            'indexed_via': 'filesystem_agent',
+                            'file_size': file_stats.st_size,
+                            'modified_at': datetime.fromtimestamp(file_stats.st_mtime).isoformat(),
+                        }
+                        
+                        # Add document summary if we can infer it
+                        if path.suffix in ['.md', '.txt', '.rst']:
+                            # Extract first paragraph or header as summary
+                            lines = content.strip().split('\n')
+                            summary_lines = []
+                            for line in lines[:10]:  # Check first 10 lines
+                                if line.strip():
+                                    summary_lines.append(line.strip())
+                                if len(summary_lines) >= 3:
+                                    break
+                            if summary_lines:
+                                context_metadata['document_summary'] = ' '.join(summary_lines[:3])[:200]
+                        
+                        ids = ctx.deps.collection_manager.index_with_context(
+                            content=content,
+                            metadata=context_metadata,
+                            collection_name='knowledge_base',
+                            use_llm_context=False  # Use template for files
+                        )
+                        log_info(f"Successfully indexed {len(ids)} contextual chunks from {file_path}")
+                        return f"Successfully indexed file {file_path} with contextual RAG ({len(ids)} chunks)"
+                    else:
+                        # Use regular indexing
+                        ctx.deps.collection_manager.index_knowledge(
+                            file_path=path,
+                            content=content,
+                            metadata={'indexed_via': 'filesystem_agent'}
+                        )
                 else:
                     # Fallback to direct client (backward compatibility)
                     ctx.deps.chromadb_client.add_documents(

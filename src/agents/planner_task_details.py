@@ -17,6 +17,7 @@ class TaskDetail:
     tasks: List[str]
     acceptance_criteria: List[str]
     issue_description: Optional[str] = None
+    information: Optional[List[str]] = None
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'TaskDetail':
@@ -27,7 +28,8 @@ class TaskDetail:
             objective=data.get('objective', data.get('issue_description', '')),  # Use issue_description as fallback
             tasks=data.get('tasks', []),
             acceptance_criteria=data.get('acceptance_criteria', []),
-            issue_description=data.get('issue_description')
+            issue_description=data.get('issue_description'),
+            information=data.get('information', [])
         )
     
     def to_dict(self) -> Dict[str, Any]:
@@ -41,6 +43,8 @@ class TaskDetail:
         }
         if self.issue_description:
             result['issue_description'] = self.issue_description
+        if self.information:
+            result['information'] = self.information
         return result
 
 
@@ -145,6 +149,7 @@ def create_task_detail(
     objective: str,
     tasks: List[str],
     acceptance_criteria: List[str],
+    information: Optional[List[str]] = None,
     paths: Optional[Dict[str, str]] = None
 ) -> Dict[str, Any]:
     """Create a new task detail entry."""
@@ -166,7 +171,8 @@ def create_task_detail(
             title=title,
             objective=objective,
             tasks=tasks,
-            acceptance_criteria=acceptance_criteria
+            acceptance_criteria=acceptance_criteria,
+            information=information
         )
         
         # Add to list and save
@@ -220,6 +226,10 @@ def update_task_detail(
         if 'acceptance_criteria' in updates:
             detail_to_update.acceptance_criteria = updates['acceptance_criteria']
             updated_fields.append('acceptance_criteria')
+        
+        if 'information' in updates:
+            detail_to_update.information = updates['information']
+            updated_fields.append('information')
         
         # Save updated task details
         save_task_details(task_details, paths)
@@ -326,6 +336,11 @@ def get_task_progress_summary(task_id: str, paths: Optional[Dict[str, str]] = No
             'acceptance_criteria_count': len(task_detail.acceptance_criteria),
             'acceptance_criteria': task_detail.acceptance_criteria
         })
+        if task_detail.information:
+            summary.update({
+                'information_count': len(task_detail.information),
+                'information': task_detail.information
+            })
     
     return {"success": True, "summary": summary}
 
@@ -372,6 +387,12 @@ def format_task_detail_markdown(task_id: str, paths: Optional[Dict[str, str]] = 
                         markdown += "\n"
                 else:
                     markdown += f"- {criterion}\n"
+            markdown += "\n"
+        
+        if task_detail.information:
+            markdown += "## Information\n"
+            for info in task_detail.information:
+                markdown += f"- {info}\n"
             markdown += "\n"
     else:
         markdown += "*No detailed breakdown available for this task.*\n"
