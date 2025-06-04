@@ -52,7 +52,8 @@ class RAGAgent(BaseAgent):
                         self.graph_manager = GraphKnowledgeManager(
                             neo4j_uri=settings.neo4j_uri,
                             neo4j_user=settings.neo4j_user,
-                            neo4j_password=settings.neo4j_password
+                            neo4j_password=settings.neo4j_password,
+                            openai_api_key=settings.llm_api_key
                         )
                         log_info("RAG agent initialized with knowledge graph support")
                     else:

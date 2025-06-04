@@ -108,6 +108,11 @@ class GraphKnowledgeManager:
             raise GraphDBError("Graphiti is not installed")
         
         try:
+            # Set OpenAI API key environment variable if provided
+            if self.openai_api_key:
+                import os
+                os.environ["OPENAI_API_KEY"] = self.openai_api_key
+            
             # Initialize Graphiti client
             self.client = Graphiti(
                 self.neo4j_uri,
@@ -119,7 +124,17 @@ class GraphKnowledgeManager:
             self.driver = self.client.driver
             
             # Build indices and constraints
-            await self.client.build_indices_and_constraints()
+            try:
+                await self.client.build_indices_and_constraints()
+                log_info("Graph indices and constraints created successfully")
+            except Exception as index_error:
+                # Check if it's a duplicate index error
+                error_str = str(index_error)
+                if "EquivalentSchemaRuleAlreadyExists" in error_str or "already exists" in error_str.lower():
+                    log_info("Graph indices already exist, continuing with initialization")
+                else:
+                    # Re-raise if it's a different error
+                    raise
             
             self._initialized = True
             log_info("GraphKnowledgeManager initialized successfully")
@@ -160,8 +175,7 @@ class GraphKnowledgeManager:
                 episode_body=episode_body,
                 source=EpisodeType.json,  # Use JSON for better entity extraction
                 source_description=metadata.get('source', 'document'),
-                reference_time=reference_time or datetime.now(timezone.utc),
-                episode_id=episode_id
+                reference_time=reference_time or datetime.now(timezone.utc)
             )
             
             log_info(f"Added document episode: {name} (ID: {episode_id})")
@@ -211,8 +225,7 @@ class GraphKnowledgeManager:
                 episode_body=json.dumps(episode_data),
                 source=EpisodeType.json,
                 source_description=f"{platform} conversation",
-                reference_time=datetime.now(timezone.utc),
-                episode_id=episode_id
+                reference_time=datetime.now(timezone.utc)
             )
             
             log_info(f"Added conversation episode: {conversation_id}")
