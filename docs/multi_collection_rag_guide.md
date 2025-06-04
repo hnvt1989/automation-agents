@@ -1,135 +1,186 @@
 # Multi-Collection RAG Search Guide
 
-## Current Situation
-- RAG searches only the default collection: `automation_agents`
-- All content types are mixed in one collection
-- No built-in support for multi-collection search
+> **Status**: ✅ Implemented - This guide reflects the current multi-collection architecture.
 
-## Options for Multi-Collection Search
+## Current Implementation
 
-### Option 1: Search Specific Collection (Modify RAG)
+The system now supports multiple ChromaDB collections for better organization and performance:
+
+### Collections
+1. **`automation_agents_websites`** - Indexed website content
+2. **`automation_agents_conversations`** - Conversation history and messages
+3. **`automation_agents_knowledge`** - Knowledge base documents and files
+
+### Key Components
+
+#### 1. Enhanced ChromaDB Client (`src/storage/chromadb_client.py`)
+- Multi-collection support with collection caching
+- Query caching for improved performance
+- Performance monitoring and metrics
+- Parallel query execution for multiple collections
+
+#### 2. Collection Manager (`src/storage/collection_manager.py`)
+- High-level interface for managing collections
+- Type-specific indexing methods
+- Cross-collection search capabilities
+- Batch processing for bulk operations
+
+#### 3. Performance Optimizations
+- **Query Cache**: LRU cache with TTL for frequently accessed queries
+- **Performance Monitor**: Tracks operation metrics and response times
+- **Parallel Queries**: Concurrent execution when searching multiple collections
+
+## Usage Examples
+
+### Indexing Content
+
+#### Index a Website
 ```python
-# Enhanced RAG command examples:
-You: search in collection "project_docs" for "API integration"
-You: search knowledge base collection="meeting_notes" query="budget discussion"
-```
+from src.storage.collection_manager import CollectionManager
 
-Implementation would require:
-```python
-async def search_knowledge_base(ctx, query: str, collection: str = None):
-    if collection:
-        client = get_chromadb_client(collection_name=collection)
-    else:
-        client = ctx.deps.chromadb_client  # default
-```
-
-### Option 2: Search All Collections
-```python
-# Search across all collections
-You: search all collections for "TestRail integration"
-```
-
-Implementation approach:
-```python
-async def search_all_collections(query: str):
-    results = []
-    collections = chromadb_client.list_collections()
-    
-    for collection in collections:
-        client = get_chromadb_client(collection_name=collection.name)
-        collection_results = client.query(query)
-        results.extend(collection_results)
-    
-    # Merge and rank results
-    return rank_by_relevance(results)
-```
-
-### Option 3: Tagged Search with Metadata
-Keep single collection but use metadata for filtering:
-```python
-# Current approach - filter by metadata
-You: search for "API docs" where type="file"
-You: search for "meeting notes" where source="conversations"
-```
-
-This works with current implementation:
-```python
-results = chromadb_client.query(
-    query_texts=[query],
-    where={"source_type": "file"}  # or "conversation"
+manager = CollectionManager(chromadb_client)
+manager.index_website(
+    url="https://example.com",
+    content="Page content here...",
+    title="Example Page"
 )
 ```
 
-### Option 4: Collection Routing by Query Type
-Automatically route to appropriate collection based on query:
+#### Index a Conversation
 ```python
-# Automatic routing examples:
-You: search files for "backend testing"        # -> searches file collection
-You: search conversations about "API design"   # -> searches conversation collection
-You: search tasks related to "TestRail"       # -> searches task collection
+messages = [
+    {"sender": "Alice", "content": "How do we implement this?", "timestamp": "2024-01-01T10:00:00"},
+    {"sender": "Bob", "content": "Let's use ChromaDB", "timestamp": "2024-01-01T10:01:00"}
+]
+
+manager.index_conversation(
+    messages=messages,
+    platform="slack",
+    conversation_id="conv_123"
+)
 ```
 
-## Recommended Approach
-
-### Short Term (Works Now)
-Use metadata filtering with single collection:
+#### Index Knowledge Documents
 ```python
-# Examples that work with current system:
-You: find documents about "TestRail" from files
-You: search conversations mentioning "backend testing"
+manager.index_knowledge(
+    file_path="/docs/guide.md",
+    content="Documentation content...",
+    category="documentation"
+)
 ```
 
-The RAG agent can be given hints:
-- "from files" → filter where source_type = "file"
-- "conversations" → filter where source_type = "conversation"
+### Searching Content
 
-### Medium Term
-Implement collection-aware search:
-1. Add collection parameter to RAG search
-2. Create collection manager
-3. Add multi-collection search capability
-
-### Long Term
-Smart routing and federated search:
-1. Auto-detect collection from query context
-2. Search relevant collections in parallel
-3. Merge and re-rank results
-4. Return unified results with source attribution
-
-## Practical Examples
-
-### What Works Now:
+#### Search All Collections
 ```
-You: search knowledge base for "TestRail API"
-# Searches everything in default collection
+You: search knowledge base for "ChromaDB implementation"
+```
+The RAG agent will search across all collections and return merged results.
 
-You: what files mention "contract testing"  
-# RAG interprets and searches, but no filtering
+#### Search Specific Collection Types
+```
+You: search only websites for "API documentation"
+You: search conversations about "project planning"
+You: search knowledge files for "setup guide"
 ```
 
-### What Could Work with Enhancements:
+The enhanced RAG agent now supports the `search_by_type` tool:
+```python
+results = await search_by_type(
+    query="API documentation",
+    source_types=["website"],  # Can be ["website", "conversation", "knowledge"]
+    n_results=5
+)
 ```
-You: search project_docs collection for "API specs"
-You: search all technical documentation for "authentication"
-You: find meeting notes about "TestRail integration"
+
+### Performance Monitoring
+
+#### View Performance Stats
+```python
+stats = chromadb_client.get_performance_stats()
+print(f"Cache hit rate: {stats['cache_stats']['hit_rate']:.1%}")
+print(f"Average query time: {stats['performance_metrics']['query_collection']['average_time']:.3f}s")
 ```
 
-## Implementation Priority
+#### Log Performance Report
+```python
+chromadb_client.log_performance_report()
+```
 
-1. **Metadata Filtering** (easiest, works now)
-   - Add source type to all indexed content
-   - Enhance RAG to parse filter hints
+## Migration from Single Collection
 
-2. **Collection Parameter** (medium effort)
-   - Add optional collection parameter
-   - Update prompts to support collection names
+A migration script is provided to move existing data:
 
-3. **Multi-Collection Search** (higher effort)
-   - List all collections
-   - Search each relevant one
-   - Merge and rank results
+```bash
+python scripts/migrate_to_multi_collection.py --help
 
-4. **Smart Routing** (advanced)
-   - NLP to determine collection
-   - Parallel search
-   - Intelligent result merging
+# Dry run to see what would be migrated
+python scripts/migrate_to_multi_collection.py --dry-run
+
+# Perform migration
+python scripts/migrate_to_multi_collection.py
+
+# Migrate with custom batch size
+python scripts/migrate_to_multi_collection.py --batch-size 200
+```
+
+## Configuration
+
+### Collection-Specific Chunk Sizes
+Different content types use optimized chunk configurations:
+- **Websites**: 1500 tokens with 200 overlap (larger for context)
+- **Conversations**: 500 tokens with 50 overlap (preserve message boundaries)
+- **Knowledge**: 1000 tokens with 100 overlap (balanced approach)
+
+### Cache Configuration
+```python
+# In ChromaDBClient initialization
+self._query_cache = QueryCache(
+    max_size=200,      # Maximum cached queries
+    ttl_seconds=600    # 10-minute TTL
+)
+```
+
+## Agent Integration
+
+### Filesystem Agent
+- Automatically uses appropriate collection based on content type
+- `index_file` → Knowledge collection
+- `analyze_conversation_image` → Conversation collection
+
+### RAG Agent
+- `search_knowledge_base` → Searches all collections
+- `search_by_type` → Search specific collection types
+- `get_collection_stats` → Shows stats for all collections
+
+## Best Practices
+
+1. **Use Collection Manager** for indexing operations instead of direct client calls
+2. **Batch Operations** when indexing multiple items
+3. **Monitor Performance** regularly to identify bottlenecks
+4. **Clear Cache** after bulk updates to ensure fresh results
+5. **Use Metadata** effectively for fine-grained filtering
+
+## Performance Considerations
+
+1. **Parallel Queries**: Multiple collections are queried concurrently
+2. **Result Merging**: Results are merged and sorted by relevance score
+3. **Cache Invalidation**: Cache is automatically invalidated on document updates
+4. **Batch Processing**: Use batch methods for bulk indexing operations
+
+## Troubleshooting
+
+### Slow Queries
+1. Check cache hit rate with `get_performance_stats()`
+2. Monitor query times in performance metrics
+3. Consider increasing cache size or TTL
+
+### Missing Results
+1. Verify content is indexed in correct collection
+2. Check collection stats to ensure documents exist
+3. Use metadata filters to narrow search scope
+
+### Migration Issues
+1. Run with `--dry-run` first to preview changes
+2. Check source collection has expected documents
+3. Verify all collections are created successfully

@@ -10,6 +10,7 @@ from src.agents.base import BaseAgent
 from src.core.constants import AgentType, SYSTEM_PROMPTS
 from src.mcp import get_mcp_manager
 from src.storage.chromadb_client import get_chromadb_client
+from src.storage.collection_manager import CollectionManager
 from src.utils.logging import log_info, log_error, log_warning
 from src.processors.calendar import parse_calendar_from_image, save_parsed_events_yaml
 from src.processors.image import extract_text_from_image, parse_conversation_from_text, process_conversation_and_index
@@ -18,6 +19,7 @@ from src.processors.image import extract_text_from_image, parse_conversation_fro
 class FilesystemAgentDeps(BaseModel):
     """Dependencies for the filesystem agent."""
     chromadb_client: Any = Field(default=None)
+    collection_manager: Any = Field(default=None)
     
     class Config:
         arbitrary_types_allowed = True
@@ -36,13 +38,15 @@ class FilesystemAgent(BaseAgent):
         mcp_manager = get_mcp_manager()
         self.filesystem_server = mcp_manager.get_server("filesystem")
         
-        # Initialize ChromaDB client for indexing
+        # Initialize ChromaDB client and collection manager for indexing
         try:
             self.chromadb_client = get_chromadb_client()
-            log_info("Filesystem agent initialized with ChromaDB indexing")
+            self.collection_manager = CollectionManager(self.chromadb_client)
+            log_info("Filesystem agent initialized with ChromaDB multi-collection indexing")
         except Exception as e:
             log_warning(f"ChromaDB not available for indexing: {str(e)}")
             self.chromadb_client = None
+            self.collection_manager = None
         
         # Update system prompt to include indexing and image analysis capabilities
         enhanced_prompt = SYSTEM_PROMPTS[AgentType.FILESYSTEM] + """
@@ -145,12 +149,20 @@ You can analyze conversation screenshots using the analyze_conversation_image to
                     metadatas.append(chunk_metadata)
                     ids.append(f"{path.stem}_chunk_{i}_{datetime.now().timestamp()}")
                 
-                # Add to ChromaDB
-                ctx.deps.chromadb_client.add_documents(
-                    documents=documents,
-                    metadatas=metadatas,
-                    ids=ids
-                )
+                # Index using collection manager for knowledge collection
+                if hasattr(ctx.deps, 'collection_manager') and ctx.deps.collection_manager:
+                    ctx.deps.collection_manager.index_knowledge(
+                        file_path=path,
+                        content=content,
+                        metadata={'indexed_via': 'filesystem_agent'}
+                    )
+                else:
+                    # Fallback to direct client (backward compatibility)
+                    ctx.deps.chromadb_client.add_documents(
+                        documents=documents,
+                        metadatas=metadatas,
+                        ids=ids
+                    )
                 
                 log_info(f"Successfully indexed {len(chunks)} chunks from {file_path}")
                 return f"Successfully indexed file {file_path} ({len(chunks)} chunks, {len(content)} characters)"
@@ -315,10 +327,32 @@ You can analyze conversation screenshots using the analyze_conversation_image to
                 
                 # Index if requested
                 if index_to_knowledge_base and ctx.deps.chromadb_client:
-                    await process_conversation_and_index(
-                        conversation_log,
-                        ctx.deps.chromadb_client.collection
-                    )
+                    if hasattr(ctx.deps, 'collection_manager') and ctx.deps.collection_manager:
+                        # Use collection manager for conversation collection
+                        messages = [
+                            {
+                                "sender": msg.speaker,
+                                "content": msg.content,
+                                "timestamp": msg.timestamp
+                            }
+                            for msg in conversation_log.messages
+                        ]
+                        
+                        ctx.deps.collection_manager.index_conversation(
+                            messages=messages,
+                            platform=conversation_log.platform,
+                            metadata={
+                                'source_image': str(image_file),
+                                'channel': conversation_log.channel,
+                                'indexed_via': 'filesystem_agent'
+                            }
+                        )
+                    else:
+                        # Fallback to direct processing (backward compatibility)
+                        await process_conversation_and_index(
+                            conversation_log,
+                            ctx.deps.chromadb_client.collection
+                        )
                     
                     return f"Successfully analyzed conversation image and indexed {len(conversation_log.messages)} conversation entries to the knowledge base from {image_path}"
                 else:
@@ -357,7 +391,8 @@ You can analyze conversation screenshots using the analyze_conversation_image to
         """
         if deps is None:
             deps = FilesystemAgentDeps(
-                chromadb_client=self.chromadb_client
+                chromadb_client=self.chromadb_client,
+                collection_manager=self.collection_manager
             )
         
         return await super().run(prompt, deps=deps, **kwargs)
