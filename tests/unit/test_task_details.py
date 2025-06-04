@@ -57,6 +57,26 @@ class TestTaskDetail:
         assert task_detail.tasks == []
         assert task_detail.acceptance_criteria == []
     
+    def test_from_dict_with_information(self):
+        """Test creating TaskDetail with information attribute."""
+        data = {
+            'id': 'TEST-1',
+            'title': 'Test Task',
+            'objective': 'Test objective',
+            'tasks': ['Task 1'],
+            'acceptance_criteria': ['Criterion 1'],
+            'information': ['Info 1', 'Info 2', 'Info 3']
+        }
+        
+        task_detail = TaskDetail.from_dict(data)
+        
+        assert task_detail.id == 'TEST-1'
+        assert task_detail.title == 'Test Task'
+        assert task_detail.objective == 'Test objective'
+        assert task_detail.tasks == ['Task 1']
+        assert task_detail.acceptance_criteria == ['Criterion 1']
+        assert task_detail.information == ['Info 1', 'Info 2', 'Info 3']
+    
     def test_to_dict(self):
         """Test converting TaskDetail to dictionary."""
         task_detail = TaskDetail(
@@ -75,6 +95,30 @@ class TestTaskDetail:
             'objective': 'Test objective',
             'tasks': ['Task 1', 'Task 2'],
             'acceptance_criteria': ['Criterion 1', 'Criterion 2']
+        }
+        
+        assert data == expected
+    
+    def test_to_dict_with_information(self):
+        """Test converting TaskDetail to dictionary with information."""
+        task_detail = TaskDetail(
+            id='TEST-1',
+            title='Test Task',
+            objective='Test objective',
+            tasks=['Task 1', 'Task 2'],
+            acceptance_criteria=['Criterion 1', 'Criterion 2'],
+            information=['Info 1', 'Info 2']
+        )
+        
+        data = task_detail.to_dict()
+        
+        expected = {
+            'id': 'TEST-1',
+            'title': 'Test Task',
+            'objective': 'Test objective',
+            'tasks': ['Task 1', 'Task 2'],
+            'acceptance_criteria': ['Criterion 1', 'Criterion 2'],
+            'information': ['Info 1', 'Info 2']
         }
         
         assert data == expected
@@ -274,6 +318,35 @@ class TestCreateTaskDetail:
             assert 'already exists' in result['error']
         finally:
             os.unlink(temp_path)
+    
+    def test_create_task_detail_with_information(self):
+        """Test creating a new task detail with information."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            yaml.dump([], f)
+            temp_path = f.name
+        
+        try:
+            paths = {'task_details': temp_path}
+            result = create_task_detail(
+                task_id='INFO-1',
+                title='Task with Information',
+                objective='Task objective',
+                tasks=['Task 1'],
+                acceptance_criteria=['Criterion 1'],
+                information=['Additional info 1', 'Additional info 2'],
+                paths=paths
+            )
+            
+            assert result['success'] is True
+            assert result['task_detail']['id'] == 'INFO-1'
+            assert result['task_detail']['information'] == ['Additional info 1', 'Additional info 2']
+            
+            # Verify it was saved
+            task_details = load_task_details(paths)
+            assert len(task_details) == 1
+            assert task_details[0].information == ['Additional info 1', 'Additional info 2']
+        finally:
+            os.unlink(temp_path)
 
 
 class TestUpdateTaskDetail:
@@ -330,6 +403,41 @@ class TestUpdateTaskDetail:
             
             assert 'error' in result
             assert 'not found' in result['error']
+        finally:
+            os.unlink(temp_path)
+    
+    def test_update_task_detail_information(self):
+        """Test updating task detail information field."""
+        data = [
+            {
+                'id': 'UPDATE-INFO-1',
+                'title': 'Original Title',
+                'objective': 'Original objective',
+                'tasks': ['Original task'],
+                'acceptance_criteria': ['Original criterion'],
+                'information': ['Original info']
+            }
+        ]
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            yaml.dump(data, f)
+            temp_path = f.name
+        
+        try:
+            paths = {'task_details': temp_path}
+            updates = {
+                'information': ['Updated info 1', 'Updated info 2', 'Updated info 3']
+            }
+            
+            result = update_task_detail('UPDATE-INFO-1', updates, paths)
+            
+            assert result['success'] is True
+            assert result['updated_fields'] == ['information']
+            assert result['task_detail']['information'] == ['Updated info 1', 'Updated info 2', 'Updated info 3']
+            
+            # Verify it was saved
+            task_details = load_task_details(paths)
+            assert task_details[0].information == ['Updated info 1', 'Updated info 2', 'Updated info 3']
         finally:
             os.unlink(temp_path)
 
@@ -583,6 +691,77 @@ class TestFormatTaskDetailMarkdown:
             assert '**Status:** pending' in markdown
             assert '**Priority:** low' in markdown
             assert '*No detailed breakdown available for this task.*' in markdown
+        finally:
+            os.unlink(tasks_path)
+            os.unlink(details_path)
+    
+    def test_format_task_with_information(self):
+        """Test formatting task with information field."""
+        # Create tasks file
+        tasks_data = [
+            {
+                'id': 'FORMAT-INFO-1',
+                'title': 'Task with Information',
+                'status': 'in_progress',
+                'priority': 'medium',
+                'due_date': '2025-06-15'
+            }
+        ]
+        
+        # Create task details file
+        details_data = [
+            {
+                'id': 'FORMAT-INFO-1',
+                'title': 'Task with Information Field',
+                'objective': 'Test information field in markdown',
+                'tasks': [
+                    'Task one',
+                    'Task two'
+                ],
+                'acceptance_criteria': [
+                    'Criteria one',
+                    'Criteria two'
+                ],
+                'information': [
+                    'This is additional information about the task',
+                    'Links to relevant documentation: https://example.com',
+                    'Notes from the meeting on 2025-06-04'
+                ]
+            }
+        ]
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as tf, \
+             tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as df:
+            
+            yaml.dump(tasks_data, tf)
+            yaml.dump(details_data, df)
+            tasks_path = tf.name
+            details_path = df.name
+        
+        try:
+            paths = {
+                'tasks': tasks_path,
+                'task_details': details_path
+            }
+            
+            markdown = format_task_detail_markdown('FORMAT-INFO-1', paths)
+            
+            # Check that markdown contains expected sections including information
+            assert '# Task FORMAT-INFO-1: Task with Information' in markdown
+            assert '**Status:** in_progress' in markdown
+            assert '**Priority:** medium' in markdown
+            assert '## Objective' in markdown
+            assert 'Test information field in markdown' in markdown
+            assert '## Tasks' in markdown
+            assert '1. Task one' in markdown
+            assert '2. Task two' in markdown
+            assert '## Acceptance Criteria' in markdown
+            assert '- Criteria one' in markdown
+            assert '- Criteria two' in markdown
+            assert '## Information' in markdown
+            assert '- This is additional information about the task' in markdown
+            assert '- Links to relevant documentation: https://example.com' in markdown
+            assert '- Notes from the meeting on 2025-06-04' in markdown
         finally:
             os.unlink(tasks_path)
             os.unlink(details_path)

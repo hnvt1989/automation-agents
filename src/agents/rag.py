@@ -41,9 +41,9 @@ class RAGAgent(BaseAgent):
         # Initialize ChromaDB client and collection manager
         try:
             self.chromadb_client = get_chromadb_client()
-            self.collection_manager = CollectionManager(self.chromadb_client)
             
             # Initialize graph manager if available and Neo4j is configured
+            self.graph_manager = None
             if GRAPH_SUPPORT:
                 try:
                     from src.core.config import get_settings
@@ -56,15 +56,14 @@ class RAGAgent(BaseAgent):
                         )
                         log_info("RAG agent initialized with knowledge graph support")
                     else:
-                        self.graph_manager = None
                         log_info("RAG agent initialized without knowledge graph (Neo4j not configured)")
                 except Exception as e:
-                    self.graph_manager = None
                     log_info(f"RAG agent initialized without knowledge graph: {str(e)}")
             else:
-                self.graph_manager = None
                 log_info("RAG agent initialized without knowledge graph (Graphiti not installed)")
             
+            # Now create CollectionManager with graph_manager
+            self.collection_manager = CollectionManager(self.chromadb_client, graph_manager=self.graph_manager)
             log_info(f"RAG agent initialized with multi-collection support")
         except Exception as e:
             log_error(f"Failed to initialize ChromaDB client: {str(e)}")
@@ -548,6 +547,90 @@ class RAGAgent(BaseAgent):
                 log_error(f"Error finding connections: {str(e)}")
                 return f"Error finding connections: {str(e)}"
     
+        @self.agent.tool
+        async def contextual_search(
+            ctx: RunContext[RAGAgentDeps],
+            query: str,
+            collection_name: str = "knowledge_base",
+            n_results: int = 5,
+            use_hybrid: bool = False
+        ) -> str:
+            """Search with contextual RAG for improved retrieval.
+            
+            Args:
+                query: Search query
+                collection_name: Collection to search (default: knowledge_base)
+                n_results: Number of results to return
+                use_hybrid: Whether to use hybrid search (embeddings + BM25)
+                
+            Returns:
+                Contextually enhanced search results
+            """
+            log_info(f"Performing contextual search for: {query}")
+            
+            if not hasattr(ctx.deps, 'collection_manager') or not ctx.deps.collection_manager:
+                return "Collection manager not available. Cannot perform contextual search."
+            
+            try:
+                # Check if contextual RAG is enabled
+                if not ctx.deps.collection_manager.enable_contextual:
+                    # Fall back to regular search
+                    return await search_knowledge_base(ctx, query, n_results)
+                
+                if use_hybrid:
+                    # Perform hybrid contextual search
+                    results = await ctx.deps.collection_manager.hybrid_contextual_search(
+                        query=query,
+                        collection_name=collection_name,
+                        n_results=n_results
+                    )
+                else:
+                    # Perform regular contextual search
+                    results = ctx.deps.collection_manager.contextual_search(
+                        query=query,
+                        collection_name=collection_name,
+                        n_results=n_results
+                    )
+                
+                if not results:
+                    return f"No results found for query: {query}"
+                
+                # Format results
+                formatted_results = []
+                for i, result in enumerate(results):
+                    result_text = f"**Result {i+1}** (score: {result.get('score', 0):.2f})\n"
+                    
+                    # Add metadata info
+                    metadata = result.get('metadata', {})
+                    if metadata.get('has_context'):
+                        result_text += "✓ Enhanced with context\n"
+                    
+                    if 'source' in metadata:
+                        result_text += f"Source: {metadata['source']}\n"
+                    elif 'url' in metadata:
+                        result_text += f"URL: {metadata['url']}\n"
+                    elif 'file_path' in metadata:
+                        result_text += f"File: {metadata['file_path']}\n"
+                    
+                    # Add content
+                    content = result.get('content', '')
+                    
+                    # If we have original text, show both contextual and original
+                    if metadata.get('original_text'):
+                        result_text += f"\nContext: {content[:200]}...\n"
+                        result_text += f"\nOriginal: {metadata['original_text'][:300]}...\n"
+                    else:
+                        result_text += f"\nContent: {content[:500]}...\n" if len(content) > 500 else f"\nContent: {content}\n"
+                    
+                    formatted_results.append(result_text)
+                
+                return "\n---\n".join(formatted_results)
+                
+            except Exception as e:
+                log_error(f"Error in contextual search: {str(e)}")
+                # Fallback to regular search
+                return await search_knowledge_base(ctx, query, n_results)
+    
     async def run(self, prompt: str, deps: Optional[Any] = None, **kwargs) -> Any:
         """Run the RAG agent.
         
@@ -567,3 +650,21 @@ class RAGAgent(BaseAgent):
             )
         
         return await super().run(prompt, deps=deps, **kwargs)
+    
+    async def contextual_search(self, query: str, use_contextual: bool = True, **kwargs) -> Any:
+        """Perform contextual search on the knowledge base.
+        
+        Args:
+            query: Search query
+            use_contextual: Whether to use contextual search (default: True)
+            **kwargs: Additional search parameters
+            
+        Returns:
+            Search results
+        """
+        if use_contextual and self.collection_manager and self.collection_manager.enable_contextual:
+            prompt = f"use contextual search for: {query}"
+        else:
+            prompt = f"search knowledge base for: {query}"
+        
+        return await self.run(prompt, **kwargs)

@@ -62,6 +62,23 @@ class Settings(BaseSettings):
     debug: bool = Field(default=False, env="DEBUG")
     log_level: str = Field(default="INFO", env="LOG_LEVEL")
     
+    # Contextual RAG settings
+    enable_contextual_rag: bool = Field(
+        default=True,
+        env="ENABLE_CONTEXTUAL_RAG",
+        description="Enable contextual chunking for improved RAG retrieval"
+    )
+    contextual_chunk_size: int = Field(
+        default=1000,
+        env="CONTEXTUAL_CHUNK_SIZE",
+        description="Default chunk size for contextual chunking"
+    )
+    context_generation_model: str = Field(
+        default="gpt-4o-mini",
+        env="CONTEXT_GENERATION_MODEL",
+        description="Model to use for generating chunk context"
+    )
+    
     @validator("log_level")
     def validate_log_level(cls, v):
         """Validate log level is valid."""
