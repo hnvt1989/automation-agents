@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Automation Frontend</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+    <style>
+        body { margin: 0; font-family: Arial, sans-serif; }
+        .container { display: flex; height: 100vh; }
+        .chat { width: 40%; border-right: 1px solid #ccc; padding: 10px; display: flex; flex-direction: column; }
+        .messages { flex: 1; overflow-y: auto; margin-bottom: 10px; }
+        .messages div { margin-bottom: 5px; }
+        .user { color: blue; }
+        .assistant { color: green; }
+        .input-area { display: flex; }
+        .input-area input { flex: 1; }
+        .panel { width: 60%; padding: 10px; display: flex; flex-direction: column; }
+        .tabs { margin-bottom: 10px; }
+        .tabs button { margin-right: 5px; }
+        .content { flex: 1; display: flex; }
+        .list { width: 40%; border-right: 1px solid #ccc; overflow-y: auto; }
+        .list div { padding: 4px; cursor: pointer; }
+        .list div.selected { background: #eee; }
+        .editor { flex: 1; padding-left: 10px; display: flex; flex-direction: column; }
+        .editor input { margin-bottom: 5px; }
+        .editor textarea { flex: 1; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+function Tabs({ current, onSelect }) {
+    const names = ['tasks', 'logs', 'documents', 'notes'];
+    return (
+        <div className="tabs">
+            {names.map(name => (
+                <button key={name} onClick={() => onSelect(name)} disabled={current === name}>
+                    {name}
+                </button>
+            ))}
+        </div>
+    );
+}
+
+function Panel({ tab, send }) {
+    const [tasks, setTasks] = useState([]);
+    const [logs, setLogs] = useState([]);
+    const [documents, setDocuments] = useState([]);
+    const [notes, setNotes] = useState([]);
+    const [selected, setSelected] = useState(null);
+    const [loaded, setLoaded] = useState(false);
+
+    useEffect(() => {
+        setSelected(null);
+    }, [tab]);
+
+    useEffect(() => {
+        if (!loaded) {
+            fetch('/tasks')
+                .then(r => r.json())
+                .then(data => { setTasks(data.tasks); setLoaded(true); })
+                .catch(() => setLoaded(true));
+        }
+    }, [loaded]);
+
+    const maps = {
+        tasks: [tasks, setTasks],
+        logs: [logs, setLogs],
+        documents: [documents, setDocuments],
+        notes: [notes, setNotes],
+    };
+
+    const [items, setItems] = maps[tab];
+
+    const addItem = () => {
+        const newItem = { name: 'New Item', description: '' };
+        setItems([...items, newItem]);
+        setSelected(items.length);
+    };
+
+    const updateCurrent = (field, value) => {
+        if (selected === null) return;
+        const updated = items.map((it, i) => i === selected ? { ...it, [field]: value } : it);
+        setItems(updated);
+    };
+
+    const deleteCurrent = () => {
+        if (selected === null) return;
+        const updated = items.filter((_, i) => i !== selected);
+        setItems(updated);
+        setSelected(null);
+    };
+
+    const saveTasks = () => {
+        if (tab !== 'tasks') return;
+        fetch('/tasks', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tasks }),
+        });
+    };
+
+    return (
+        <div className="content">
+            <div className="list">
+                {items.map((it, i) => (
+                    <div key={i} className={selected === i ? 'selected' : ''} onClick={() => setSelected(i)}>
+                        {it.name}
+                    </div>
+                ))}
+                <button onClick={addItem}>Add</button>
+                <button onClick={() => send(`index all ${tab}`)}>Index all</button>
+            </div>
+            {selected !== null && items[selected] && (
+                <div className="editor">
+                    <input value={items[selected].name} onChange={e => updateCurrent('name', e.target.value)} />
+                    <textarea value={items[selected].description || ''} onChange={e => updateCurrent('description', e.target.value)} />
+                    <div>
+                        <button onClick={deleteCurrent}>Delete</button>
+                        {tab === 'tasks' && <button onClick={saveTasks}>Save</button>}
+                        <button onClick={() => send(`index ${tab} ${items[selected].name}`)}>Index</button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+function Chat({ messages, send }) {
+    const [input, setInput] = useState('');
+
+    return (
+        <div className="chat">
+            <h2>Chat</h2>
+            <div className="messages">
+                {messages.map((m, i) => (
+                    <div key={i} className={m.role}>{m.role}: {m.content}</div>
+                ))}
+            </div>
+            <div className="input-area">
+                <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { send(input); setInput(''); } }} />
+                <button onClick={() => { send(input); setInput(''); }}>Send</button>
+            </div>
+        </div>
+    );
+}
+
+function App() {
+    const [tab, setTab] = useState('tasks');
+    const [messages, setMessages] = useState([]);
+    const wsRef = useRef(null);
+
+    useEffect(() => {
+        const ws = new WebSocket('ws://localhost:8000/ws');
+        wsRef.current = ws;
+        ws.onmessage = (e) => {
+            const text = e.data;
+            if (text === '[END]') return;
+            setMessages(prev => {
+                const msgs = [...prev];
+                const last = msgs[msgs.length - 1];
+                if (last && last.role === 'assistant') {
+                    last.content += text;
+                } else {
+                    msgs.push({role: 'assistant', content: text});
+                }
+                return msgs;
+            });
+        };
+        return () => ws.close();
+    }, []);
+
+    const send = (text) => {
+        if (!text.trim() || !wsRef.current) return;
+        wsRef.current.send(text);
+        setMessages(prev => [...prev, {role: 'user', content: text}, {role: 'assistant', content: ''}]);
+    };
+
+    return (
+        <div className="container">
+            <Chat messages={messages} send={send} />
+            <div className="panel">
+                <Tabs current={tab} onSelect={setTab} />
+                <Panel tab={tab} send={send} />
+            </div>
+        </div>
+    );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
