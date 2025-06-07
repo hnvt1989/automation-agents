@@ -201,6 +201,17 @@ Create a new issue about the bug in authentication
 Send a message to the #general channel about deployment status
 ```
 
+### **Frontend Interface**
+
+1. Start the API server for WebSocket and REST endpoints:
+   ```bash
+   uvicorn src.api_server:app --reload
+   ```
+2. Open `frontend/index.html` in your web browser.
+   - The Tasks tab reads from `data/tasks.md`.
+   - Use the "Index" buttons to send indexing commands to the primary agent.
+   - Click "Index all" on a tab to index every item.
+
 ## 🏗️ Architecture
 
 ### **Project Structure**

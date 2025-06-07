@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Automation Agents</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background: #f8f9fa;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .container { 
+            display: flex; 
+            height: 100vh; 
+            background: white;
+        }
+        
+        .assistant-panel { 
+            width: 40%; 
+            background: #f8f9fa;
+            display: flex; 
+            flex-direction: column;
+            border-right: 1px solid #e9ecef;
+        }
+        
+        .assistant-header {
+            padding: 24px;
+            border-bottom: 1px solid #e9ecef;
+            background: white;
+        }
+        
+        .assistant-title {
+            font-size: 24px;
+            font-weight: 600;
+            color: #212529;
+        }
+        
+        .messages { 
+            flex: 1; 
+            overflow-y: auto; 
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        
+        .message {
+            max-width: 80%;
+            padding: 16px 20px;
+            border-radius: 16px;
+            line-height: 1.6;
+            font-size: 14px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        
+        .message.assistant {
+            background: #e9ecef;
+            color: #495057;
+            align-self: flex-start;
+        }
+        
+        .message.user {
+            background: #007bff;
+            color: white;
+            align-self: flex-end;
+        }
+        
+        .message h1, .message h2, .message h3 {
+            margin: 16px 0 8px 0;
+            font-weight: 600;
+        }
+        
+        .message h1 { font-size: 18px; }
+        .message h2 { font-size: 16px; }
+        .message h3 { font-size: 15px; }
+        
+        .message ul, .message ol {
+            margin: 8px 0;
+            padding-left: 20px;
+        }
+        
+        .message li {
+            margin: 4px 0;
+            line-height: 1.5;
+        }
+        
+        .message p {
+            margin: 8px 0;
+            line-height: 1.6;
+        }
+        
+        .message strong {
+            font-weight: 600;
+        }
+        
+        .message code {
+            background: rgba(0, 0, 0, 0.1);
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 13px;
+        }
+        
+        .message pre {
+            background: rgba(0, 0, 0, 0.05);
+            padding: 12px;
+            border-radius: 6px;
+            margin: 12px 0;
+            overflow-x: auto;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 13px;
+        }
+        
+        .input-area { 
+            padding: 24px;
+            background: white;
+            border-top: 1px solid #e9ecef;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+        
+        .input-area input { 
+            flex: 1;
+            padding: 12px 16px;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            font-size: 14px;
+            outline: none;
+            background: #f8f9fa;
+        }
+        
+        .input-area input:focus {
+            border-color: #007bff;
+            background: white;
+        }
+        
+        .input-area input::placeholder {
+            color: #6c757d;
+        }
+        
+        .send-button {
+            padding: 12px 24px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        
+        .send-button:hover {
+            background: #0056b3;
+        }
+        
+        .workspace-panel { 
+            width: 60%; 
+            display: flex; 
+            flex-direction: column;
+            background: white;
+        }
+        
+        .workspace-header {
+            padding: 32px 32px 0 32px;
+            border-bottom: none;
+        }
+        
+        .workspace-title {
+            font-size: 24px;
+            font-weight: 600;
+            color: #212529;
+            margin-bottom: 32px;
+        }
+        
+        .tabs { 
+            display: flex;
+            gap: 0;
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 4px;
+            margin-bottom: 32px;
+        }
+        
+        .tab-button {
+            flex: 1;
+            padding: 12px 20px;
+            background: none;
+            border: none;
+            font-size: 14px;
+            font-weight: 500;
+            color: #6c757d;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: all 0.2s;
+            text-align: center;
+        }
+        
+        .tab-button.active {
+            background: white;
+            color: #212529;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        
+        .tab-button:hover:not(.active) {
+            color: #495057;
+        }
+        
+        .workspace-content { 
+            flex: 1; 
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            padding: 0;
+        }
+        
+        .items-list { 
+            flex: 1;
+            width: 100%;
+            overflow-y: auto; 
+            padding: 0 32px 24px 32px;
+        }
+        
+        .workspace-item {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 16px 20px;
+            border-radius: 12px;
+            margin-bottom: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid transparent;
+            background: #ffffff;
+        }
+        
+        .workspace-item:hover {
+            background: #f8f9fa;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .workspace-item.selected {
+            background: #f0f8ff;
+            border-color: #007bff;
+            box-shadow: 0 2px 8px rgba(0, 123, 255, 0.15);
+        }
+        
+        .item-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            font-size: 18px;
+            background: #f8f9fa;
+        }
+        
+        .item-content {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .item-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #212529;
+            margin-bottom: 4px;
+            line-height: 1.4;
+        }
+        
+        .item-description {
+            font-size: 14px;
+            color: #6c757d;
+            line-height: 1.4;
+        }
+        
+        .item-meta {
+            font-size: 12px;
+            color: #868e96;
+            margin-top: 8px;
+        }
+        
+        .action-buttons {
+            display: flex;
+            gap: 12px;
+            padding: 24px 32px 32px 32px;
+            border-top: 1px solid #f1f3f4;
+            background: white;
+            margin-top: auto;
+        }
+        
+        .action-button {
+            padding: 12px 24px;
+            border: 1px solid #dee2e6;
+            background: white;
+            color: #495057;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .action-button:hover {
+            background: #f8f9fa;
+            border-color: #adb5bd;
+            transform: translateY(-1px);
+        }
+        
+        .action-button.primary {
+            background: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
+        
+        .action-button.primary:hover {
+            background: #0056b3;
+            border-color: #0056b3;
+        }
+        
+        .status-completed .item-icon {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status-completed .item-icon::before {
+            content: '✓';
+            font-weight: bold;
+        }
+        
+        .status-document .item-icon {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .status-document .item-icon::before {
+            content: '📄';
+        }
+        
+        .status-note .item-icon {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .status-note .item-icon::before {
+            content: '✏️';
+        }
+        
+        .status-task .item-icon {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+        
+        .status-task .item-icon::before {
+            content: '📋';
+        }
+        
+        .status-logs .item-icon {
+            background: #e2e3e5;
+            color: #383d41;
+        }
+        
+        .status-logs .item-icon::before {
+            content: '📊';
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 80px 24px;
+            color: #6c757d;
+        }
+        
+        .empty-state-title {
+            font-size: 20px;
+            font-weight: 500;
+            margin-bottom: 12px;
+            color: #495057;
+        }
+        
+        .empty-state-description {
+            font-size: 14px;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+function Tabs({ current, onSelect }) {
+    const tabs = [
+        { id: 'all', label: 'All' },
+        { id: 'tasks', label: 'Tasks' },
+        { id: 'documents', label: 'Documents' },
+        { id: 'notes', label: 'Notes' },
+        { id: 'logs', label: 'Logs' }
+    ];
+    
+    return (
+        <div className="tabs">
+            {tabs.map(tab => (
+                <button 
+                    key={tab.id} 
+                    className={`tab-button ${current === tab.id ? 'active' : ''}`}
+                    onClick={() => onSelect(tab.id)}
+                >
+                    {tab.label}
+                </button>
+            ))}
+        </div>
+    );
+}
+
+function WorkspaceItem({ item, type, isSelected, onClick }) {
+    const getStatusClass = () => {
+        if (type === 'tasks' && item.completed) return 'status-completed';
+        if (type === 'documents') return 'status-document';
+        if (type === 'notes') return 'status-note';
+        if (type === 'logs') return 'status-logs';
+        return 'status-task';
+    };
+    
+    return (
+        <div 
+            className={`workspace-item ${isSelected ? 'selected' : ''} ${getStatusClass()}`}
+            onClick={onClick}
+        >
+            <div className="item-icon"></div>
+            <div className="item-content">
+                <div className="item-title">{item.name}</div>
+                {item.description && (
+                    <div className="item-description">{item.description}</div>
+                )}
+                {item.dueDate && (
+                    <div className="item-meta">Due: {item.dueDate}</div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+function Panel({ tab, send }) {
+    const [allItems, setAllItems] = useState({
+        tasks: [
+            { name: 'Sample task 1', description: 'example description', dueDate: null, completed: false },
+            { name: 'Sample task 2', description: 'another example', dueDate: null, completed: false }
+        ],
+        documents: [
+            { name: 'Product Requirements', description: 'View Document', dueDate: null },
+            { name: 'API Documentation', description: 'Technical specifications and endpoints', dueDate: null }
+        ],
+        notes: [
+            { name: 'Meeting Summary', description: 'Discussed Q3 roadmap and priorities...', dueDate: null },
+            { name: 'Project Ideas', description: 'Brainstorming session notes', dueDate: null }
+        ],
+        logs: [
+            { name: 'System Log 1', description: 'Application startup logs', dueDate: null },
+            { name: 'Error Log 2', description: 'Recent error tracking', dueDate: null }
+        ]
+    });
+    
+    const [selected, setSelected] = useState(null);
+    const [loaded, setLoaded] = useState(false);
+
+    useEffect(() => {
+        setSelected(null);
+    }, [tab]);
+
+    useEffect(() => {
+        if (!loaded) {
+            fetch('/tasks')
+                .then(r => r.json())
+                .then(data => { 
+                    if (data.tasks && data.tasks.length > 0) {
+                        setAllItems(prev => ({ ...prev, tasks: data.tasks }));
+                    }
+                    setLoaded(true); 
+                })
+                .catch(() => setLoaded(true));
+        }
+    }, [loaded]);
+
+    const getCurrentItems = () => {
+        if (tab === 'all') {
+            return [
+                ...allItems.tasks.map(item => ({ ...item, type: 'tasks' })),
+                ...allItems.documents.map(item => ({ ...item, type: 'documents' })),
+                ...allItems.notes.map(item => ({ ...item, type: 'notes' })),
+                ...allItems.logs.map(item => ({ ...item, type: 'logs' }))
+            ];
+        }
+        return allItems[tab] || [];
+    };
+
+    const items = getCurrentItems();
+
+    const addItem = () => {
+        const newItem = { name: 'New Item', description: '' };
+        if (tab !== 'all') {
+            setAllItems(prev => ({
+                ...prev,
+                [tab]: [...prev[tab], newItem]
+            }));
+            setSelected(allItems[tab].length);
+        }
+    };
+
+    const saveTasks = () => {
+        if (tab !== 'tasks') return;
+        fetch('/tasks', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tasks: allItems.tasks }),
+        });
+    };
+
+    return (
+        <React.Fragment>
+            <div className="items-list">
+                {items.length === 0 ? (
+                    <div className="empty-state">
+                        <div className="empty-state-title">No items yet</div>
+                        <div className="empty-state-description">Add your first {tab === 'all' ? 'item' : tab.slice(0, -1)} to get started</div>
+                    </div>
+                ) : (
+                    items.map((item, i) => (
+                        <WorkspaceItem
+                            key={i}
+                            item={item}
+                            type={item.type || tab}
+                            isSelected={selected === i}
+                            onClick={() => setSelected(i)}
+                        />
+                    ))
+                )}
+            </div>
+            
+            {tab !== 'all' && (
+                <div className="action-buttons">
+                    <button className="action-button" onClick={addItem}>
+                        Add {tab === 'tasks' ? 'task' : 
+                             tab === 'documents' ? 'document' : 
+                             tab === 'notes' ? 'note' : 
+                             tab === 'logs' ? 'log' : 
+                             tab.slice(0, -1)}
+                    </button>
+                    <button className="action-button" onClick={() => send(`index all ${tab}`)}>Index all</button>
+                </div>
+            )}
+        </React.Fragment>
+    );
+}
+
+function Chat({ messages, send }) {
+    const [input, setInput] = useState('');
+
+    const formatMessage = (content) => {
+        if (!content) return '';
+        
+        // Convert basic markdown-like formatting
+        let formatted = content
+            // Convert **bold** to <strong>
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            // Convert numbered lists (1. 2. 3. etc.)
+            .replace(/^(\d+)\.\s+(.+)$/gm, '<li>$2</li>')
+            // Convert bullet points (- or * at start of line)
+            .replace(/^[-\*]\s+(.+)$/gm, '<li>$1</li>')
+            // Convert ### to h3
+            .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+            // Convert ## to h2  
+            .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+            // Convert # to h1
+            .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+            // Convert `code` to <code>
+            .replace(/`([^`]+)`/g, '<code>$1</code>');
+
+        // Wrap consecutive <li> elements in <ul>
+        formatted = formatted.replace(/(<li>.*?<\/li>)(?:\s*<li>.*?<\/li>)*/g, (match) => {
+            return '<ul>' + match + '</ul>';
+        });
+
+        // Add paragraphs for better spacing
+        const lines = formatted.split('\n');
+        const paragraphs = [];
+        let currentParagraph = '';
+        
+        for (let line of lines) {
+            const trimmedLine = line.trim();
+            if (trimmedLine === '') {
+                if (currentParagraph.trim()) {
+                    paragraphs.push(currentParagraph.trim());
+                    currentParagraph = '';
+                }
+            } else if (trimmedLine.startsWith('<h') || trimmedLine.startsWith('<ul') || trimmedLine.startsWith('</ul')) {
+                if (currentParagraph.trim()) {
+                    paragraphs.push('<p>' + currentParagraph.trim() + '</p>');
+                    currentParagraph = '';
+                }
+                paragraphs.push(trimmedLine);
+            } else {
+                currentParagraph += (currentParagraph ? ' ' : '') + trimmedLine;
+            }
+        }
+        
+        if (currentParagraph.trim()) {
+            paragraphs.push('<p>' + currentParagraph.trim() + '</p>');
+        }
+
+        return paragraphs.join('\n');
+    };
+
+    return (
+        <div className="assistant-panel">
+            <div className="assistant-header">
+                <div className="assistant-title">Assistant</div>
+            </div>
+            <div className="messages">
+                {messages.length === 0 && (
+                    <div className="message assistant">
+                        Hello! How can I assist you today?
+                    </div>
+                )}
+                {messages.map((m, i) => (
+                    <div key={i} className={`message ${m.role}`}>
+                        {m.role === 'assistant' ? (
+                            <div dangerouslySetInnerHTML={{ __html: formatMessage(m.content) }} />
+                        ) : (
+                            m.content
+                        )}
+                    </div>
+                ))}
+            </div>
+            <div className="input-area">
+                <input 
+                    value={input} 
+                    onChange={e => setInput(e.target.value)} 
+                    onKeyDown={e => { 
+                        if (e.key === 'Enter' && input.trim()) { 
+                            send(input); 
+                            setInput(''); 
+                        } 
+                    }}
+                    placeholder="Type your message..."
+                />
+                <button 
+                    className="send-button"
+                    onClick={() => { 
+                        if (input.trim()) {
+                            send(input); 
+                            setInput(''); 
+                        }
+                    }}
+                >
+                    Send
+                </button>
+            </div>
+        </div>
+    );
+}
+
+function App() {
+    const [tab, setTab] = useState('all');
+    const [messages, setMessages] = useState([]);
+    const wsRef = useRef(null);
+
+    useEffect(() => {
+        const ws = new WebSocket('ws://localhost:8000/ws');
+        wsRef.current = ws;
+        ws.onmessage = (e) => {
+            const text = e.data;
+            if (text === '[END]') return;
+            setMessages(prev => {
+                const msgs = [...prev];
+                const last = msgs[msgs.length - 1];
+                if (last && last.role === 'assistant') {
+                    last.content += text;
+                } else {
+                    msgs.push({role: 'assistant', content: text});
+                }
+                return msgs;
+            });
+        };
+        return () => ws.close();
+    }, []);
+
+    const send = (text) => {
+        if (!text.trim() || !wsRef.current) return;
+        wsRef.current.send(text);
+        setMessages(prev => [...prev, {role: 'user', content: text}, {role: 'assistant', content: ''}]);
+    };
+
+    return (
+        <div className="container">
+            <Chat messages={messages} send={send} />
+            <div className="workspace-panel">
+                <div className="workspace-header">
+                    <div className="workspace-title">Workspace</div>
+                    <Tabs current={tab} onSelect={setTab} />
+                </div>
+                <div className="workspace-content">
+                    <Panel tab={tab} send={send} />
+                </div>
+            </div>
+        </div>
+    );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>

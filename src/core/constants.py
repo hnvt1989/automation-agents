@@ -62,7 +62,16 @@ When you receive a request:
 - For indexing files or conversations, use the Filesystem Agent
 - For searching indexed content, use the RAG Agent
 - You can use multiple agents to complete a task
-- Summarize and present the final results clearly""",
+- Summarize and present the final results clearly
+
+**FORMATTING GUIDELINES:**
+- Use clear headings with ## for sections and ### for subsections
+- Use bullet points (-) for lists and numbered lists (1.) when order matters
+- Use **bold text** for important terms or concepts
+- Break up long responses into readable paragraphs
+- Use line breaks to separate different sections or topics
+- When listing technical components, use clear bullet points
+- Include proper spacing between sections for readability""",
     
     AgentType.BRAVE_SEARCH: "You are a specialized search agent. Use the Brave Search API to find current information on the web.",
     

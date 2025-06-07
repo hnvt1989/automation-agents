@@ -367,8 +367,19 @@ class PrimaryAgent(BaseAgent):
             query=prompt,
             debug=kwargs.get("debug", False)
         )
-        
+
         return await super().run(prompt, deps=deps, **kwargs)
+
+    async def run_stream(self, prompt: str, **kwargs):
+        """Run the primary agent in streaming mode."""
+        deps = PrimaryAgentDeps(
+            agents=self.agents,
+            query=prompt,
+            debug=kwargs.get("debug", False)
+        )
+
+        async for delta in super().run_stream(prompt, deps=deps, **kwargs):
+            yield delta
     
     def _should_use_llm_search(self, query: str) -> bool:
         """Determine if we should use LLM for search based on query complexity."""

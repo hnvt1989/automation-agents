@@ -96,6 +96,7 @@ coverage.xml
 reports/
 assets/
 *.html
+!frontend/index.html
 report/
 test-results/
 test-reports/
@@ -151,3 +152,4 @@ dmypy.json
 temp/
 tmp/ 
 data/
+!data/tasks.md
