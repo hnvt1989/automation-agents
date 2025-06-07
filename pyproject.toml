@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
 authors = [
-    {name = "Your Name", email = "your.email@example.com"},
+    {name = "Huy Nguyen", email = "hnvt1989@users.noreply.github.com"},
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -27,10 +27,10 @@ classifiers = [
 keywords = ["automation", "ai", "agents", "mcp", "openai"]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/automation-agents"
-Documentation = "https://github.com/yourusername/automation-agents/docs"
-Repository = "https://github.com/yourusername/automation-agents"
-Issues = "https://github.com/yourusername/automation-agents/issues"
+Homepage = "https://github.com/hnvt1989/automation-agents"
+Documentation = "https://github.com/hnvt1989/automation-agents/docs"
+Repository = "https://github.com/hnvt1989/automation-agents"
+Issues = "https://github.com/hnvt1989/automation-agents/issues"
 
 [project.scripts]
 automation-agents = "src.main:main"

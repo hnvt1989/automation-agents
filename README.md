@@ -46,7 +46,7 @@ Our RAG (Retrieval Augmented Generation) agent supports:
 
 1. **Clone the repository**
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/hnvt1989/automation-agents
    cd automation-agents
    ```
 
@@ -122,10 +122,6 @@ python -m src.main
 python -m src.main_simple
 ```
 
-**Option 3: Legacy Mode**
-```bash
-python agents.py
-```
 
 The system will:
 1. Initialize ChromaDB vector store
@@ -337,9 +333,9 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## 🚀 Migration from Legacy Code
 
-If you're migrating from the monolithic `agents.py`:
-1. The new structure provides better modularity and maintainability
-2. All functionality has been preserved
+If you're migrating from the legacy monolithic structure:
+1. The new modular structure provides better maintainability
+2. All functionality has been preserved and enhanced
 3. See `MIGRATION.md` for detailed migration instructions
 
 ---
