@@ -7,6 +7,8 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.models.openai import OpenAIModel
 import yaml
 from datetime import datetime
+import os
+from dotenv import load_dotenv, set_key, find_dotenv
 
 from src.core.config import get_settings
 from src.mcp import get_mcp_manager
@@ -65,6 +67,49 @@ class LogUpdate(BaseModel):
     log_id: str | None = None
     actual_hours: float | None = None
 
+
+class ConfigUpdate(BaseModel):
+    documents_dir: str | None = None
+    notes_dir: str | None = None
+    tasks_file: str | None = None
+    logs_file: str | None = None
+
+
+# Load configuration from environment file
+ENV_FILE = BASE_DIR / "local.env"
+
+def load_config_from_env():
+    """Load configuration from environment variables"""
+    # Clear existing env vars to avoid pollution
+    for key in ["DOCUMENTS_DIR", "NOTES_DIR", "TASKS_FILE", "LOGS_FILE"]:
+        if key in os.environ:
+            del os.environ[key]
+    
+    load_dotenv(ENV_FILE, override=True)
+    return {
+        "documents_dir": os.getenv("DOCUMENTS_DIR", str(VA_NOTES_DIR)),
+        "notes_dir": os.getenv("NOTES_DIR", str(MEETING_NOTES_DIR)),
+        "tasks_file": os.getenv("TASKS_FILE", str(TASKS_YAML_FILE)),
+        "logs_file": os.getenv("LOGS_FILE", str(DAILY_LOGS_FILE))
+    }
+
+def save_config_to_env(config):
+    """Save configuration to environment file"""
+    env_path = find_dotenv(str(ENV_FILE)) or str(ENV_FILE)
+    
+    # Ensure file exists
+    if not os.path.exists(env_path):
+        Path(env_path).touch()
+    
+    # Save each configuration value
+    set_key(env_path, "DOCUMENTS_DIR", config.get("documents_dir", ""))
+    set_key(env_path, "NOTES_DIR", config.get("notes_dir", ""))
+    set_key(env_path, "TASKS_FILE", config.get("tasks_file", ""))
+    set_key(env_path, "LOGS_FILE", config.get("logs_file", ""))
+
+# Load configuration on startup
+config_storage = load_config_from_env()
+
 app = FastAPI()
 
 # Mount static files
@@ -114,11 +159,12 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.get("/tasks")
 async def get_tasks():
-    if not TASKS_YAML_FILE.exists():
+    tasks_file = Path(config_storage["tasks_file"])
+    if not tasks_file.exists():
         return {"tasks": []}
     
     try:
-        with open(TASKS_YAML_FILE, 'r') as f:
+        with open(tasks_file, 'r') as f:
             yaml_tasks = yaml.safe_load(f) or []
         
         tasks = []
@@ -161,12 +207,13 @@ async def update_tasks(task_list: TaskList):
 
 @app.get("/documents")
 async def get_documents():
-    if not VA_NOTES_DIR.exists():
+    docs_dir = Path(config_storage["documents_dir"])
+    if not docs_dir.exists():
         return {"documents": []}
 
     documents = []
     # Sort files by name for consistent ordering
-    sorted_files = sorted(VA_NOTES_DIR.glob("*.md"), key=lambda x: x.name)
+    sorted_files = sorted(docs_dir.glob("*.md"), key=lambda x: x.name)
     
     for file_path in sorted_files:
         name = file_path.stem.replace("_", " ").title()
@@ -186,7 +233,8 @@ async def get_document_content(doc_index: int):
     """Get the content of a specific document"""
     try:
         # Use same sorting as get_documents
-        docs = sorted(VA_NOTES_DIR.glob("*.md"), key=lambda x: x.name)
+        docs_dir = Path(config_storage["documents_dir"])
+        docs = sorted(docs_dir.glob("*.md"), key=lambda x: x.name)
         if 0 <= doc_index < len(docs):
             file_path = docs[doc_index]
             content = file_path.read_text()
@@ -199,14 +247,15 @@ async def get_document_content(doc_index: int):
 
 @app.get("/notes")
 async def get_notes():
-    if not MEETING_NOTES_DIR.exists():
+    notes_dir = Path(config_storage["notes_dir"])
+    if not notes_dir.exists():
         return {"notes": []}
     
     notes = []
     # Use rglob to recursively find all .md files in subdirectories
-    for file_path in MEETING_NOTES_DIR.rglob("*.md"):
+    for file_path in notes_dir.rglob("*.md"):
         # Get relative path from meeting_notes directory
-        relative_path = file_path.relative_to(MEETING_NOTES_DIR)
+        relative_path = file_path.relative_to(notes_dir)
         
         # Create a more descriptive name from the path
         name = file_path.stem.replace("_", " ").replace("-", " ").title()
@@ -234,8 +283,9 @@ async def get_notes():
 async def get_note_content(note_index: int):
     """Get the content of a specific note"""
     try:
+        notes_dir = Path(config_storage["notes_dir"])
         notes = []
-        for file_path in MEETING_NOTES_DIR.rglob("*.md"):
+        for file_path in notes_dir.rglob("*.md"):
             notes.append(file_path)
         
         # Sort to ensure consistent ordering
@@ -253,11 +303,12 @@ async def get_note_content(note_index: int):
 
 @app.get("/logs")
 async def get_logs():
-    if not DAILY_LOGS_FILE.exists():
+    logs_file = Path(config_storage["logs_file"])
+    if not logs_file.exists():
         return {"logs": []}
     
     try:
-        with open(DAILY_LOGS_FILE, 'r') as f:
+        with open(logs_file, 'r') as f:
             logs_data = yaml.safe_load(f) or {}
         
         logs = []
@@ -289,7 +340,8 @@ async def get_logs():
 async def create_task(task_update: TaskUpdate):
     """Create a new task"""
     try:
-        with open(TASKS_YAML_FILE, 'r') as f:
+        tasks_file = Path(config_storage["tasks_file"])
+        with open(tasks_file, 'r') as f:
             tasks = yaml.safe_load(f) or []
         
         # Create new task with provided data
@@ -307,7 +359,7 @@ async def create_task(task_update: TaskUpdate):
         tasks.append(new_task)
         
         # Write back to file
-        with open(TASKS_YAML_FILE, 'w') as f:
+        with open(tasks_file, 'w') as f:
             yaml.dump(tasks, f, default_flow_style=False, allow_unicode=True)
         
         return {"success": True, "task": new_task}
@@ -319,7 +371,8 @@ async def create_task(task_update: TaskUpdate):
 async def delete_task(task_index: int):
     """Delete a specific task by index"""
     try:
-        with open(TASKS_YAML_FILE, 'r') as f:
+        tasks_file = Path(config_storage["tasks_file"])
+        with open(tasks_file, 'r') as f:
             tasks = yaml.safe_load(f) or []
         
         if 0 <= task_index < len(tasks):
@@ -327,7 +380,7 @@ async def delete_task(task_index: int):
             deleted_task = tasks.pop(task_index)
             
             # Write back to file
-            with open(TASKS_YAML_FILE, 'w') as f:
+            with open(tasks_file, 'w') as f:
                 yaml.dump(tasks, f, default_flow_style=False, allow_unicode=True)
             
             return {"success": True, "message": "Task deleted successfully", "deleted_task": deleted_task}
@@ -343,7 +396,8 @@ async def delete_task(task_index: int):
 async def update_task(task_index: int, task_update: TaskUpdate):
     """Update a specific task by index"""
     try:
-        with open(TASKS_YAML_FILE, 'r') as f:
+        tasks_file = Path(config_storage["tasks_file"])
+        with open(tasks_file, 'r') as f:
             tasks = yaml.safe_load(f) or []
         
         if 0 <= task_index < len(tasks):
@@ -368,7 +422,7 @@ async def update_task(task_index: int, task_update: TaskUpdate):
                     pass
             
             # Write back to file
-            with open(TASKS_YAML_FILE, 'w') as f:
+            with open(tasks_file, 'w') as f:
                 yaml.dump(tasks, f, default_flow_style=False, allow_unicode=True)
             
             return {"success": True, "task": tasks[task_index]}
@@ -384,10 +438,11 @@ async def create_note(note_update: NoteUpdate):
     try:
         # Create filename from name
         filename = note_update.name.lower().replace(' ', '_') + '.md'
-        file_path = MEETING_NOTES_DIR / filename
+        notes_dir = Path(config_storage["notes_dir"])
+        file_path = notes_dir / filename
         
         # Ensure directory exists
-        MEETING_NOTES_DIR.mkdir(parents=True, exist_ok=True)
+        notes_dir.mkdir(parents=True, exist_ok=True)
         
         # Write content to file
         content = note_update.content or f"# {note_update.name}\n\n{note_update.description or ''}"
@@ -395,7 +450,7 @@ async def create_note(note_update: NoteUpdate):
         
         # Find the index of the newly created note
         notes = []
-        for fp in MEETING_NOTES_DIR.rglob("*.md"):
+        for fp in notes_dir.rglob("*.md"):
             notes.append(fp)
         notes.sort(key=lambda x: str(x))
         
@@ -414,8 +469,9 @@ async def update_note(note_index: int, note_update: NoteUpdate):
         # This is a simplified version - in production, you'd want more robust file handling
         
         # Get the list of notes to find which file to update
+        notes_dir = Path(config_storage["notes_dir"])
         notes = []
-        for file_path in MEETING_NOTES_DIR.rglob("*.md"):
+        for file_path in notes_dir.rglob("*.md"):
             notes.append(file_path)
         
         # Sort to ensure consistent ordering
@@ -439,7 +495,8 @@ async def update_note(note_index: int, note_update: NoteUpdate):
 async def create_log(log_update: LogUpdate):
     """Create a new log entry"""
     try:
-        with open(DAILY_LOGS_FILE, 'r') as f:
+        logs_file = Path(config_storage["logs_file"])
+        with open(logs_file, 'r') as f:
             logs_data = yaml.safe_load(f) or {}
         
         # Get the date for the log
@@ -458,7 +515,7 @@ async def create_log(log_update: LogUpdate):
         logs_data[date].append(new_log)
         
         # Write back to file
-        with open(DAILY_LOGS_FILE, 'w') as f:
+        with open(logs_file, 'w') as f:
             yaml.dump(logs_data, f, default_flow_style=False, allow_unicode=True)
         
         return {"success": True, "log": new_log}
@@ -470,7 +527,8 @@ async def create_log(log_update: LogUpdate):
 async def delete_log(log_index: int):
     """Delete a specific log by index"""
     try:
-        with open(DAILY_LOGS_FILE, 'r') as f:
+        logs_file = Path(config_storage["logs_file"])
+        with open(logs_file, 'r') as f:
             logs_data = yaml.safe_load(f) or {}
         
         # Convert to flat list with indices
@@ -494,7 +552,7 @@ async def delete_log(log_index: int):
                 del logs_data[date]
             
             # Write back to file
-            with open(DAILY_LOGS_FILE, 'w') as f:
+            with open(logs_file, 'w') as f:
                 yaml.dump(logs_data, f, default_flow_style=False, allow_unicode=True)
             
             return {"success": True, "message": "Log deleted successfully", "deleted_log": log_to_delete}
@@ -510,7 +568,8 @@ async def delete_log(log_index: int):
 async def update_log(log_index: int, log_update: LogUpdate):
     """Update a specific log by index"""
     try:
-        with open(DAILY_LOGS_FILE, 'r') as f:
+        logs_file = Path(config_storage["logs_file"])
+        with open(logs_file, 'r') as f:
             logs_data = yaml.safe_load(f) or {}
         
         # Convert to flat list with indices
@@ -537,7 +596,7 @@ async def update_log(log_index: int, log_update: LogUpdate):
                 log['log_id'] = log_update.log_id
             
             # Write back to file
-            with open(DAILY_LOGS_FILE, 'w') as f:
+            with open(logs_file, 'w') as f:
                 yaml.dump(logs_data, f, default_flow_style=False, allow_unicode=True)
             
             return {"success": True, "log": log}
@@ -553,17 +612,18 @@ async def create_document(doc_update: DocumentUpdate):
     try:
         # Create filename from name
         filename = doc_update.name.lower().replace(' ', '_') + '.md'
-        file_path = VA_NOTES_DIR / filename
+        docs_dir = Path(config_storage["documents_dir"])
+        file_path = docs_dir / filename
         
         # Ensure directory exists
-        VA_NOTES_DIR.mkdir(parents=True, exist_ok=True)
+        docs_dir.mkdir(parents=True, exist_ok=True)
         
         # Write content to file
         content = doc_update.content or f"# {doc_update.name}\n\n{doc_update.description or ''}"
         file_path.write_text(content)
         
         # Find the index of the newly created document
-        docs = sorted(VA_NOTES_DIR.glob("*.md"), key=lambda x: x.name)
+        docs = sorted(docs_dir.glob("*.md"), key=lambda x: x.name)
         new_index = next((i for i, d in enumerate(docs) if d.name == filename), -1)
         
         return {"success": True, "message": "Document created", "filename": filename, "index": new_index}
@@ -576,7 +636,8 @@ async def update_document(doc_index: int, doc_update: DocumentUpdate):
     """Update a specific document by index"""
     try:
         # Use same sorting as get_documents
-        docs = sorted(VA_NOTES_DIR.glob("*.md"), key=lambda x: x.name)
+        docs_dir = Path(config_storage["documents_dir"])
+        docs = sorted(docs_dir.glob("*.md"), key=lambda x: x.name)
         
         if 0 <= doc_index < len(docs):
             file_path = docs[doc_index]
@@ -593,6 +654,81 @@ async def update_document(doc_index: int, doc_update: DocumentUpdate):
             raise HTTPException(status_code=404, detail="Document not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/config")
+async def get_config():
+    """Get current configuration paths"""
+    return config_storage
+
+
+@app.put("/config")
+async def update_config(config_update: ConfigUpdate):
+    """Update configuration paths with validation"""
+    errors = []
+    
+    # Validate documents_dir
+    if config_update.documents_dir is not None:
+        if not config_update.documents_dir:
+            errors.append("documents_dir cannot be empty")
+        else:
+            path = Path(config_update.documents_dir)
+            if not path.exists():
+                errors.append(f"documents_dir '{config_update.documents_dir}' does not exist")
+            elif not path.is_dir():
+                errors.append(f"documents_dir '{config_update.documents_dir}' is not a directory")
+    
+    # Validate notes_dir
+    if config_update.notes_dir is not None:
+        if not config_update.notes_dir:
+            errors.append("notes_dir cannot be empty")
+        else:
+            path = Path(config_update.notes_dir)
+            if not path.exists():
+                errors.append(f"notes_dir '{config_update.notes_dir}' does not exist")
+            elif not path.is_dir():
+                errors.append(f"notes_dir '{config_update.notes_dir}' is not a directory")
+    
+    # Validate tasks_file
+    if config_update.tasks_file is not None:
+        if not config_update.tasks_file:
+            errors.append("tasks_file cannot be empty")
+        else:
+            path = Path(config_update.tasks_file)
+            if not path.exists():
+                errors.append(f"tasks_file '{config_update.tasks_file}' does not exist")
+            elif not path.is_file():
+                errors.append(f"tasks_file '{config_update.tasks_file}' is not a file")
+    
+    # Validate logs_file
+    if config_update.logs_file is not None:
+        if not config_update.logs_file:
+            errors.append("logs_file cannot be empty")
+        else:
+            path = Path(config_update.logs_file)
+            if not path.exists():
+                errors.append(f"logs_file '{config_update.logs_file}' does not exist")
+            elif not path.is_file():
+                errors.append(f"logs_file '{config_update.logs_file}' is not a file")
+    
+    # If there are validation errors, return 400
+    if errors:
+        raise HTTPException(status_code=400, detail="; ".join(errors))
+    
+    # Update configuration (only update provided fields)
+    if config_update.documents_dir is not None:
+        config_storage["documents_dir"] = str(Path(config_update.documents_dir).absolute())
+    if config_update.notes_dir is not None:
+        config_storage["notes_dir"] = str(Path(config_update.notes_dir).absolute())
+    if config_update.tasks_file is not None:
+        config_storage["tasks_file"] = str(Path(config_update.tasks_file).absolute())
+    if config_update.logs_file is not None:
+        config_storage["logs_file"] = str(Path(config_update.logs_file).absolute())
+    
+    # Save to environment file
+    save_config_to_env(config_storage)
+    
+    return {"success": True, "message": "Configuration updated successfully"}
 
 
 if __name__ == "__main__":
