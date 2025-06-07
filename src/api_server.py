@@ -1,5 +1,6 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Response
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from pathlib import Path
 from pydantic_ai.providers.openai import OpenAIProvider
@@ -14,6 +15,7 @@ from src.agents.rag import RAGAgent
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 TASKS_FILE = BASE_DIR / "data" / "tasks.md"
+FRONTEND_DIR = BASE_DIR / "frontend"
 
 
 class Task(BaseModel):
@@ -25,6 +27,17 @@ class TaskList(BaseModel):
     tasks: list[Task]
 
 app = FastAPI()
+
+# Mount static files
+app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
+
+@app.get("/")
+async def read_root():
+    return FileResponse(str(FRONTEND_DIR / "index.html"))
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return Response(status_code=204)
 
 settings = get_settings()
 mcp_manager = get_mcp_manager()
@@ -61,9 +74,9 @@ async def websocket_endpoint(websocket: WebSocket):
 
 
 @app.get("/tasks")
-async def get_tasks() -> JSONResponse:
+async def get_tasks():
     if not TASKS_FILE.exists():
-        return JSONResponse({"tasks": []})
+        return {"tasks": []}
 
     text = TASKS_FILE.read_text()
     lines = [line[2:] for line in text.splitlines() if line.startswith("- ")]
@@ -74,11 +87,11 @@ async def get_tasks() -> JSONResponse:
             tasks.append({"name": name.strip(), "description": desc.strip()})
         else:
             tasks.append({"name": line.strip(), "description": ""})
-    return JSONResponse({"tasks": tasks})
+    return {"tasks": tasks}
 
 
 @app.put("/tasks")
-async def update_tasks(task_list: TaskList) -> JSONResponse:
+async def update_tasks(task_list: TaskList):
     lines = ["# Tasks"]
     for t in task_list.tasks:
         line = f"- {t.name}"
@@ -89,7 +102,7 @@ async def update_tasks(task_list: TaskList) -> JSONResponse:
         TASKS_FILE.write_text("\n".join(lines))
     except OSError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
-    return JSONResponse({"success": True})
+    return {"success": True}
 
 if __name__ == "__main__":
     import uvicorn

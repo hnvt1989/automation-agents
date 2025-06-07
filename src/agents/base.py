@@ -74,7 +74,7 @@ class BaseAgent:
             Streaming responses from the agent
         """
         async with self.agent.run_stream(prompt, deps=deps, **kwargs) as stream:
-            async for delta in stream:
+            async for delta in stream.stream_text(delta=True):
                 yield delta
     
     def __repr__(self) -> str:
