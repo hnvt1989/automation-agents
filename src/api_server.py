@@ -5,6 +5,8 @@ from pydantic import BaseModel
 from pathlib import Path
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.models.openai import OpenAIModel
+import yaml
+from datetime import datetime
 
 from src.core.config import get_settings
 from src.mcp import get_mcp_manager
@@ -15,7 +17,11 @@ from src.agents.rag import RAGAgent
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 TASKS_FILE = BASE_DIR / "data" / "tasks.md"
+TASKS_YAML_FILE = BASE_DIR / "data" / "tasks.yaml"
+DAILY_LOGS_FILE = BASE_DIR / "data" / "daily_logs.yaml"
 FRONTEND_DIR = BASE_DIR / "frontend"
+VA_NOTES_DIR = BASE_DIR / "data" / "va_notes"
+MEETING_NOTES_DIR = BASE_DIR / "data" / "meeting_notes"
 
 
 class Task(BaseModel):
@@ -25,6 +31,39 @@ class Task(BaseModel):
 
 class TaskList(BaseModel):
     tasks: list[Task]
+
+
+class TaskUpdate(BaseModel):
+    id: str | None = None
+    title: str | None = None
+    name: str | None = None
+    description: str | None = None
+    status: str | None = None
+    priority: str | None = None
+    due_date: str | None = None
+    tags: list[str] | None = None
+
+
+class NoteUpdate(BaseModel):
+    name: str
+    description: str | None = None
+    content: str | None = None
+    path: str | None = None
+
+
+class DocumentUpdate(BaseModel):
+    name: str
+    description: str | None = None
+    content: str | None = None
+    filename: str | None = None
+
+
+class LogUpdate(BaseModel):
+    name: str
+    description: str | None = None
+    date: str | None = None
+    log_id: str | None = None
+    actual_hours: float | None = None
 
 app = FastAPI()
 
@@ -75,23 +114,38 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.get("/tasks")
 async def get_tasks():
-    if not TASKS_FILE.exists():
+    if not TASKS_YAML_FILE.exists():
         return {"tasks": []}
-
-    text = TASKS_FILE.read_text()
-    lines = [line[2:] for line in text.splitlines() if line.startswith("- ")]
-    tasks = []
-    for line in lines:
-        if ":" in line:
-            name, desc = line.split(":", 1)
-            tasks.append({"name": name.strip(), "description": desc.strip()})
-        else:
-            tasks.append({"name": line.strip(), "description": ""})
-    return {"tasks": tasks}
+    
+    try:
+        with open(TASKS_YAML_FILE, 'r') as f:
+            yaml_tasks = yaml.safe_load(f) or []
+        
+        tasks = []
+        for task in yaml_tasks:
+            # Format the task for frontend display
+            formatted_task = {
+                "name": task.get("title", "Untitled Task"),
+                "description": f"ID: {task.get('id', 'N/A')} | Priority: {task.get('priority', 'N/A')} | Status: {task.get('status', 'N/A')}",
+                "id": task.get("id"),
+                "priority": task.get("priority"),
+                "status": task.get("status"),
+                "tags": task.get("tags", []),
+                "dueDate": task.get("due_date"),
+                "estimate_hours": task.get("estimate_hours")
+            }
+            tasks.append(formatted_task)
+        
+        return {"tasks": tasks}
+    except Exception as e:
+        print(f"Error reading tasks.yaml: {e}")
+        return {"tasks": []}
 
 
 @app.put("/tasks")
 async def update_tasks(task_list: TaskList):
+    # For now, just update the old tasks.md file
+    # In a real implementation, you might want to update the YAML file
     lines = ["# Tasks"]
     for t in task_list.tasks:
         line = f"- {t.name}"
@@ -103,6 +157,443 @@ async def update_tasks(task_list: TaskList):
     except OSError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
     return {"success": True}
+
+
+@app.get("/documents")
+async def get_documents():
+    if not VA_NOTES_DIR.exists():
+        return {"documents": []}
+
+    documents = []
+    # Sort files by name for consistent ordering
+    sorted_files = sorted(VA_NOTES_DIR.glob("*.md"), key=lambda x: x.name)
+    
+    for file_path in sorted_files:
+        name = file_path.stem.replace("_", " ").title()
+        description = f"Markdown document - {file_path.name}"
+        documents.append({
+            "name": name,
+            "description": description,
+            "filename": file_path.name,
+            "path": str(file_path.relative_to(BASE_DIR))
+        })
+    
+    return {"documents": documents}
+
+
+@app.get("/documents/{doc_index}/content")
+async def get_document_content(doc_index: int):
+    """Get the content of a specific document"""
+    try:
+        # Use same sorting as get_documents
+        docs = sorted(VA_NOTES_DIR.glob("*.md"), key=lambda x: x.name)
+        if 0 <= doc_index < len(docs):
+            file_path = docs[doc_index]
+            content = file_path.read_text()
+            return {"content": content}
+        else:
+            raise HTTPException(status_code=404, detail="Document not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/notes")
+async def get_notes():
+    if not MEETING_NOTES_DIR.exists():
+        return {"notes": []}
+    
+    notes = []
+    # Use rglob to recursively find all .md files in subdirectories
+    for file_path in MEETING_NOTES_DIR.rglob("*.md"):
+        # Get relative path from meeting_notes directory
+        relative_path = file_path.relative_to(MEETING_NOTES_DIR)
+        
+        # Create a more descriptive name from the path
+        name = file_path.stem.replace("_", " ").replace("-", " ").title()
+        
+        # Include subdirectory in description if file is not in root
+        if relative_path.parent != Path("."):
+            description = f"{relative_path.parent} / {file_path.name}"
+        else:
+            description = file_path.name
+            
+        notes.append({
+            "name": name,
+            "description": description,
+            "filename": file_path.name,
+            "path": str(file_path.relative_to(BASE_DIR))
+        })
+    
+    # Sort by path for consistent ordering
+    notes.sort(key=lambda x: x["path"])
+    
+    return {"notes": notes}
+
+
+@app.get("/notes/{note_index}/content")
+async def get_note_content(note_index: int):
+    """Get the content of a specific note"""
+    try:
+        notes = []
+        for file_path in MEETING_NOTES_DIR.rglob("*.md"):
+            notes.append(file_path)
+        
+        # Sort to ensure consistent ordering
+        notes.sort(key=lambda x: str(x))
+        
+        if 0 <= note_index < len(notes):
+            file_path = notes[note_index]
+            content = file_path.read_text()
+            return {"content": content}
+        else:
+            raise HTTPException(status_code=404, detail="Note not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/logs")
+async def get_logs():
+    if not DAILY_LOGS_FILE.exists():
+        return {"logs": []}
+    
+    try:
+        with open(DAILY_LOGS_FILE, 'r') as f:
+            logs_data = yaml.safe_load(f) or {}
+        
+        logs = []
+        # Process each date entry
+        for date, daily_logs in logs_data.items():
+            if daily_logs:
+                for log in daily_logs:
+                    formatted_log = {
+                        "name": log.get("description", "No description"),
+                        "description": f"Date: {date} | ID: {log.get('log_id', 'N/A')} | Hours: {log.get('actual_hours', 0)}h",
+                        "date": date,
+                        "log_id": log.get("log_id"),
+                        "actual_hours": log.get("actual_hours"),
+                        # Include raw description for editor
+                        "raw_description": log.get("description", "")
+                    }
+                    logs.append(formatted_log)
+        
+        # Sort logs by date (newest first)
+        logs.sort(key=lambda x: x["date"], reverse=True)
+        
+        return {"logs": logs}
+    except Exception as e:
+        print(f"Error reading daily_logs.yaml: {e}")
+        return {"logs": []}
+
+
+@app.post("/tasks")
+async def create_task(task_update: TaskUpdate):
+    """Create a new task"""
+    try:
+        with open(TASKS_YAML_FILE, 'r') as f:
+            tasks = yaml.safe_load(f) or []
+        
+        # Create new task with provided data
+        new_task = {
+            'id': f"TASK-{len(tasks) + 1}",  # Generate a simple ID
+            'title': task_update.name or task_update.title or "New Task",
+            'status': task_update.status or 'pending',
+            'priority': task_update.priority or 'medium',
+            'due_date': task_update.due_date,
+            'tags': task_update.tags or [],
+            'estimate_hours': None
+        }
+        
+        # Add to tasks list
+        tasks.append(new_task)
+        
+        # Write back to file
+        with open(TASKS_YAML_FILE, 'w') as f:
+            yaml.dump(tasks, f, default_flow_style=False, allow_unicode=True)
+        
+        return {"success": True, "task": new_task}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/tasks/{task_index}")
+async def delete_task(task_index: int):
+    """Delete a specific task by index"""
+    try:
+        with open(TASKS_YAML_FILE, 'r') as f:
+            tasks = yaml.safe_load(f) or []
+        
+        if 0 <= task_index < len(tasks):
+            # Remove the task at the specified index
+            deleted_task = tasks.pop(task_index)
+            
+            # Write back to file
+            with open(TASKS_YAML_FILE, 'w') as f:
+                yaml.dump(tasks, f, default_flow_style=False, allow_unicode=True)
+            
+            return {"success": True, "message": "Task deleted successfully", "deleted_task": deleted_task}
+        else:
+            raise HTTPException(status_code=404, detail="Task not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/tasks/{task_index}")
+async def update_task(task_index: int, task_update: TaskUpdate):
+    """Update a specific task by index"""
+    try:
+        with open(TASKS_YAML_FILE, 'r') as f:
+            tasks = yaml.safe_load(f) or []
+        
+        if 0 <= task_index < len(tasks):
+            # Update the task with new values
+            if task_update.title is not None:
+                tasks[task_index]['title'] = task_update.title
+            if task_update.name is not None:
+                tasks[task_index]['title'] = task_update.name  # Map name to title
+            if task_update.status is not None:
+                tasks[task_index]['status'] = task_update.status
+            if task_update.priority is not None:
+                tasks[task_index]['priority'] = task_update.priority
+            if task_update.due_date is not None:
+                tasks[task_index]['due_date'] = task_update.due_date
+            if task_update.tags is not None:
+                tasks[task_index]['tags'] = task_update.tags
+            
+            # Preserve existing fields that weren't updated
+            for key in ['id', 'estimate_hours']:
+                if key in tasks[task_index] and key not in task_update.dict(exclude_unset=True):
+                    # Keep existing value
+                    pass
+            
+            # Write back to file
+            with open(TASKS_YAML_FILE, 'w') as f:
+                yaml.dump(tasks, f, default_flow_style=False, allow_unicode=True)
+            
+            return {"success": True, "task": tasks[task_index]}
+        else:
+            raise HTTPException(status_code=404, detail="Task not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/notes")
+async def create_note(note_update: NoteUpdate):
+    """Create a new note"""
+    try:
+        # Create filename from name
+        filename = note_update.name.lower().replace(' ', '_') + '.md'
+        file_path = MEETING_NOTES_DIR / filename
+        
+        # Ensure directory exists
+        MEETING_NOTES_DIR.mkdir(parents=True, exist_ok=True)
+        
+        # Write content to file
+        content = note_update.content or f"# {note_update.name}\n\n{note_update.description or ''}"
+        file_path.write_text(content)
+        
+        # Find the index of the newly created note
+        notes = []
+        for fp in MEETING_NOTES_DIR.rglob("*.md"):
+            notes.append(fp)
+        notes.sort(key=lambda x: str(x))
+        
+        new_index = next((i for i, n in enumerate(notes) if n.name == filename), -1)
+        
+        return {"success": True, "message": "Note created", "filename": filename, "index": new_index}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/notes/{note_index}")
+async def update_note(note_index: int, note_update: NoteUpdate):
+    """Update a specific note by index"""
+    try:
+        # For notes, we need to handle file content updates
+        # This is a simplified version - in production, you'd want more robust file handling
+        
+        # Get the list of notes to find which file to update
+        notes = []
+        for file_path in MEETING_NOTES_DIR.rglob("*.md"):
+            notes.append(file_path)
+        
+        # Sort to ensure consistent ordering
+        notes.sort(key=lambda x: str(x))
+        
+        if 0 <= note_index < len(notes):
+            file_path = notes[note_index]
+            
+            # If content is provided, update the file
+            if note_update.content is not None:
+                file_path.write_text(note_update.content)
+            
+            return {"success": True, "message": "Note updated"}
+        else:
+            raise HTTPException(status_code=404, detail="Note not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/logs")
+async def create_log(log_update: LogUpdate):
+    """Create a new log entry"""
+    try:
+        with open(DAILY_LOGS_FILE, 'r') as f:
+            logs_data = yaml.safe_load(f) or {}
+        
+        # Get the date for the log
+        date = log_update.date or datetime.now().strftime('%Y-%m-%d')
+        
+        # Create new log entry
+        new_log = {
+            'log_id': log_update.log_id or f"LOG-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+            'description': log_update.name or log_update.description or "New log entry",
+            'actual_hours': log_update.actual_hours or 0
+        }
+        
+        # Add to the date's logs
+        if date not in logs_data:
+            logs_data[date] = []
+        logs_data[date].append(new_log)
+        
+        # Write back to file
+        with open(DAILY_LOGS_FILE, 'w') as f:
+            yaml.dump(logs_data, f, default_flow_style=False, allow_unicode=True)
+        
+        return {"success": True, "log": new_log}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/logs/{log_index}")
+async def delete_log(log_index: int):
+    """Delete a specific log by index"""
+    try:
+        with open(DAILY_LOGS_FILE, 'r') as f:
+            logs_data = yaml.safe_load(f) or {}
+        
+        # Convert to flat list with indices
+        flat_logs = []
+        for date, daily_logs in logs_data.items():
+            if daily_logs:
+                for log in daily_logs:
+                    flat_logs.append((date, log))
+        
+        # Sort by date (newest first) to match GET /logs endpoint
+        flat_logs.sort(key=lambda x: x[0], reverse=True)
+        
+        if 0 <= log_index < len(flat_logs):
+            date, log_to_delete = flat_logs[log_index]
+            
+            # Remove the log from its date
+            logs_data[date].remove(log_to_delete)
+            
+            # If no logs left for this date, remove the date entry
+            if not logs_data[date]:
+                del logs_data[date]
+            
+            # Write back to file
+            with open(DAILY_LOGS_FILE, 'w') as f:
+                yaml.dump(logs_data, f, default_flow_style=False, allow_unicode=True)
+            
+            return {"success": True, "message": "Log deleted successfully", "deleted_log": log_to_delete}
+        else:
+            raise HTTPException(status_code=404, detail="Log not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/logs/{log_index}")
+async def update_log(log_index: int, log_update: LogUpdate):
+    """Update a specific log by index"""
+    try:
+        with open(DAILY_LOGS_FILE, 'r') as f:
+            logs_data = yaml.safe_load(f) or {}
+        
+        # Convert to flat list with indices
+        flat_logs = []
+        for date, daily_logs in logs_data.items():
+            if daily_logs:
+                for log in daily_logs:
+                    flat_logs.append((date, log))
+        
+        # Sort by date (newest first) to match GET /logs endpoint
+        flat_logs.sort(key=lambda x: x[0], reverse=True)
+        
+        if 0 <= log_index < len(flat_logs):
+            date, log = flat_logs[log_index]
+            
+            # Update the log
+            if log_update.name is not None:
+                log['description'] = log_update.name
+            if log_update.description is not None:
+                log['description'] = log_update.description
+            if log_update.actual_hours is not None:
+                log['actual_hours'] = log_update.actual_hours
+            if log_update.log_id is not None:
+                log['log_id'] = log_update.log_id
+            
+            # Write back to file
+            with open(DAILY_LOGS_FILE, 'w') as f:
+                yaml.dump(logs_data, f, default_flow_style=False, allow_unicode=True)
+            
+            return {"success": True, "log": log}
+        else:
+            raise HTTPException(status_code=404, detail="Log not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/documents")
+async def create_document(doc_update: DocumentUpdate):
+    """Create a new document"""
+    try:
+        # Create filename from name
+        filename = doc_update.name.lower().replace(' ', '_') + '.md'
+        file_path = VA_NOTES_DIR / filename
+        
+        # Ensure directory exists
+        VA_NOTES_DIR.mkdir(parents=True, exist_ok=True)
+        
+        # Write content to file
+        content = doc_update.content or f"# {doc_update.name}\n\n{doc_update.description or ''}"
+        file_path.write_text(content)
+        
+        # Find the index of the newly created document
+        docs = sorted(VA_NOTES_DIR.glob("*.md"), key=lambda x: x.name)
+        new_index = next((i for i, d in enumerate(docs) if d.name == filename), -1)
+        
+        return {"success": True, "message": "Document created", "filename": filename, "index": new_index}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/documents/{doc_index}")
+async def update_document(doc_index: int, doc_update: DocumentUpdate):
+    """Update a specific document by index"""
+    try:
+        # Use same sorting as get_documents
+        docs = sorted(VA_NOTES_DIR.glob("*.md"), key=lambda x: x.name)
+        
+        if 0 <= doc_index < len(docs):
+            file_path = docs[doc_index]
+            
+            # If content is provided, update the file
+            if doc_update.content is not None:
+                file_path.write_text(doc_update.content)
+            
+            # Note: We're not updating the filename or other metadata in this simple version
+            # In a production app, you might want to handle file renaming, etc.
+            
+            return {"success": True, "message": "Document updated"}
+        else:
+            raise HTTPException(status_code=404, detail="Document not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     import uvicorn
