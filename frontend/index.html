@@ -1044,6 +1044,12 @@ function Panel({ tab, send }) {
     const [loaded, setLoaded] = useState(false);
     const [editingItem, setEditingItem] = useState(null);
     const [addMode, setAddMode] = useState(false);
+    
+    // Filter states
+    const [searchQuery, setSearchQuery] = useState('');
+    const [typeFilter, setTypeFilter] = useState('all');
+    const [sortBy, setSortBy] = useState('name');
+    const [tagFilter, setTagFilter] = useState('all');
 
     useEffect(() => {
         setSelected(null);
@@ -1101,10 +1107,58 @@ function Panel({ tab, send }) {
     }
 
     const getCurrentItems = () => {
-        return allItems[tab] || [];
+        let items = allItems[tab] || [];
+        
+        // Apply search filter
+        if (searchQuery) {
+            items = items.filter(item => 
+                (item.name && item.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()))
+            );
+        }
+        
+        // Apply type/tag filters
+        if (tab === 'tasks' && typeFilter !== 'all') {
+            items = items.filter(item => item.tags && item.tags.includes(typeFilter));
+        }
+        if (tab === 'logs' && tagFilter !== 'all') {
+            // For logs, filter by log_id pattern since they don't have tags
+            // Personal tasks usually have TASK-* IDs, work tasks have other patterns
+            items = items.filter(item => {
+                const logId = item.log_id || '';
+                if (tagFilter === 'personal') {
+                    return typeof logId === 'string' && logId.startsWith('TASK-');
+                } else if (tagFilter === 'work') {
+                    return typeof logId === 'string' && !logId.startsWith('TASK-');
+                }
+                return true;
+            });
+        }
+        
+        // Apply sorting for tasks
+        if (tab === 'tasks' && sortBy !== 'name') {
+            items = items.slice().sort((a, b) => {
+                switch (sortBy) {
+                    case 'priority-desc':
+                        const priorityOrder = { high: 3, medium: 2, low: 1 };
+                        return (priorityOrder[b.priority] || 0) - (priorityOrder[a.priority] || 0);
+                    case 'priority-asc':
+                        const priorityOrderAsc = { high: 3, medium: 2, low: 1 };
+                        return (priorityOrderAsc[a.priority] || 0) - (priorityOrderAsc[b.priority] || 0);
+                    case 'name':
+                        return (a.name || '').localeCompare(b.name || '');
+                    default:
+                        return 0;
+                }
+            });
+        } else if (tab === 'tasks' && sortBy === 'name') {
+            items = items.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        }
+        
+        return items;
     };
 
-    const items = getCurrentItems();
+    const items = React.useMemo(() => getCurrentItems(), [allItems, tab, searchQuery, typeFilter, sortBy, tagFilter]);
 
     const addItem = () => {
             // Open the editor in add mode with empty item
@@ -1269,6 +1323,77 @@ function Panel({ tab, send }) {
 
     return (
         <React.Fragment>
+            {/* Search and Filter Controls */}
+            <div style={{ padding: '0 32px 16px 32px', borderBottom: '1px solid #f1f3f4' }}>
+                <input
+                    type="text"
+                    placeholder={`Search ${tab}...`}
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    style={{
+                        width: '100%',
+                        padding: '12px 16px',
+                        border: '1px solid #dee2e6',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        marginBottom: '12px'
+                    }}
+                />
+                
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                    {tab === 'tasks' && (
+                        <React.Fragment>
+                            <select
+                                value={typeFilter}
+                                onChange={(e) => setTypeFilter(e.target.value)}
+                                style={{
+                                    padding: '8px 12px',
+                                    border: '1px solid #dee2e6',
+                                    borderRadius: '6px',
+                                    fontSize: '14px'
+                                }}
+                            >
+                                <option value="all">All Types</option>
+                                <option value="personal">Personal</option>
+                                <option value="work">Work</option>
+                            </select>
+                            
+                            <select
+                                value={sortBy}
+                                onChange={(e) => setSortBy(e.target.value)}
+                                style={{
+                                    padding: '8px 12px',
+                                    border: '1px solid #dee2e6',
+                                    borderRadius: '6px',
+                                    fontSize: '14px'
+                                }}
+                            >
+                                <option value="name">Sort by Name</option>
+                                <option value="priority-desc">Priority (High to Low)</option>
+                                <option value="priority-asc">Priority (Low to High)</option>
+                            </select>
+                        </React.Fragment>
+                    )}
+                    
+                    {tab === 'logs' && (
+                        <select
+                            value={tagFilter}
+                            onChange={(e) => setTagFilter(e.target.value)}
+                            style={{
+                                padding: '8px 12px',
+                                border: '1px solid #dee2e6',
+                                borderRadius: '6px',
+                                fontSize: '14px'
+                            }}
+                        >
+                            <option value="all">All Tags</option>
+                            <option value="personal">Personal</option>
+                            <option value="work">Work</option>
+                        </select>
+                    )}
+                </div>
+            </div>
+            
             <div className="items-list">
                 {items.length === 0 ? (
                     <div className="empty-state">
