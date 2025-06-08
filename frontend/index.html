@@ -569,6 +569,127 @@
             display: flex;
             gap: 12px;
         }
+        
+        /* Deadline Warning Styles */
+        .workspace-item.overdue {
+            background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+            border: 2px solid #ef4444;
+            animation: pulse-danger 2s infinite;
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+        }
+        
+        .workspace-item.due-soon {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            border: 2px solid #f59e0b;
+            animation: pulse-warning 3s infinite;
+            box-shadow: 0 4px 12px rgba(245, 158, 11, 0.2);
+        }
+        
+        @keyframes pulse-danger {
+            0%, 100% { 
+                transform: scale(1);
+                box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+            }
+            50% { 
+                transform: scale(1.02);
+                box-shadow: 0 6px 16px rgba(239, 68, 68, 0.5);
+            }
+        }
+        
+        @keyframes pulse-warning {
+            0%, 100% { 
+                transform: scale(1);
+                box-shadow: 0 4px 12px rgba(245, 158, 11, 0.2);
+            }
+            50% { 
+                transform: scale(1.01);
+                box-shadow: 0 6px 16px rgba(245, 158, 11, 0.4);
+            }
+        }
+        
+        .deadline-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-left: 8px;
+        }
+        
+        .deadline-badge.overdue {
+            background: #ef4444;
+            color: white;
+            animation: blink-danger 1s infinite;
+        }
+        
+        .deadline-badge.due-soon {
+            background: #f59e0b;
+            color: white;
+            animation: pulse-text 2s infinite;
+        }
+        
+        @keyframes blink-danger {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0.6; }
+        }
+        
+        @keyframes pulse-text {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.8; }
+        }
+        
+        .workspace-item.overdue .item-title {
+            color: #991b1b;
+            font-weight: 700;
+        }
+        
+        .workspace-item.due-soon .item-title {
+            color: #92400e;
+            font-weight: 600;
+        }
+        
+        .workspace-item.overdue .item-icon {
+            background: #fee2e2;
+            color: #ef4444;
+            border: 2px solid #ef4444;
+        }
+        
+        .workspace-item.due-soon .item-icon {
+            background: #fef3c7;
+            color: #f59e0b;
+            border: 2px solid #f59e0b;
+        }
+        
+        .deadline-alert {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #ef4444;
+            color: white;
+            padding: 12px 16px;
+            border-radius: 8px;
+            box-shadow: 0 8px 24px rgba(239, 68, 68, 0.4);
+            z-index: 1000;
+            animation: slide-in 0.5s ease-out;
+            max-width: 300px;
+        }
+        
+        .deadline-alert.warning {
+            background: #f59e0b;
+            box-shadow: 0 8px 24px rgba(245, 158, 11, 0.4);
+        }
+        
+        @keyframes slide-in {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
     </style>
 </head>
 <body>
@@ -576,6 +697,37 @@
 
     <script type="text/babel">
 const { useState, useEffect, useRef } = React;
+
+// Deadline calculation helper function
+function getDeadlineStatus(dueDate) {
+    if (!dueDate) return 'normal';
+    
+    const now = new Date();
+    const due = new Date(dueDate);
+    const diffTime = due.getTime() - now.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays < 0) return 'overdue';
+    if (diffDays <= 1) return 'due-soon';
+    return 'normal';
+}
+
+// Function to get deadline badge text and class
+function getDeadlineBadge(dueDate) {
+    const status = getDeadlineStatus(dueDate);
+    if (status === 'overdue') {
+        const days = Math.abs(Math.ceil((new Date(dueDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)));
+        return { text: `${days} day${days === 1 ? '' : 's'} overdue`, class: 'overdue' };
+    }
+    if (status === 'due-soon') {
+        const hours = Math.ceil((new Date(dueDate).getTime() - new Date().getTime()) / (1000 * 60 * 60));
+        if (hours <= 24) {
+            return { text: hours <= 0 ? 'Due now!' : `Due in ${hours}h`, class: 'due-soon' };
+        }
+        return { text: 'Due tomorrow', class: 'due-soon' };
+    }
+    return null;
+}
 
 function Tabs({ current, onSelect }) {
     const tabs = [
@@ -610,14 +762,25 @@ function WorkspaceItem({ item, type, isSelected, onClick }) {
         return 'status-task';
     };
     
+    // Get deadline status for tasks
+    const deadlineStatus = (type === 'tasks' && item.dueDate) ? getDeadlineStatus(item.dueDate) : 'normal';
+    const deadlineBadge = (type === 'tasks' && item.dueDate) ? getDeadlineBadge(item.dueDate) : null;
+    
     return (
         <div 
-            className={`workspace-item ${isSelected ? 'selected' : ''} ${getStatusClass()}`}
+            className={`workspace-item ${isSelected ? 'selected' : ''} ${getStatusClass()} ${deadlineStatus !== 'normal' ? deadlineStatus : ''}`}
             onClick={onClick}
         >
             <div className="item-icon"></div>
             <div className="item-content">
-                <div className="item-title">{item.name}</div>
+                <div className="item-title">
+                    {item.name}
+                    {deadlineBadge && (
+                        <span className={`deadline-badge ${deadlineBadge.class}`}>
+                            {deadlineBadge.text}
+                        </span>
+                    )}
+                </div>
                 {item.description && (
                     <div className="item-description">{item.description}</div>
                 )}
@@ -1136,7 +1299,7 @@ function Panel({ tab, send }) {
         }
         
         // Apply sorting for tasks
-        if (tab === 'tasks' && sortBy !== 'name') {
+        if (tab === 'tasks') {
             items = items.slice().sort((a, b) => {
                 switch (sortBy) {
                     case 'priority-desc':
@@ -1145,14 +1308,40 @@ function Panel({ tab, send }) {
                     case 'priority-asc':
                         const priorityOrderAsc = { high: 3, medium: 2, low: 1 };
                         return (priorityOrderAsc[a.priority] || 0) - (priorityOrderAsc[b.priority] || 0);
+                    case 'due-date-asc':
+                        // Sort by due date (earliest first), tasks without due dates go to end
+                        if (!a.dueDate && !b.dueDate) return 0;
+                        if (!a.dueDate) return 1;
+                        if (!b.dueDate) return -1;
+                        return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+                    case 'due-date-desc':
+                        // Sort by due date (latest first), tasks without due dates go to end
+                        if (!a.dueDate && !b.dueDate) return 0;
+                        if (!a.dueDate) return 1;
+                        if (!b.dueDate) return -1;
+                        return new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime();
+                    case 'due-date-urgent':
+                        // Sort by urgency: overdue first, then due soon, then by date
+                        const aStatus = a.dueDate ? getDeadlineStatus(a.dueDate) : 'normal';
+                        const bStatus = b.dueDate ? getDeadlineStatus(b.dueDate) : 'normal';
+                        
+                        // Priority order: overdue > due-soon > normal
+                        const statusOrder = { overdue: 3, 'due-soon': 2, normal: 1 };
+                        const statusDiff = (statusOrder[aStatus] || 0) - (statusOrder[bStatus] || 0);
+                        
+                        if (statusDiff !== 0) return -statusDiff; // Reverse for urgent first
+                        
+                        // If same status, sort by due date
+                        if (!a.dueDate && !b.dueDate) return 0;
+                        if (!a.dueDate) return 1;
+                        if (!b.dueDate) return -1;
+                        return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
                     case 'name':
                         return (a.name || '').localeCompare(b.name || '');
                     default:
                         return 0;
                 }
             });
-        } else if (tab === 'tasks' && sortBy === 'name') {
-            items = items.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
         }
         
         return items;
@@ -1371,6 +1560,9 @@ function Panel({ tab, send }) {
                                 <option value="name">Sort by Name</option>
                                 <option value="priority-desc">Priority (High to Low)</option>
                                 <option value="priority-asc">Priority (Low to High)</option>
+                                <option value="due-date-urgent">🚨 Most Urgent First</option>
+                                <option value="due-date-asc">Due Date (Earliest First)</option>
+                                <option value="due-date-desc">Due Date (Latest First)</option>
                             </select>
                         </React.Fragment>
                     )}
@@ -1576,6 +1768,10 @@ function Chat({ messages, send }) {
 function App() {
     const [tab, setTab] = useState('tasks');
     const [messages, setMessages] = useState([]);
+    const [tasks, setTasks] = useState([]);
+    const [showDeadlineAlert, setShowDeadlineAlert] = useState(false);
+    const [deadlineAlertType, setDeadlineAlertType] = useState('danger');
+    const [deadlineAlertMessage, setDeadlineAlertMessage] = useState('');
     const wsRef = useRef(null);
 
     useEffect(() => {
@@ -1598,6 +1794,46 @@ function App() {
         return () => ws.close();
     }, []);
 
+    // Fetch tasks and check for deadline alerts
+    useEffect(() => {
+        fetch('/tasks')
+            .then(r => r.json())
+            .then(data => {
+                if (data.tasks) {
+                    setTasks(data.tasks);
+                    
+                    // Check for deadline alerts
+                    const overdueTasks = data.tasks.filter(task => 
+                        task.dueDate && getDeadlineStatus(task.dueDate) === 'overdue'
+                    );
+                    const dueSoonTasks = data.tasks.filter(task => 
+                        task.dueDate && getDeadlineStatus(task.dueDate) === 'due-soon'
+                    );
+                    
+                    if (overdueTasks.length > 0) {
+                        setDeadlineAlertType('danger');
+                        setDeadlineAlertMessage(
+                            `🚨 ${overdueTasks.length} task${overdueTasks.length === 1 ? ' is' : 's are'} overdue!`
+                        );
+                        setShowDeadlineAlert(true);
+                        
+                        // Auto-hide after 10 seconds
+                        setTimeout(() => setShowDeadlineAlert(false), 10000);
+                    } else if (dueSoonTasks.length > 0) {
+                        setDeadlineAlertType('warning');
+                        setDeadlineAlertMessage(
+                            `⚠️ ${dueSoonTasks.length} task${dueSoonTasks.length === 1 ? ' is' : 's are'} due soon!`
+                        );
+                        setShowDeadlineAlert(true);
+                        
+                        // Auto-hide after 8 seconds
+                        setTimeout(() => setShowDeadlineAlert(false), 8000);
+                    }
+                }
+            })
+            .catch(() => {});
+    }, []);
+
     const send = (text) => {
         if (!text.trim() || !wsRef.current) return;
         wsRef.current.send(text);
@@ -1616,6 +1852,23 @@ function App() {
                     <Panel tab={tab} send={send} />
                 </div>
             </div>
+            
+            {/* Deadline Alert */}
+            {showDeadlineAlert && (
+                <div 
+                    className={`deadline-alert ${deadlineAlertType === 'warning' ? 'warning' : ''}`}
+                    onClick={() => setShowDeadlineAlert(false)}
+                    style={{ cursor: 'pointer' }}
+                >
+                    <div style={{ fontWeight: '600', marginBottom: '4px' }}>
+                        Deadline Alert
+                    </div>
+                    <div>{deadlineAlertMessage}</div>
+                    <div style={{ fontSize: '12px', marginTop: '4px', opacity: 0.9 }}>
+                        Click to dismiss
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
