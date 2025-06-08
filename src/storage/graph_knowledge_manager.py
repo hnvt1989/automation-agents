@@ -136,6 +136,9 @@ class GraphKnowledgeManager:
                     # Re-raise if it's a different error
                     raise
             
+            # Validate schema health after initialization
+            await self._validate_schema_health()
+            
             self._initialized = True
             log_info("GraphKnowledgeManager initialized successfully")
             
@@ -255,12 +258,11 @@ class GraphKnowledgeManager:
             await self.initialize()
         
         try:
-            # Use Graphiti's search with RRF (Reciprocal Rank Fusion)
-            edge_results = await self.client.search(
+            # Use safe vector search with error handling
+            edge_results = await self._safe_vector_search(
                 query,
-                center_node_uuid=center_node_uuid,
-                num_results=num_results,
-                search_config=EDGE_HYBRID_SEARCH_RRF
+                search_type="relationship",
+                num_results=num_results
             )
             
             # Convert to our result format
@@ -724,3 +726,124 @@ class GraphKnowledgeManager:
             ))
         
         return entities
+    
+    async def _validate_schema_health(self):
+        """Validate that the Neo4j schema is properly configured."""
+        if not self.driver:
+            return
+        
+        try:
+            async with self.driver.session() as session:
+                # Check for vector indices
+                indices_result = await session.run("SHOW INDEXES")
+                vector_indices = []
+                async for record in indices_result:
+                    if record.get("type") == "VECTOR":
+                        vector_indices.append(record.get("name"))
+                
+                if len(vector_indices) < 2:
+                    log_warning(f"Expected 2 vector indices, found {len(vector_indices)}")
+                    log_warning("Run 'python scripts/fix_neo4j_schema.py' to fix schema issues")
+                else:
+                    log_info(f"Schema validation passed: {len(vector_indices)} vector indices found")
+                
+                # Check for nodes with missing embeddings
+                missing_entity_embeddings = await session.run("""
+                    MATCH (n:Entity) 
+                    WHERE n.name_embedding IS NULL 
+                    RETURN count(n) as count
+                """)
+                record = await missing_entity_embeddings.single()
+                missing_entities = record["count"] if record else 0
+                
+                missing_rel_embeddings = await session.run("""
+                    MATCH ()-[r:RELATES_TO]->() 
+                    WHERE r.fact_embedding IS NULL OR r.episodes IS NULL
+                    RETURN count(r) as count
+                """)
+                record = await missing_rel_embeddings.single()
+                missing_relationships = record["count"] if record else 0
+                
+                if missing_entities > 0 or missing_relationships > 0:
+                    log_warning(f"Found {missing_entities} entities and {missing_relationships} relationships with missing properties")
+                    log_warning("Run 'python scripts/fix_neo4j_schema.py' to fix missing properties")
+                
+        except Exception as e:
+            log_warning(f"Schema validation failed: {e}")
+    
+    async def _safe_vector_search(
+        self,
+        query: str,
+        search_type: str = "entity",
+        num_results: int = 10
+    ) -> List[Any]:
+        """Perform vector search with graceful error handling."""
+        if not self._initialized:
+            await self.initialize()
+        
+        try:
+            # Use Graphiti's search with error handling
+            results = await self.client.search(
+                query,
+                num_results=num_results,
+                search_config=EDGE_HYBRID_SEARCH_RRF
+            )
+            return results
+            
+        except Exception as e:
+            error_str = str(e)
+            
+            # Handle specific Neo4j warnings/errors
+            if "property name is not available" in error_str or "name_embedding" in error_str:
+                log_warning("Vector search failed due to missing embeddings. Using fallback search.")
+                return await self._fallback_search(query, search_type, num_results)
+            elif "vector index" in error_str.lower():
+                log_warning("Vector search failed due to missing indices. Using fallback search.")
+                return await self._fallback_search(query, search_type, num_results)
+            else:
+                log_error(f"Vector search failed: {error_str}")
+                return []
+    
+    async def _fallback_search(
+        self,
+        query: str,
+        search_type: str = "entity",
+        num_results: int = 10
+    ) -> List[Any]:
+        """Fallback search using text matching when vector search fails."""
+        if not self.driver:
+            return []
+        
+        try:
+            async with self.driver.session() as session:
+                if search_type == "entity":
+                    # Text-based entity search
+                    result = await session.run("""
+                        MATCH (n:Entity)
+                        WHERE toLower(n.name) CONTAINS toLower($query)
+                           OR toLower(n.summary) CONTAINS toLower($query)
+                        RETURN n
+                        LIMIT $limit
+                    """, query=query, limit=num_results)
+                    
+                    nodes = []
+                    async for record in result:
+                        nodes.append(record["n"])
+                    return nodes
+                else:
+                    # Text-based relationship search
+                    result = await session.run("""
+                        MATCH ()-[r:RELATES_TO]->()
+                        WHERE toLower(r.fact) CONTAINS toLower($query)
+                        RETURN r
+                        LIMIT $limit
+                    """, query=query, limit=num_results)
+                    
+                    relationships = []
+                    async for record in result:
+                        relationships.append(record["r"])
+                    return relationships
+                    
+        except Exception as e:
+            log_error(f"Fallback search also failed: {e}")
+            return []

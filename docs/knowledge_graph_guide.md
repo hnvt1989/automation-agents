@@ -1,11 +1,14 @@
-# Knowledge Graph Integration Plan with Graphiti
+# Knowledge Graph Integration Guide
+
+This guide consolidates all knowledge graph documentation for the automation-agents system.
 
 ## Overview
-Integrate Graphiti, a real-time knowledge graph builder for AI agents, into our RAG system to enhance search capabilities with entity relationships and contextual understanding.
+
+The system integrates Graphiti, a real-time knowledge graph builder for AI agents, into our RAG system to enhance search capabilities with entity relationships and contextual understanding.
 
 ## Architecture Design
 
-### 1. Core Components
+### Core Components
 
 #### GraphKnowledgeManager
 - Manages Graphiti client connection to Neo4j
@@ -18,7 +21,7 @@ Integrate Graphiti, a real-time knowledge graph builder for AI agents, into our 
 - Hybrid search combining vector similarity and graph relationships
 - Context-aware retrieval using entity relationships
 
-### 2. Data Flow
+### Data Flow
 
 ```
 Document/Conversation → ChromaDB (Vector Storage)
@@ -28,7 +31,7 @@ Document/Conversation → ChromaDB (Vector Storage)
                               Entities & Relationships
 ```
 
-### 3. Key Features
+### Key Features
 
 #### Entity Extraction
 - Automatic extraction from indexed content
@@ -68,6 +71,54 @@ Document/Conversation → ChromaDB (Vector Storage)
 2. Relationship inference
 3. Temporal analysis
 
+## Usage Guide
+
+### Basic Setup
+
+1. **Install Dependencies**
+   ```bash
+   pip install graphiti-core neo4j
+   ```
+
+2. **Configure Neo4j**
+   Add to your `local.env`:
+   ```env
+   NEO4J_URI=bolt://localhost:7687
+   NEO4J_USER=neo4j
+   NEO4J_PASSWORD=your_password
+   ```
+
+3. **Initialize Graph Manager**
+   ```python
+   from src.storage.graph_knowledge_manager import GraphKnowledgeManager
+   
+   graph_manager = GraphKnowledgeManager()
+   await graph_manager.initialize()
+   ```
+
+### Adding Knowledge to Graph
+
+```python
+# Index documents with graph building
+await graph_manager.add_to_graph(
+    content="Meeting notes about Project X with Alice and Bob",
+    metadata={"type": "meeting", "date": "2024-01-15"}
+)
+```
+
+### Searching the Graph
+
+```python
+# Find related entities
+results = await graph_manager.search_related_entities("Alice")
+
+# Search with context
+context_results = await graph_manager.search_with_context(
+    query="Project X status",
+    context_nodes=["Alice", "Bob"]
+)
+```
+
 ## Benefits
 
 1. **Better Context Understanding**: Entities and their relationships provide richer context
@@ -97,3 +148,39 @@ Document/Conversation → ChromaDB (Vector Storage)
 2. **Batch Operations**: Process entities in batches
 3. **Caching**: Cache frequently accessed graph patterns
 4. **Indexing**: Proper Neo4j indexes for performance
+
+## Troubleshooting
+
+### Common Issues
+
+**Neo4j Connection Errors**
+- Verify Neo4j is running and accessible
+- Check connection credentials in environment variables
+- Ensure firewall allows connection on port 7687
+
+**Entity Extraction Issues**
+- Verify OpenAI API key is configured
+- Check model availability and rate limits
+- Review content quality and format
+
+**Performance Issues**
+- Monitor Neo4j memory usage
+- Check query complexity and optimization
+- Consider batching large operations
+
+### Configuration
+
+The knowledge graph system is configured through environment variables:
+
+```env
+# Neo4j Configuration
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=your_password
+
+# Graphiti Configuration
+GRAPHITI_ENTITY_EXTRACTION_MODEL=gpt-4o-mini
+GRAPHITI_RELATIONSHIP_MODEL=gpt-4o-mini
+```
+
+For more technical details, see the implementation in `src/storage/graph_knowledge_manager.py`.

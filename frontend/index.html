@@ -398,6 +398,298 @@
             font-size: 14px;
             color: #6c757d;
         }
+        
+        .editor-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        
+        .editor-container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+            width: 90%;
+            max-width: 800px;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .editor-header {
+            padding: 24px;
+            border-bottom: 1px solid #e9ecef;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .editor-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #212529;
+        }
+        
+        .editor-close {
+            width: 32px;
+            height: 32px;
+            border: none;
+            background: #f8f9fa;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            color: #6c757d;
+            transition: all 0.2s;
+        }
+        
+        .editor-close:hover {
+            background: #e9ecef;
+            color: #495057;
+        }
+        
+        .editor-content {
+            flex: 1;
+            padding: 24px;
+            overflow-y: auto;
+        }
+        
+        .editor-field {
+            margin-bottom: 20px;
+        }
+        
+        .editor-label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            color: #495057;
+            margin-bottom: 8px;
+        }
+        
+        .editor-input,
+        .editor-textarea {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: inherit;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        
+        .editor-input:focus,
+        .editor-textarea:focus {
+            border-color: #007bff;
+            box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+        }
+        
+        .editor-textarea {
+            min-height: 200px;
+            resize: vertical;
+        }
+        
+        .editor-footer {
+            padding: 24px;
+            border-top: 1px solid #e9ecef;
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+        
+        .editor-button {
+            padding: 12px 24px;
+            border: 1px solid #dee2e6;
+            background: white;
+            color: #495057;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .editor-button:hover {
+            background: #f8f9fa;
+            border-color: #adb5bd;
+        }
+        
+        .editor-button.primary {
+            background: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
+        
+        .editor-button.primary:hover {
+            background: #0056b3;
+            border-color: #0056b3;
+        }
+        
+        .editor-button.secondary {
+            background: #6c757d;
+            color: white;
+            border-color: #6c757d;
+        }
+        
+        .editor-button.secondary:hover {
+            background: #5a6268;
+            border-color: #545b62;
+        }
+        
+        .editor-button.danger {
+            background: #dc3545;
+            color: white;
+            border-color: #dc3545;
+        }
+        
+        .editor-button.danger:hover {
+            background: #c82333;
+            border-color: #bd2130;
+        }
+        
+        .editor-footer {
+            justify-content: space-between;
+        }
+        
+        .editor-footer-left {
+            display: flex;
+            gap: 12px;
+        }
+        
+        .editor-footer-right {
+            display: flex;
+            gap: 12px;
+        }
+        
+        /* Deadline Warning Styles */
+        .workspace-item.overdue {
+            background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+            border: 2px solid #ef4444;
+            animation: pulse-danger 2s infinite;
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+        }
+        
+        .workspace-item.due-soon {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            border: 2px solid #f59e0b;
+            animation: pulse-warning 3s infinite;
+            box-shadow: 0 4px 12px rgba(245, 158, 11, 0.2);
+        }
+        
+        @keyframes pulse-danger {
+            0%, 100% { 
+                transform: scale(1);
+                box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+            }
+            50% { 
+                transform: scale(1.02);
+                box-shadow: 0 6px 16px rgba(239, 68, 68, 0.5);
+            }
+        }
+        
+        @keyframes pulse-warning {
+            0%, 100% { 
+                transform: scale(1);
+                box-shadow: 0 4px 12px rgba(245, 158, 11, 0.2);
+            }
+            50% { 
+                transform: scale(1.01);
+                box-shadow: 0 6px 16px rgba(245, 158, 11, 0.4);
+            }
+        }
+        
+        .deadline-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-left: 8px;
+        }
+        
+        .deadline-badge.overdue {
+            background: #ef4444;
+            color: white;
+            animation: blink-danger 1s infinite;
+        }
+        
+        .deadline-badge.due-soon {
+            background: #f59e0b;
+            color: white;
+            animation: pulse-text 2s infinite;
+        }
+        
+        @keyframes blink-danger {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0.6; }
+        }
+        
+        @keyframes pulse-text {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.8; }
+        }
+        
+        .workspace-item.overdue .item-title {
+            color: #991b1b;
+            font-weight: 700;
+        }
+        
+        .workspace-item.due-soon .item-title {
+            color: #92400e;
+            font-weight: 600;
+        }
+        
+        .workspace-item.overdue .item-icon {
+            background: #fee2e2;
+            color: #ef4444;
+            border: 2px solid #ef4444;
+        }
+        
+        .workspace-item.due-soon .item-icon {
+            background: #fef3c7;
+            color: #f59e0b;
+            border: 2px solid #f59e0b;
+        }
+        
+        .deadline-alert {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #ef4444;
+            color: white;
+            padding: 12px 16px;
+            border-radius: 8px;
+            box-shadow: 0 8px 24px rgba(239, 68, 68, 0.4);
+            z-index: 1000;
+            animation: slide-in 0.5s ease-out;
+            max-width: 300px;
+        }
+        
+        .deadline-alert.warning {
+            background: #f59e0b;
+            box-shadow: 0 8px 24px rgba(245, 158, 11, 0.4);
+        }
+        
+        @keyframes slide-in {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
     </style>
 </head>
 <body>
@@ -406,13 +698,44 @@
     <script type="text/babel">
 const { useState, useEffect, useRef } = React;
 
+// Deadline calculation helper function
+function getDeadlineStatus(dueDate) {
+    if (!dueDate) return 'normal';
+    
+    const now = new Date();
+    const due = new Date(dueDate);
+    const diffTime = due.getTime() - now.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays < 0) return 'overdue';
+    if (diffDays <= 1) return 'due-soon';
+    return 'normal';
+}
+
+// Function to get deadline badge text and class
+function getDeadlineBadge(dueDate) {
+    const status = getDeadlineStatus(dueDate);
+    if (status === 'overdue') {
+        const days = Math.abs(Math.ceil((new Date(dueDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)));
+        return { text: `${days} day${days === 1 ? '' : 's'} overdue`, class: 'overdue' };
+    }
+    if (status === 'due-soon') {
+        const hours = Math.ceil((new Date(dueDate).getTime() - new Date().getTime()) / (1000 * 60 * 60));
+        if (hours <= 24) {
+            return { text: hours <= 0 ? 'Due now!' : `Due in ${hours}h`, class: 'due-soon' };
+        }
+        return { text: 'Due tomorrow', class: 'due-soon' };
+    }
+    return null;
+}
+
 function Tabs({ current, onSelect }) {
     const tabs = [
-        { id: 'all', label: 'All' },
         { id: 'tasks', label: 'Tasks' },
         { id: 'documents', label: 'Documents' },
-        { id: 'notes', label: 'Notes' },
-        { id: 'logs', label: 'Logs' }
+        { id: 'notes', label: 'Meeting Notes' },
+        { id: 'logs', label: 'Daily Logs' },
+        { id: 'configuration', label: 'Configuration' }
     ];
     
     return (
@@ -439,14 +762,25 @@ function WorkspaceItem({ item, type, isSelected, onClick }) {
         return 'status-task';
     };
     
+    // Get deadline status for tasks
+    const deadlineStatus = (type === 'tasks' && item.dueDate) ? getDeadlineStatus(item.dueDate) : 'normal';
+    const deadlineBadge = (type === 'tasks' && item.dueDate) ? getDeadlineBadge(item.dueDate) : null;
+    
     return (
         <div 
-            className={`workspace-item ${isSelected ? 'selected' : ''} ${getStatusClass()}`}
+            className={`workspace-item ${isSelected ? 'selected' : ''} ${getStatusClass()} ${deadlineStatus !== 'normal' ? deadlineStatus : ''}`}
             onClick={onClick}
         >
             <div className="item-icon"></div>
             <div className="item-content">
-                <div className="item-title">{item.name}</div>
+                <div className="item-title">
+                    {item.name}
+                    {deadlineBadge && (
+                        <span className={`deadline-badge ${deadlineBadge.class}`}>
+                            {deadlineBadge.text}
+                        </span>
+                    )}
+                </div>
                 {item.description && (
                     <div className="item-description">{item.description}</div>
                 )}
@@ -458,28 +792,427 @@ function WorkspaceItem({ item, type, isSelected, onClick }) {
     );
 }
 
+function Editor({ item, type, onClose, onSave, onIndex, onDelete, mode = 'edit' }) {
+    const isAddMode = mode === 'add';
+    const [formData, setFormData] = useState({
+        name: (item && item.name) || '',
+        description: (item && item.description) || '',
+        content: (item && item.content) || '',
+        ...(item || {})
+    });
+
+    const handleChange = (field, value) => {
+        setFormData(prev => ({ ...prev, [field]: value }));
+    };
+
+    const handleSave = () => {
+        onSave(formData);
+        onClose();
+    };
+
+    const handleIndex = () => {
+        onIndex(formData);
+    };
+    
+    const handleDelete = () => {
+        if (window.confirm('Are you sure you want to delete this item?')) {
+            onDelete();
+        }
+    };
+
+    if (!item) return null;
+
+    return (
+        <div className="editor-overlay" onClick={onClose}>
+            <div className="editor-container" onClick={e => e.stopPropagation()}>
+                <div className="editor-header">
+                    <div className="editor-title">{isAddMode ? 'Add' : 'Edit'} {type.slice(0, -1)}</div>
+                    <button className="editor-close" onClick={onClose}>×</button>
+                </div>
+                
+                <div className="editor-content">
+                    {type !== 'logs' && (
+                        <div className="editor-field">
+                            <label className="editor-label">Name</label>
+                            <input
+                                className="editor-input"
+                                value={formData.name}
+                                onChange={e => handleChange('name', e.target.value)}
+                                placeholder="Enter name..."
+                                readOnly={!isAddMode && (type === 'notes' || type === 'documents')}
+                                style={!isAddMode && (type === 'notes' || type === 'documents') ? {backgroundColor: '#f8f9fa', cursor: 'not-allowed'} : {}}
+                            />
+                        </div>
+                    )}
+                    
+                    <div className="editor-field">
+                        <label className="editor-label">Description</label>
+                        <input
+                            className="editor-input"
+                            value={type === 'logs' ? formData.name : formData.description}
+                            onChange={e => handleChange(type === 'logs' ? 'name' : 'description', e.target.value)}
+                            placeholder={type === 'logs' ? "Enter log description..." : "Enter description..."}
+                            readOnly={!isAddMode && (type === 'notes' || type === 'documents')}
+                            style={!isAddMode && (type === 'notes' || type === 'documents') ? {backgroundColor: '#f8f9fa', cursor: 'not-allowed'} : {}}
+                        />
+                    </div>
+                    
+                    {type === 'notes' && (
+                        <React.Fragment>
+                            <div className="editor-field">
+                                <label className="editor-label">Content</label>
+                                <textarea
+                                    className="editor-textarea"
+                                    value={formData.content}
+                                    onChange={e => handleChange('content', e.target.value)}
+                                    placeholder="Enter content..."
+                                />
+                            </div>
+                            {!isAddMode && (
+                                <div style={{fontSize: '12px', color: '#6c757d', marginTop: '-10px'}}>
+                                    Note: Name and Description are read-only for notes. Only content can be edited.
+                                </div>
+                            )}
+                        </React.Fragment>
+                    )}
+                    
+                    {type === 'documents' && (
+                        <React.Fragment>
+                            <div className="editor-field">
+                                <label className="editor-label">Content</label>
+                                <textarea
+                                    className="editor-textarea"
+                                    value={formData.content}
+                                    onChange={e => handleChange('content', e.target.value)}
+                                    placeholder="Enter document content..."
+                                />
+                            </div>
+                            {!isAddMode && (
+                                <div style={{fontSize: '12px', color: '#6c757d', marginTop: '-10px'}}>
+                                    Note: Name and Description are read-only for documents. Only content can be edited.
+                                </div>
+                            )}
+                        </React.Fragment>
+                    )}
+                    
+                    {type === 'tasks' && (
+                        <React.Fragment>
+                            <div className="editor-field">
+                                <label className="editor-label">Status</label>
+                                <select
+                                    className="editor-input"
+                                    value={formData.status || 'pending'}
+                                    onChange={e => handleChange('status', e.target.value)}
+                                >
+                                    <option value="pending">Pending</option>
+                                    <option value="in_progress">In Progress</option>
+                                    <option value="completed">Completed</option>
+                                </select>
+                            </div>
+                            
+                            <div className="editor-field">
+                                <label className="editor-label">Priority</label>
+                                <select
+                                    className="editor-input"
+                                    value={formData.priority || 'medium'}
+                                    onChange={e => handleChange('priority', e.target.value)}
+                                >
+                                    <option value="low">Low</option>
+                                    <option value="medium">Medium</option>
+                                    <option value="high">High</option>
+                                </select>
+                            </div>
+                            
+                            <div className="editor-field">
+                                <label className="editor-label">Due Date</label>
+                                <input
+                                    type="date"
+                                    className="editor-input"
+                                    value={formData.dueDate || ''}
+                                    onChange={e => handleChange('dueDate', e.target.value)}
+                                />
+                            </div>
+                        </React.Fragment>
+                    )}
+                    
+                    {type === 'logs' && (
+                        <React.Fragment>
+                            <div className="editor-field">
+                                <label className="editor-label">Date</label>
+                                <input
+                                    type="date"
+                                    className="editor-input"
+                                    value={formData.date || ''}
+                                    onChange={e => handleChange('date', e.target.value)}
+                                />
+                            </div>
+                            
+                            <div className="editor-field">
+                                <label className="editor-label">Hours</label>
+                                <input
+                                    type="number"
+                                    className="editor-input"
+                                    value={formData.actual_hours || ''}
+                                    onChange={e => handleChange('actual_hours', e.target.value)}
+                                    placeholder="Hours worked..."
+                                />
+                            </div>
+                        </React.Fragment>
+                    )}
+                </div>
+                
+                <div className="editor-footer">
+                    <div className="editor-footer-left">
+                        {!isAddMode && (type === 'tasks' || type === 'logs') && (
+                            <button className="editor-button danger" onClick={handleDelete}>Delete</button>
+                        )}
+                    </div>
+                    <div className="editor-footer-right">
+                        <button className="editor-button" onClick={onClose}>Cancel</button>
+                        {!isAddMode && (type === 'documents' || type === 'notes') && (
+                            <button className="editor-button secondary" onClick={handleIndex}>Index</button>
+                        )}
+                        <button className="editor-button primary" onClick={handleSave}>{isAddMode ? 'Add' : 'Save'}</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function Configuration({ send }) {
+    const [config, setConfig] = useState({
+        documents_dir: '',
+        notes_dir: '',
+        tasks_file: '',
+        logs_file: ''
+    });
+    const [originalConfig, setOriginalConfig] = useState(null);
+    const [errors, setErrors] = useState({});
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        // Load current configuration
+        fetch('/config')
+            .then(r => r.json())
+            .then(data => {
+                setConfig(data);
+                setOriginalConfig(data);
+                setLoading(false);
+            })
+            .catch(error => {
+                console.error('Error loading configuration:', error);
+                setLoading(false);
+            });
+    }, []);
+
+    const handleChange = (field, value) => {
+        setConfig(prev => ({ ...prev, [field]: value }));
+        // Clear error for this field when user types
+        setErrors(prev => ({ ...prev, [field]: null }));
+    };
+
+    const handleFileSelect = (field, type) => {
+        // Note: Due to browser security restrictions, we cannot get the full file path
+        // This is a placeholder that shows the limitation
+        alert(`Note: Due to browser security, the file browser cannot access full file paths. Please type the complete path manually.
+        
+For ${type === 'directory' ? 'directories' : 'files'}, you can:
+1. Type the full path directly in the input field
+2. Copy the path from your file explorer and paste it here`);
+    };
+
+    const validateConfig = async () => {
+        const newErrors = {};
+        
+        // Basic validation - check if fields are empty
+        if (!config.documents_dir) newErrors.documents_dir = 'Documents directory is required';
+        if (!config.notes_dir) newErrors.notes_dir = 'Notes directory is required';
+        if (!config.tasks_file) newErrors.tasks_file = 'Tasks file is required';
+        if (!config.logs_file) newErrors.logs_file = 'Logs file is required';
+        
+        if (Object.keys(newErrors).length > 0) {
+            setErrors(newErrors);
+            return false;
+        }
+        
+        return true;
+    };
+
+    const handleSave = async () => {
+        if (!await validateConfig()) {
+            return;
+        }
+
+        try {
+            const response = await fetch('/config', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(config)
+            });
+
+            if (response.ok) {
+                setOriginalConfig(config);
+                alert('Configuration saved successfully');
+            } else {
+                const errorData = await response.json();
+                alert(`Error saving configuration: ${errorData.detail}`);
+            }
+        } catch (error) {
+            console.error('Error saving configuration:', error);
+            alert('Error saving configuration');
+        }
+    };
+
+    const handleCancel = () => {
+        setConfig(originalConfig);
+        setErrors({});
+    };
+
+    if (loading) {
+        return <div className="empty-state">Loading configuration...</div>;
+    }
+
+    return (
+        <div style={{ padding: '24px 32px' }}>
+            <h2 style={{ marginBottom: '24px', fontSize: '20px', fontWeight: '600' }}>Configuration Settings</h2>
+            
+            <div className="editor-field">
+                <label className="editor-label">Documents Directory</label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                    <input
+                        className="editor-input"
+                        value={config.documents_dir}
+                        onChange={e => handleChange('documents_dir', e.target.value)}
+                        placeholder="Path to documents directory..."
+                        style={{ flex: 1 }}
+                    />
+                    <button 
+                        className="action-button"
+                        onClick={() => handleFileSelect('documents_dir', 'directory')}
+                        style={{ padding: '12px 16px' }}
+                    >
+                        Browse
+                    </button>
+                </div>
+                {errors.documents_dir && (
+                    <div style={{ color: '#dc3545', fontSize: '14px', marginTop: '4px' }}>
+                        {errors.documents_dir}
+                    </div>
+                )}
+            </div>
+
+            <div className="editor-field">
+                <label className="editor-label">Notes Directory</label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                    <input
+                        className="editor-input"
+                        value={config.notes_dir}
+                        onChange={e => handleChange('notes_dir', e.target.value)}
+                        placeholder="Path to notes directory..."
+                        style={{ flex: 1 }}
+                    />
+                    <button 
+                        className="action-button"
+                        onClick={() => handleFileSelect('notes_dir', 'directory')}
+                        style={{ padding: '12px 16px' }}
+                    >
+                        Browse
+                    </button>
+                </div>
+                {errors.notes_dir && (
+                    <div style={{ color: '#dc3545', fontSize: '14px', marginTop: '4px' }}>
+                        {errors.notes_dir}
+                    </div>
+                )}
+            </div>
+
+            <div className="editor-field">
+                <label className="editor-label">Tasks File</label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                    <input
+                        className="editor-input"
+                        value={config.tasks_file}
+                        onChange={e => handleChange('tasks_file', e.target.value)}
+                        placeholder="Path to tasks YAML file..."
+                        style={{ flex: 1 }}
+                    />
+                    <button 
+                        className="action-button"
+                        onClick={() => handleFileSelect('tasks_file', 'file')}
+                        style={{ padding: '12px 16px' }}
+                    >
+                        Browse
+                    </button>
+                </div>
+                {errors.tasks_file && (
+                    <div style={{ color: '#dc3545', fontSize: '14px', marginTop: '4px' }}>
+                        {errors.tasks_file}
+                    </div>
+                )}
+            </div>
+
+            <div className="editor-field">
+                <label className="editor-label">Logs File</label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                    <input
+                        className="editor-input"
+                        value={config.logs_file}
+                        onChange={e => handleChange('logs_file', e.target.value)}
+                        placeholder="Path to logs YAML file..."
+                        style={{ flex: 1 }}
+                    />
+                    <button 
+                        className="action-button"
+                        onClick={() => handleFileSelect('logs_file', 'file')}
+                        style={{ padding: '12px 16px' }}
+                    >
+                        Browse
+                    </button>
+                </div>
+                {errors.logs_file && (
+                    <div style={{ color: '#dc3545', fontSize: '14px', marginTop: '4px' }}>
+                        {errors.logs_file}
+                    </div>
+                )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', marginTop: '32px' }}>
+                <button 
+                    className="action-button"
+                    onClick={handleCancel}
+                >
+                    Cancel
+                </button>
+                <button 
+                    className="action-button primary"
+                    onClick={handleSave}
+                >
+                    Save
+                </button>
+            </div>
+        </div>
+    );
+}
+
 function Panel({ tab, send }) {
     const [allItems, setAllItems] = useState({
-        tasks: [
-            { name: 'Sample task 1', description: 'example description', dueDate: null, completed: false },
-            { name: 'Sample task 2', description: 'another example', dueDate: null, completed: false }
-        ],
-        documents: [
-            { name: 'Product Requirements', description: 'View Document', dueDate: null },
-            { name: 'API Documentation', description: 'Technical specifications and endpoints', dueDate: null }
-        ],
-        notes: [
-            { name: 'Meeting Summary', description: 'Discussed Q3 roadmap and priorities...', dueDate: null },
-            { name: 'Project Ideas', description: 'Brainstorming session notes', dueDate: null }
-        ],
-        logs: [
-            { name: 'System Log 1', description: 'Application startup logs', dueDate: null },
-            { name: 'Error Log 2', description: 'Recent error tracking', dueDate: null }
-        ]
+        tasks: [],
+        documents: [],
+        notes: [],
+        logs: []
     });
     
     const [selected, setSelected] = useState(null);
     const [loaded, setLoaded] = useState(false);
+    const [editingItem, setEditingItem] = useState(null);
+    const [addMode, setAddMode] = useState(false);
+    
+    // Filter states
+    const [searchQuery, setSearchQuery] = useState('');
+    const [typeFilter, setTypeFilter] = useState('all');
+    const [sortBy, setSortBy] = useState('name');
+    const [tagFilter, setTagFilter] = useState('all');
 
     useEffect(() => {
         setSelected(null);
@@ -487,41 +1220,147 @@ function Panel({ tab, send }) {
 
     useEffect(() => {
         if (!loaded) {
+            // Fetch tasks
             fetch('/tasks')
                 .then(r => r.json())
                 .then(data => { 
-                    if (data.tasks && data.tasks.length > 0) {
+                    if (data.tasks) {
                         setAllItems(prev => ({ ...prev, tasks: data.tasks }));
                     }
-                    setLoaded(true); 
                 })
-                .catch(() => setLoaded(true));
+                .catch(() => {});
+            
+            // Fetch documents
+            fetch('/documents')
+                .then(r => r.json())
+                .then(data => { 
+                    if (data.documents) {
+                        setAllItems(prev => ({ ...prev, documents: data.documents }));
+                    }
+                })
+                .catch(() => {});
+            
+            // Fetch notes
+            fetch('/notes')
+                .then(r => r.json())
+                .then(data => { 
+                    if (data.notes) {
+                        setAllItems(prev => ({ ...prev, notes: data.notes }));
+                    }
+                })
+                .catch(() => {});
+            
+            // Fetch logs
+            fetch('/logs')
+                .then(r => r.json())
+                .then(data => { 
+                    if (data.logs) {
+                        setAllItems(prev => ({ ...prev, logs: data.logs }));
+                    }
+                })
+                .catch(() => {});
+            
+            setLoaded(true);
         }
     }, [loaded]);
 
+    // Handle configuration tab separately
+    if (tab === 'configuration') {
+        return <Configuration send={send} />;
+    }
+
     const getCurrentItems = () => {
-        if (tab === 'all') {
-            return [
-                ...allItems.tasks.map(item => ({ ...item, type: 'tasks' })),
-                ...allItems.documents.map(item => ({ ...item, type: 'documents' })),
-                ...allItems.notes.map(item => ({ ...item, type: 'notes' })),
-                ...allItems.logs.map(item => ({ ...item, type: 'logs' }))
-            ];
+        let items = allItems[tab] || [];
+        
+        // Apply search filter
+        if (searchQuery) {
+            items = items.filter(item => 
+                (item.name && item.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()))
+            );
         }
-        return allItems[tab] || [];
+        
+        // Apply type/tag filters
+        if (tab === 'tasks' && typeFilter !== 'all') {
+            items = items.filter(item => item.tags && item.tags.includes(typeFilter));
+        }
+        if (tab === 'logs' && tagFilter !== 'all') {
+            // For logs, filter by log_id pattern since they don't have tags
+            // Personal tasks usually have TASK-* IDs, work tasks have other patterns
+            items = items.filter(item => {
+                const logId = item.log_id || '';
+                if (tagFilter === 'personal') {
+                    return typeof logId === 'string' && logId.startsWith('TASK-');
+                } else if (tagFilter === 'work') {
+                    return typeof logId === 'string' && !logId.startsWith('TASK-');
+                }
+                return true;
+            });
+        }
+        
+        // Apply sorting for tasks
+        if (tab === 'tasks') {
+            items = items.slice().sort((a, b) => {
+                switch (sortBy) {
+                    case 'priority-desc':
+                        const priorityOrder = { high: 3, medium: 2, low: 1 };
+                        return (priorityOrder[b.priority] || 0) - (priorityOrder[a.priority] || 0);
+                    case 'priority-asc':
+                        const priorityOrderAsc = { high: 3, medium: 2, low: 1 };
+                        return (priorityOrderAsc[a.priority] || 0) - (priorityOrderAsc[b.priority] || 0);
+                    case 'due-date-asc':
+                        // Sort by due date (earliest first), tasks without due dates go to end
+                        if (!a.dueDate && !b.dueDate) return 0;
+                        if (!a.dueDate) return 1;
+                        if (!b.dueDate) return -1;
+                        return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+                    case 'due-date-desc':
+                        // Sort by due date (latest first), tasks without due dates go to end
+                        if (!a.dueDate && !b.dueDate) return 0;
+                        if (!a.dueDate) return 1;
+                        if (!b.dueDate) return -1;
+                        return new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime();
+                    case 'due-date-urgent':
+                        // Sort by urgency: overdue first, then due soon, then by date
+                        const aStatus = a.dueDate ? getDeadlineStatus(a.dueDate) : 'normal';
+                        const bStatus = b.dueDate ? getDeadlineStatus(b.dueDate) : 'normal';
+                        
+                        // Priority order: overdue > due-soon > normal
+                        const statusOrder = { overdue: 3, 'due-soon': 2, normal: 1 };
+                        const statusDiff = (statusOrder[aStatus] || 0) - (statusOrder[bStatus] || 0);
+                        
+                        if (statusDiff !== 0) return -statusDiff; // Reverse for urgent first
+                        
+                        // If same status, sort by due date
+                        if (!a.dueDate && !b.dueDate) return 0;
+                        if (!a.dueDate) return 1;
+                        if (!b.dueDate) return -1;
+                        return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+                    case 'name':
+                        return (a.name || '').localeCompare(b.name || '');
+                    default:
+                        return 0;
+                }
+            });
+        }
+        
+        return items;
     };
 
-    const items = getCurrentItems();
+    const items = React.useMemo(() => getCurrentItems(), [allItems, tab, searchQuery, typeFilter, sortBy, tagFilter]);
 
     const addItem = () => {
-        const newItem = { name: 'New Item', description: '' };
-        if (tab !== 'all') {
-            setAllItems(prev => ({
-                ...prev,
-                [tab]: [...prev[tab], newItem]
-            }));
-            setSelected(allItems[tab].length);
-        }
+            // Open the editor in add mode with empty item
+            const newItem = {
+                name: '',
+                description: '',
+                content: '',
+                // Add default values based on type
+                ...(tab === 'tasks' && { status: 'pending', priority: 'medium' }),
+                ...(tab === 'logs' && { date: new Date().toISOString().split('T')[0], actual_hours: 0 })
+            };
+            setEditingItem(newItem);
+            setAddMode(true);
     };
 
     const saveTasks = () => {
@@ -532,14 +1371,226 @@ function Panel({ tab, send }) {
             body: JSON.stringify({ tasks: allItems.tasks }),
         });
     };
+    
+    const handleSave = async (updatedItem) => {
+            try {
+                // Map frontend field names to backend field names
+                let requestData = { ...updatedItem };
+                if (tab === 'tasks' && updatedItem.dueDate !== undefined) {
+                    requestData.due_date = updatedItem.dueDate;
+                    delete requestData.dueDate;
+                }
+                
+                // For logs, the backend expects specific field names
+                if (tab === 'logs') {
+                    // The 'name' field in the frontend is actually the description in the YAML
+                    requestData = {
+                        name: updatedItem.name,  // This will be mapped to 'description' in backend
+                        description: updatedItem.name,  // Send as both for compatibility
+                        date: updatedItem.date,
+                        log_id: updatedItem.log_id,
+                        actual_hours: parseFloat(updatedItem.actual_hours) || 0
+                    };
+                }
+                
+                let response;
+                if (addMode) {
+                    // For add mode, POST to create new item
+                    response = await fetch(`/${tab}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(requestData)
+                    });
+                } else {
+                    // For edit mode, PUT to update existing item
+                    response = await fetch(`/${tab}/${selected}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(requestData)
+                    });
+                }
+                
+                if (response.ok) {
+                    if (addMode) {
+                        const responseData = await response.json();
+                        
+                        // For documents and notes, we need to refresh the list from server
+                        // to get the correct indices after adding
+                        if (tab === 'documents' || tab === 'notes') {
+                            try {
+                                const listResponse = await fetch(`/${tab}`);
+                                if (listResponse.ok) {
+                                    const data = await listResponse.json();
+                                    setAllItems(prev => ({
+                                        ...prev,
+                                        [tab]: data[tab] || []
+                                    }));
+                                    
+                                    // Select the newly created item if we have its index
+                                    if (responseData.index !== undefined && responseData.index >= 0) {
+                                        setSelected(responseData.index);
+                                    }
+                                }
+                            } catch (error) {
+                                console.error(`Error refreshing ${tab} list:`, error);
+                            }
+                        } else {
+                            // For tasks and logs, we can add locally
+                            setAllItems(prev => ({
+                                ...prev,
+                                [tab]: [...prev[tab], updatedItem]
+                            }));
+                            // Select the newly added item
+                            setSelected(allItems[tab].length);
+                        }
+                    } else {
+                        // Update existing item
+                        const newItems = [...items];
+                        newItems[selected] = updatedItem;
+                        
+                        setAllItems(prev => ({
+                            ...prev,
+                            [tab]: newItems
+                        }));
+                    }
+                    
+                    // Close the editor and reset add mode
+                    setEditingItem(null);
+                    setAddMode(false);
+                } else {
+                    // Show error in console instead of chat
+                    console.error(`Error ${addMode ? 'adding' : 'saving'} item: ${response.statusText}`);
+                    alert(`Error ${addMode ? 'adding' : 'saving'} item: ${response.statusText}`);
+                }
+            } catch (error) {
+                console.error(`Error saving item: ${error.message}`);
+                alert(`Error saving item: ${error.message}`);
+            }
+    };
+    
+    const handleIndex = (item) => {
+        // Send message to index the file at its path
+        if (item && item.path) {
+            send(`Index the file at this directory ${item.path}`);
+        } else if (item && item.name) {
+            // Fallback if path is not available
+            send(`Index the file: ${item.name}`);
+        }
+        setEditingItem(null);
+    };
+    
+    const handleDelete = async () => {
+        if (selected !== null) {
+            try {
+                const response = await fetch(`/${tab}/${selected}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    // Remove the item from the list
+                    const newItems = items.filter((_, index) => index !== selected);
+                    
+                    // Update the allItems state
+                    setAllItems(prev => ({
+                        ...prev,
+                        [tab]: newItems
+                    }));
+                    
+                    // Clear selection and close editor
+                    setSelected(null);
+                    setEditingItem(null);
+                } else {
+                    console.error(`Error deleting item: ${response.statusText}`);
+                    alert(`Error deleting item: ${response.statusText}`);
+                }
+            } catch (error) {
+                console.error(`Error deleting item: ${error.message}`);
+                alert(`Error deleting item: ${error.message}`);
+            }
+        }
+    };
 
     return (
         <React.Fragment>
+            {/* Search and Filter Controls */}
+            <div style={{ padding: '0 32px 16px 32px', borderBottom: '1px solid #f1f3f4' }}>
+                <input
+                    type="text"
+                    placeholder={`Search ${tab}...`}
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    style={{
+                        width: '100%',
+                        padding: '12px 16px',
+                        border: '1px solid #dee2e6',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        marginBottom: '12px'
+                    }}
+                />
+                
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                    {tab === 'tasks' && (
+                        <React.Fragment>
+                            <select
+                                value={typeFilter}
+                                onChange={(e) => setTypeFilter(e.target.value)}
+                                style={{
+                                    padding: '8px 12px',
+                                    border: '1px solid #dee2e6',
+                                    borderRadius: '6px',
+                                    fontSize: '14px'
+                                }}
+                            >
+                                <option value="all">All Types</option>
+                                <option value="personal">Personal</option>
+                                <option value="work">Work</option>
+                            </select>
+                            
+                            <select
+                                value={sortBy}
+                                onChange={(e) => setSortBy(e.target.value)}
+                                style={{
+                                    padding: '8px 12px',
+                                    border: '1px solid #dee2e6',
+                                    borderRadius: '6px',
+                                    fontSize: '14px'
+                                }}
+                            >
+                                <option value="name">Sort by Name</option>
+                                <option value="priority-desc">Priority (High to Low)</option>
+                                <option value="priority-asc">Priority (Low to High)</option>
+                                <option value="due-date-urgent">🚨 Most Urgent First</option>
+                                <option value="due-date-asc">Due Date (Earliest First)</option>
+                                <option value="due-date-desc">Due Date (Latest First)</option>
+                            </select>
+                        </React.Fragment>
+                    )}
+                    
+                    {tab === 'logs' && (
+                        <select
+                            value={tagFilter}
+                            onChange={(e) => setTagFilter(e.target.value)}
+                            style={{
+                                padding: '8px 12px',
+                                border: '1px solid #dee2e6',
+                                borderRadius: '6px',
+                                fontSize: '14px'
+                            }}
+                        >
+                            <option value="all">All Tags</option>
+                            <option value="personal">Personal</option>
+                            <option value="work">Work</option>
+                        </select>
+                    )}
+                </div>
+            </div>
+            
             <div className="items-list">
                 {items.length === 0 ? (
                     <div className="empty-state">
                         <div className="empty-state-title">No items yet</div>
-                        <div className="empty-state-description">Add your first {tab === 'all' ? 'item' : tab.slice(0, -1)} to get started</div>
+                        <div className="empty-state-description">Add your first {tab.slice(0, -1)} to get started</div>
                     </div>
                 ) : (
                     items.map((item, i) => (
@@ -554,8 +1605,7 @@ function Panel({ tab, send }) {
                 )}
             </div>
             
-            {tab !== 'all' && (
-                <div className="action-buttons">
+            <div className="action-buttons">
                     <button className="action-button" onClick={addItem}>
                         Add {tab === 'tasks' ? 'task' : 
                              tab === 'documents' ? 'document' : 
@@ -563,8 +1613,46 @@ function Panel({ tab, send }) {
                              tab === 'logs' ? 'log' : 
                              tab.slice(0, -1)}
                     </button>
-                    <button className="action-button" onClick={() => send(`index all ${tab}`)}>Index all</button>
+                    {selected !== null && (
+                        <button className="action-button primary" onClick={async () => {
+                            const item = items[selected];
+                            // For documents and notes, fetch the content first
+                            if (tab === 'documents' || tab === 'notes') {
+                                try {
+                                    const response = await fetch(`/${tab}/${selected}/content`);
+                                    if (response.ok) {
+                                        const data = await response.json();
+                                        setEditingItem({ ...item, content: data.content });
+                                    } else {
+                                        setEditingItem(item);
+                                    }
+                                } catch (error) {
+                                    console.error(`Error fetching ${tab} content:`, error);
+                                    setEditingItem(item);
+                                }
+                            } else {
+                                setEditingItem(item);
+                            }
+                            setAddMode(false);
+                        }}>
+                            Edit
+                        </button>
+                    )}
                 </div>
+            
+            {editingItem && (
+                <Editor
+                    item={editingItem}
+                    type={tab}
+                    onClose={() => {
+                        setEditingItem(null);
+                        setAddMode(false);
+                    }}
+                    onSave={handleSave}
+                    onIndex={handleIndex}
+                    onDelete={handleDelete}
+                    mode={addMode ? 'add' : 'edit'}
+                />
             )}
         </React.Fragment>
     );
@@ -678,8 +1766,12 @@ function Chat({ messages, send }) {
 }
 
 function App() {
-    const [tab, setTab] = useState('all');
+    const [tab, setTab] = useState('tasks');
     const [messages, setMessages] = useState([]);
+    const [tasks, setTasks] = useState([]);
+    const [showDeadlineAlert, setShowDeadlineAlert] = useState(false);
+    const [deadlineAlertType, setDeadlineAlertType] = useState('danger');
+    const [deadlineAlertMessage, setDeadlineAlertMessage] = useState('');
     const wsRef = useRef(null);
 
     useEffect(() => {
@@ -702,6 +1794,46 @@ function App() {
         return () => ws.close();
     }, []);
 
+    // Fetch tasks and check for deadline alerts
+    useEffect(() => {
+        fetch('/tasks')
+            .then(r => r.json())
+            .then(data => {
+                if (data.tasks) {
+                    setTasks(data.tasks);
+                    
+                    // Check for deadline alerts
+                    const overdueTasks = data.tasks.filter(task => 
+                        task.dueDate && getDeadlineStatus(task.dueDate) === 'overdue'
+                    );
+                    const dueSoonTasks = data.tasks.filter(task => 
+                        task.dueDate && getDeadlineStatus(task.dueDate) === 'due-soon'
+                    );
+                    
+                    if (overdueTasks.length > 0) {
+                        setDeadlineAlertType('danger');
+                        setDeadlineAlertMessage(
+                            `🚨 ${overdueTasks.length} task${overdueTasks.length === 1 ? ' is' : 's are'} overdue!`
+                        );
+                        setShowDeadlineAlert(true);
+                        
+                        // Auto-hide after 10 seconds
+                        setTimeout(() => setShowDeadlineAlert(false), 10000);
+                    } else if (dueSoonTasks.length > 0) {
+                        setDeadlineAlertType('warning');
+                        setDeadlineAlertMessage(
+                            `⚠️ ${dueSoonTasks.length} task${dueSoonTasks.length === 1 ? ' is' : 's are'} due soon!`
+                        );
+                        setShowDeadlineAlert(true);
+                        
+                        // Auto-hide after 8 seconds
+                        setTimeout(() => setShowDeadlineAlert(false), 8000);
+                    }
+                }
+            })
+            .catch(() => {});
+    }, []);
+
     const send = (text) => {
         if (!text.trim() || !wsRef.current) return;
         wsRef.current.send(text);
@@ -720,6 +1852,23 @@ function App() {
                     <Panel tab={tab} send={send} />
                 </div>
             </div>
+            
+            {/* Deadline Alert */}
+            {showDeadlineAlert && (
+                <div 
+                    className={`deadline-alert ${deadlineAlertType === 'warning' ? 'warning' : ''}`}
+                    onClick={() => setShowDeadlineAlert(false)}
+                    style={{ cursor: 'pointer' }}
+                >
+                    <div style={{ fontWeight: '600', marginBottom: '4px' }}>
+                        Deadline Alert
+                    </div>
+                    <div>{deadlineAlertMessage}</div>
+                    <div style={{ fontSize: '12px', marginTop: '4px', opacity: 0.9 }}>
+                        Click to dismiss
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
