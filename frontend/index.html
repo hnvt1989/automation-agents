@@ -791,7 +791,96 @@ function WorkspaceItem({ item, type, isSelected, onClick }) {
     );
 }
 
-function Editor({ item, type, onClose, onSave, onIndex, onDelete, mode = 'edit' }) {
+function LoggingModal({ isOpen, onClose, onSave, taskItem, errors, isSubmitting }) {
+    const [loggingData, setLoggingData] = useState({
+        hours: '',
+        description: '',
+    });
+
+    const handleInputChange = (field, value) => {
+        setLoggingData(prev => ({ ...prev, [field]: value }));
+    };
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        onSave(loggingData);
+    };
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="editor-overlay" onClick={onClose}>
+            <div className="editor-container" onClick={e => e.stopPropagation()}>
+                <div className="editor-header">
+                    <div className="editor-title">Log Task Completion</div>
+                    <button className="editor-close" onClick={onClose}>×</button>
+                </div>
+                
+                <form onSubmit={handleSubmit} className="editor-content">
+                    {errors.submit && (
+                        <div style={{ color: '#dc3545', marginBottom: '1rem', fontSize: '14px' }}>
+                            {errors.submit}
+                        </div>
+                    )}
+
+                    <div className="editor-field">
+                        <label className="editor-label">Logging Hours *</label>
+                        <input
+                            type="number"
+                            className="editor-input"
+                            value={loggingData.hours}
+                            onChange={e => handleInputChange('hours', e.target.value)}
+                            placeholder="Enter hours worked"
+                            step="0.1"
+                            min="0"
+                            required
+                            style={errors.hours ? { borderColor: '#dc3545' } : {}}
+                        />
+                        {errors.hours && (
+                            <div style={{ color: '#dc3545', fontSize: '12px', marginTop: '4px' }}>
+                                {errors.hours}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="editor-field">
+                        <label className="editor-label">Description</label>
+                        <textarea
+                            className="editor-textarea"
+                            value={loggingData.description}
+                            onChange={e => handleInputChange('description', e.target.value)}
+                            placeholder="Optional: Add details about the work completed"
+                            rows={4}
+                        />
+                    </div>
+
+                    <div className="editor-footer">
+                        <div className="editor-footer-left"></div>
+                        <div className="editor-footer-right">
+                            <button 
+                                type="button" 
+                                className="editor-button" 
+                                onClick={onClose}
+                                disabled={isSubmitting}
+                            >
+                                Cancel
+                            </button>
+                            <button 
+                                type="submit" 
+                                className="editor-button primary"
+                                disabled={isSubmitting}
+                            >
+                                {isSubmitting ? 'Saving...' : 'Save Log'}
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+}
+
+function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 'edit' }) {
     const isAddMode = mode === 'add';
     const [formData, setFormData] = useState({
         name: (item && item.name) || '',
@@ -800,13 +889,22 @@ function Editor({ item, type, onClose, onSave, onIndex, onDelete, mode = 'edit' 
         ...(item || {})
     });
 
+    // Logging modal state
+    const [showLoggingModal, setShowLoggingModal] = useState(false);
+    const [loggingData, setLoggingData] = useState({
+        hours: '',
+        description: '',
+    });
+    const [loggingErrors, setLoggingErrors] = useState({});
+    const [isLoggingSubmitting, setIsLoggingSubmitting] = useState(false);
+
     const handleChange = (field, value) => {
         setFormData(prev => ({ ...prev, [field]: value }));
     };
 
     const handleSave = () => {
         onSave(formData);
-        onClose();
+        // Don't call onClose() here - let the parent handle it after save is complete
     };
 
     const handleIndex = () => {
@@ -817,6 +915,88 @@ function Editor({ item, type, onClose, onSave, onIndex, onDelete, mode = 'edit' 
         if (window.confirm('Are you sure you want to delete this item?')) {
             onDelete();
         }
+    };
+
+    // Logging modal functions
+    const handleLogButtonClick = () => {
+        setShowLoggingModal(true);
+    };
+
+    const handleLoggingInputChange = (field, value) => {
+        setLoggingData(prev => ({ ...prev, [field]: value }));
+        
+        // Clear error when user starts typing
+        if (loggingErrors[field]) {
+            setLoggingErrors(prev => ({ ...prev, [field]: '' }));
+        }
+    };
+
+    const validateLoggingForm = () => {
+        const newErrors = {};
+        
+        if (!loggingData.hours.trim()) {
+            newErrors.hours = 'Logging hours is required';
+        } else {
+            const hours = parseFloat(loggingData.hours);
+            if (isNaN(hours) || hours <= 0) {
+                newErrors.hours = 'Logging hours must be positive';
+            }
+        }
+        
+        setLoggingErrors(newErrors);
+        return Object.keys(newErrors).length === 0;
+    };
+
+    const handleLoggingSubmit = async (e) => {
+        e.preventDefault();
+        
+        if (!validateLoggingForm()) {
+            return;
+        }
+
+        setIsLoggingSubmitting(true);
+        
+        try {
+            const hours = parseFloat(loggingData.hours);
+            
+            const logEntry = {
+                name: `Task Log: ${formData.name}`,
+                description: loggingData.description || `Logged work on task: ${formData.name}`,
+                date: new Date().toISOString().split('T')[0],
+                actual_hours: hours,
+                log_id: item.id || `TASK-${Date.now()}`
+            };
+            
+            // Save the log entry
+            const response = await fetch('/logs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(logEntry)
+            });
+            
+            if (response.ok) {
+                // Close logging modal
+                setShowLoggingModal(false);
+                setLoggingData({ hours: '', description: '' });
+                setLoggingErrors({});
+                
+                // Optionally show success message
+                alert('Log entry saved successfully!');
+            } else {
+                throw new Error('Failed to save log');
+            }
+        } catch (error) {
+            console.error('Failed to save log entry:', error);
+            setLoggingErrors({ submit: 'Failed to save log entry. Please try again.' });
+        } finally {
+            setIsLoggingSubmitting(false);
+        }
+    };
+
+    const handleLoggingCancel = () => {
+        setShowLoggingModal(false);
+        setLoggingData({ hours: '', description: '' });
+        setLoggingErrors({});
     };
 
     if (!item) return null;
@@ -982,11 +1162,15 @@ function Editor({ item, type, onClose, onSave, onIndex, onDelete, mode = 'edit' 
                         {!isAddMode && (type === 'documents' || type === 'notes') && (
                             <button className="editor-button secondary" onClick={handleIndex}>Index</button>
                         )}
+                        {!isAddMode && type === 'tasks' && (
+                            <button className="editor-button secondary" onClick={onLog}>Log</button>
+                        )}
                         <button className="editor-button primary" onClick={handleSave}>{isAddMode ? 'Add' : 'Save'}</button>
                     </div>
                 </div>
             </div>
         </div>
+        
     );
 }
 
@@ -1002,7 +1186,13 @@ function Panel({ tab, send }) {
     const [selected, setSelected] = useState(null);
     const [loaded, setLoaded] = useState(false);
     const [editingItem, setEditingItem] = useState(null);
+    const [editingItemIndex, setEditingItemIndex] = useState(null);
     const [addMode, setAddMode] = useState(false);
+    
+    // Logging modal states
+    const [showLoggingModal, setShowLoggingModal] = useState(false);
+    const [loggingErrors, setLoggingErrors] = useState({});
+    const [isLoggingSubmitting, setIsLoggingSubmitting] = useState(false);
     
     // Filter states
     const [searchQuery, setSearchQuery] = useState('');
@@ -1142,6 +1332,7 @@ function Panel({ tab, send }) {
     const items = React.useMemo(() => getCurrentItems(), [allItems, tab, searchQuery, typeFilter, sortBy, tagFilter]);
 
     const addItem = () => {
+            console.log('🆕 ADD MODE: Creating new item');
             // Open the editor in add mode with empty item
             const newItem = {
                 name: '',
@@ -1152,6 +1343,7 @@ function Panel({ tab, send }) {
                 ...(tab === 'logs' && { date: new Date().toISOString().split('T')[0], actual_hours: 0 })
             };
             setEditingItem(newItem);
+            setEditingItemIndex(null); // Explicitly set to null for new items
             setAddMode(true);
     };
 
@@ -1162,6 +1354,68 @@ function Panel({ tab, send }) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ tasks: allItems.tasks }),
         });
+    };
+
+    const handleOpenLoggingModal = () => {
+        setLoggingErrors({});
+        setShowLoggingModal(true);
+    };
+
+    const handleCloseLoggingModal = () => {
+        setShowLoggingModal(false);
+        setLoggingErrors({});
+        setIsLoggingSubmitting(false);
+    };
+
+    const handleSaveLog = async (loggingData) => {
+        setLoggingErrors({});
+        
+        // Validation
+        if (!loggingData.hours || parseFloat(loggingData.hours) <= 0) {
+            setLoggingErrors({ hours: 'Please enter a valid number of hours' });
+            return;
+        }
+
+        setIsLoggingSubmitting(true);
+
+        try {
+            // Create log entry based on the current editing task
+            const taskName = (editingItem && editingItem.name) || 'Task';
+            const taskId = (editingItem && editingItem.id) || Date.now();
+            const logEntry = {
+                name: `Worked on: ${taskName}`,
+                description: loggingData.description || `Completed work on task: ${taskName}`,
+                date: new Date().toISOString().split('T')[0],
+                log_id: `TASK-${taskId}`,
+                actual_hours: parseFloat(loggingData.hours),
+                planned_hours: parseFloat(loggingData.hours),
+                status: 'completed'
+            };
+
+            const response = await fetch('/logs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(logEntry),
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                // Update logs in state
+                setAllItems(prev => ({
+                    ...prev,
+                    logs: [...prev.logs, result.log || logEntry]
+                }));
+                handleCloseLoggingModal();
+                alert('Log entry saved successfully!');
+            } else {
+                throw new Error('Failed to save log entry');
+            }
+        } catch (error) {
+            console.error('Error saving log:', error);
+            setLoggingErrors({ submit: 'Failed to save log entry. Please try again.' });
+        } finally {
+            setIsLoggingSubmitting(false);
+        }
     };
     
     const handleSave = async (updatedItem) => {
@@ -1185,8 +1439,11 @@ function Panel({ tab, send }) {
                     };
                 }
                 
+                console.log('💾 SAVE: addMode =', addMode, 'editingItemIndex =', editingItemIndex, 'selected =', selected);
+                
                 let response;
                 if (addMode) {
+                    console.log('📤 POST: Creating new item');
                     // For add mode, POST to create new item
                     response = await fetch(`/${tab}`, {
                         method: 'POST',
@@ -1195,11 +1452,37 @@ function Panel({ tab, send }) {
                     });
                 } else {
                     // For edit mode, PUT to update existing item
-                    response = await fetch(`/${tab}/${selected}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(requestData)
-                    });
+                    // IMPORTANT: Need to find the correct index in the ORIGINAL allItems array, 
+                    // not the filtered/sorted items array that's displayed
+                    let originalIndex = -1;
+                    
+                    if (editingItem) {
+                        // Find the item in the original unfiltered array
+                        originalIndex = allItems[tab].findIndex(item => {
+                            // For items with IDs, compare by ID (most reliable)
+                            if (item.id && editingItem.id) {
+                                return item.id === editingItem.id;
+                            }
+                            // Fallback: compare by name and description
+                            return item.name === editingItem.name && 
+                                   item.description === editingItem.description;
+                        });
+                    }
+                    
+                    console.log('📝 PUT: Original editingItemIndex =', editingItemIndex, 'but finding correct index in original array =', originalIndex);
+                    
+                    if (originalIndex >= 0) {
+                        console.log('🌐 API Request: PUT /' + tab + '/' + originalIndex, requestData);
+                        response = await fetch(`/${tab}/${originalIndex}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(requestData)
+                        });
+                        console.log('📡 API Response status:', response.status, response.statusText);
+                    } else {
+                        console.error('❌ Could not find item in original array - editingItem:', editingItem);
+                        throw new Error('Could not find item to update in original array');
+                    }
                 }
                 
                 if (response.ok) {
@@ -1236,18 +1519,42 @@ function Panel({ tab, send }) {
                             setSelected(allItems[tab].length);
                         }
                     } else {
-                        // Update existing item
-                        const newItems = [...items];
-                        newItems[selected] = updatedItem;
+                        // Update existing item in the original array (not the filtered/sorted one)
+                        let originalIndex = -1;
                         
-                        setAllItems(prev => ({
-                            ...prev,
-                            [tab]: newItems
-                        }));
+                        if (editingItem) {
+                            // Find the item in the original unfiltered array
+                            originalIndex = allItems[tab].findIndex(item => {
+                                // For items with IDs, compare by ID (most reliable)
+                                if (item.id && editingItem.id) {
+                                    return item.id === editingItem.id;
+                                }
+                                // Fallback: compare by name and description
+                                return item.name === editingItem.name && 
+                                       item.description === editingItem.description;
+                            });
+                        }
+                        
+                        if (originalIndex >= 0) {
+                            console.log('🔄 Local State Update: Replacing item at original index', originalIndex);
+                            console.log('📋 Old item:', allItems[tab][originalIndex]);
+                            console.log('📝 New item:', updatedItem);
+                            
+                            const newItems = [...allItems[tab]];
+                            newItems[originalIndex] = updatedItem;
+                            
+                            console.log('📊 Updated original array length:', newItems.length, 'vs original:', allItems[tab].length);
+                            
+                            setAllItems(prev => ({
+                                ...prev,
+                                [tab]: newItems
+                            }));
+                        }
                     }
                     
                     // Close the editor and reset add mode
                     setEditingItem(null);
+                    setEditingItemIndex(null);
                     setAddMode(false);
                 } else {
                     // Show error in console instead of chat
@@ -1269,18 +1576,22 @@ function Panel({ tab, send }) {
             send(`Index the file: ${item.name}`);
         }
         setEditingItem(null);
+        setEditingItemIndex(null);
     };
     
     const handleDelete = async () => {
-        if (selected !== null) {
+        // Use the stored editingItemIndex if available, otherwise use selected
+        let itemIndex = editingItemIndex !== null ? editingItemIndex : selected;
+        
+        if (itemIndex !== null && itemIndex >= 0) {
             try {
-                const response = await fetch(`/${tab}/${selected}`, {
+                const response = await fetch(`/${tab}/${itemIndex}`, {
                     method: 'DELETE'
                 });
                 
                 if (response.ok) {
                     // Remove the item from the list
-                    const newItems = items.filter((_, index) => index !== selected);
+                    const newItems = items.filter((_, index) => index !== itemIndex);
                     
                     // Update the allItems state
                     setAllItems(prev => ({
@@ -1291,6 +1602,8 @@ function Panel({ tab, send }) {
                     // Clear selection and close editor
                     setSelected(null);
                     setEditingItem(null);
+                    setEditingItemIndex(null);
+                    setAddMode(false);
                 } else {
                     console.error(`Error deleting item: ${response.statusText}`);
                     alert(`Error deleting item: ${response.statusText}`);
@@ -1299,6 +1612,8 @@ function Panel({ tab, send }) {
                 console.error(`Error deleting item: ${error.message}`);
                 alert(`Error deleting item: ${error.message}`);
             }
+        } else {
+            alert('No item selected for deletion');
         }
     };
 
@@ -1408,6 +1723,9 @@ function Panel({ tab, send }) {
                     {selected !== null && (
                         <button className="action-button primary" onClick={async () => {
                             const item = items[selected];
+                            console.log('✏️ EDIT MODE: Editing item at index', selected, 'item:', item);
+                            // Store the original index of the item being edited
+                            setEditingItemIndex(selected);
                             // For documents and notes, fetch the content first
                             if (tab === 'documents' || tab === 'notes') {
                                 try {
@@ -1438,14 +1756,25 @@ function Panel({ tab, send }) {
                     type={tab}
                     onClose={() => {
                         setEditingItem(null);
+                        setEditingItemIndex(null);
                         setAddMode(false);
                     }}
                     onSave={handleSave}
                     onIndex={handleIndex}
                     onDelete={handleDelete}
+                    onLog={handleOpenLoggingModal}
                     mode={addMode ? 'add' : 'edit'}
                 />
             )}
+            
+            <LoggingModal
+                isOpen={showLoggingModal}
+                onClose={handleCloseLoggingModal}
+                onSave={handleSaveLog}
+                taskItem={editingItem}
+                errors={loggingErrors}
+                isSubmitting={isLoggingSubmitting}
+            />
         </React.Fragment>
     );
 }
