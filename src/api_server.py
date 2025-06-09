@@ -44,6 +44,7 @@ class TaskUpdate(BaseModel):
     priority: str | None = None
     due_date: str | None = None
     tags: list[str] | None = None
+    todo: str | None = None
 
 
 class NoteUpdate(BaseModel):
@@ -178,7 +179,8 @@ async def get_tasks():
                 "status": task.get("status"),
                 "tags": task.get("tags", []),
                 "dueDate": task.get("due_date"),
-                "estimate_hours": task.get("estimate_hours")
+                "estimate_hours": task.get("estimate_hours"),
+                "todo": task.get("todo", "")
             }
             tasks.append(formatted_task)
         
@@ -353,7 +355,8 @@ async def create_task(task_update: TaskUpdate):
             'priority': task_update.priority or 'medium',
             'due_date': task_update.due_date,
             'tags': task_update.tags or [],
-            'estimate_hours': None
+            'estimate_hours': None,
+            'todo': task_update.todo
         }
         
         # Add to tasks list
@@ -417,6 +420,8 @@ async def update_task(task_index: int, task_update: TaskUpdate):
                 tasks[task_index]['due_date'] = task_update.due_date
             if task_update.tags is not None:
                 tasks[task_index]['tags'] = task_update.tags
+            if task_update.todo is not None:
+                tasks[task_index]['todo'] = task_update.todo
             
             # Preserve existing fields that weren't updated
             for key in ['id', 'estimate_hours']:

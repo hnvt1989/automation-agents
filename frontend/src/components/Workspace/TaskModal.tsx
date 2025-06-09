@@ -16,6 +16,7 @@ const TaskModal = () => {
     dueDate: '',
     assignee: '',
     tags: [] as string[],
+    todo: '',
   })
   
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -33,6 +34,7 @@ const TaskModal = () => {
         dueDate: task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : '',
         assignee: task.assignee || '',
         tags: task.tags || [],
+        todo: task.todo || '',
       })
     } else if (modal.isOpen && modal.mode === 'add') {
       // Reset form for new task
@@ -44,6 +46,7 @@ const TaskModal = () => {
         dueDate: '',
         assignee: '',
         tags: [],
+        todo: '',
       })
     }
     setErrors({})
@@ -176,7 +179,7 @@ const TaskModal = () => {
               onChange={handleInputChange}
               className={`form-textarea ${errors.description ? 'error' : ''}`}
               placeholder="Enter task description (max 300 words)"
-              rows={4}
+              rows={8}
               maxLength={2000} // Rough character limit to prevent extremely long text
             />
             {errors.description && <div className="form-error">{errors.description}</div>}
@@ -254,6 +257,21 @@ const TaskModal = () => {
               onChange={handleTagsChange}
               className="form-input"
               placeholder="work, personal, urgent"
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="todo" className="form-label">
+              TODO Items
+            </label>
+            <textarea
+              id="todo"
+              name="todo"
+              value={formData.todo}
+              onChange={handleInputChange}
+              className="form-textarea"
+              placeholder="Enter TODO items, subtasks, or detailed action items"
+              rows={6}
             />
           </div>
 

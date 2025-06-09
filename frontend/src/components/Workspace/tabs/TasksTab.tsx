@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Plus, Edit2, Trash2, Check } from 'lucide-react'
 import { useAppStore } from '@/store'
 import { useTasks } from '@/hooks/useApi'
@@ -6,7 +6,7 @@ import { getStatusColor, formatRelativeTime } from '@/utils'
 import type { Task } from '@/types'
 
 const TasksTab = () => {
-  const { tasks, updateTask, deleteTask, loading } = useTasks()
+  const { tasks, fetchTasks, updateTask, deleteTask, loading } = useTasks()
   const { setModal } = useAppStore()
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -14,6 +14,11 @@ const TasksTab = () => {
   const [typeFilter, setTypeFilter] = useState('all')
   const [sortBy, setSortBy] = useState('lastModified')
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set())
+
+  // Fetch tasks on mount
+  useEffect(() => {
+    fetchTasks()
+  }, [])
 
   // Filter and search tasks
   const filteredTasks = useMemo(() => {
@@ -254,6 +259,11 @@ const TasksTab = () => {
                 <div className="item-title">{task.name}</div>
                 {task.description && (
                   <div className="item-description">{task.description}</div>
+                )}
+                {task.todo && (
+                  <div className="item-description" style={{ marginTop: '8px', fontStyle: 'italic' }}>
+                    TODO: {task.todo.substring(0, 100)}{task.todo.length > 100 ? '...' : ''}
+                  </div>
                 )}
                 <div className="item-meta">
                   <span className={`item-status ${getStatusColor(task.status)}`}>

@@ -931,6 +931,17 @@ function Editor({ item, type, onClose, onSave, onIndex, onDelete, mode = 'edit' 
                                     onChange={e => handleChange('dueDate', e.target.value)}
                                 />
                             </div>
+                            
+                            <div className="editor-field">
+                                <label className="editor-label">TODO Items</label>
+                                <textarea
+                                    className="editor-textarea"
+                                    value={formData.todo || ''}
+                                    onChange={e => handleChange('todo', e.target.value)}
+                                    placeholder="Enter TODO items, subtasks, or detailed action items"
+                                    rows={6}
+                                />
+                            </div>
                         </React.Fragment>
                     )}
                     

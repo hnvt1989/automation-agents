@@ -46,6 +46,7 @@ export interface Task extends WorkspaceItem {
   dueDate?: Date
   assignee?: string
   tags?: string[]
+  todo?: string
 }
 
 // Document types
