@@ -44,6 +44,7 @@ class TaskUpdate(BaseModel):
     priority: str | None = None
     due_date: str | None = None
     tags: list[str] | None = None
+    todo: str | None = None
 
 
 class NoteUpdate(BaseModel):
@@ -172,13 +173,14 @@ async def get_tasks():
             # Format the task for frontend display
             formatted_task = {
                 "name": task.get("title", "Untitled Task"),
-                "description": f"ID: {task.get('id', 'N/A')} | Priority: {task.get('priority', 'N/A')} | Status: {task.get('status', 'N/A')}",
+                "description": task.get("description", ""),
                 "id": task.get("id"),
                 "priority": task.get("priority"),
                 "status": task.get("status"),
                 "tags": task.get("tags", []),
                 "dueDate": task.get("due_date"),
-                "estimate_hours": task.get("estimate_hours")
+                "estimate_hours": task.get("estimate_hours"),
+                "todo": task.get("todo", "")
             }
             tasks.append(formatted_task)
         
@@ -348,11 +350,13 @@ async def create_task(task_update: TaskUpdate):
         new_task = {
             'id': f"TASK-{len(tasks) + 1}",  # Generate a simple ID
             'title': task_update.name or task_update.title or "New Task",
+            'description': task_update.description,
             'status': task_update.status or 'pending',
             'priority': task_update.priority or 'medium',
             'due_date': task_update.due_date,
             'tags': task_update.tags or [],
-            'estimate_hours': None
+            'estimate_hours': None,
+            'todo': task_update.todo
         }
         
         # Add to tasks list
@@ -406,6 +410,8 @@ async def update_task(task_index: int, task_update: TaskUpdate):
                 tasks[task_index]['title'] = task_update.title
             if task_update.name is not None:
                 tasks[task_index]['title'] = task_update.name  # Map name to title
+            if task_update.description is not None:
+                tasks[task_index]['description'] = task_update.description
             if task_update.status is not None:
                 tasks[task_index]['status'] = task_update.status
             if task_update.priority is not None:
@@ -414,6 +420,8 @@ async def update_task(task_index: int, task_update: TaskUpdate):
                 tasks[task_index]['due_date'] = task_update.due_date
             if task_update.tags is not None:
                 tasks[task_index]['tags'] = task_update.tags
+            if task_update.todo is not None:
+                tasks[task_index]['todo'] = task_update.todo
             
             # Preserve existing fields that weren't updated
             for key in ['id', 'estimate_hours']:

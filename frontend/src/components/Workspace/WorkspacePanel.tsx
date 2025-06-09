@@ -1,6 +1,7 @@
 import { useAppStore } from '@/store'
 import TabNavigation from './TabNavigation'
 import WorkspaceContent from './WorkspaceContent'
+import TaskModal from './TaskModal'
 import './styles.css'
 
 const WorkspacePanel = () => {
@@ -19,6 +20,7 @@ const WorkspacePanel = () => {
       <div className="workspace-content">
         <WorkspaceContent activeTab={activeTab} />
       </div>
+      <TaskModal />
     </div>
   )
 }

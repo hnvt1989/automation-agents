@@ -69,6 +69,22 @@ class ApiClient {
   }
 
   async updateItem<T extends WorkspaceItem>(type: T['type'], id: string, item: Partial<T>): Promise<ApiResponse<T>> {
+    // For tasks, we need to find the index based on the ID
+    if (type === 'task') {
+      const tasksResponse = await this.getTasks()
+      const tasks = tasksResponse.tasks || []
+      const taskIndex = tasks.findIndex(t => t.id === id)
+      
+      if (taskIndex === -1) {
+        throw new Error('Task not found')
+      }
+      
+      return this.request<T>(`/${type}s/${taskIndex}`, {
+        method: 'PUT',
+        body: JSON.stringify(item),
+      })
+    }
+    
     return this.request<T>(`/${type}s/${id}`, {
       method: 'PUT',
       body: JSON.stringify(item),
@@ -76,6 +92,21 @@ class ApiClient {
   }
 
   async deleteItem(type: WorkspaceItem['type'], id: string): Promise<ApiResponse<void>> {
+    // For tasks, we need to find the index based on the ID
+    if (type === 'task') {
+      const tasksResponse = await this.getTasks()
+      const tasks = tasksResponse.tasks || []
+      const taskIndex = tasks.findIndex(t => t.id === id)
+      
+      if (taskIndex === -1) {
+        throw new Error('Task not found')
+      }
+      
+      return this.request<void>(`/${type}s/${taskIndex}`, {
+        method: 'DELETE',
+      })
+    }
+    
     return this.request<void>(`/${type}s/${id}`, {
       method: 'DELETE',
     })
@@ -83,7 +114,12 @@ class ApiClient {
 
   // Specific endpoints
   async getTasks(): Promise<ApiResponse<Task[]>> {
-    return this.getItems<Task>('task')
+    const response = await this.request<{ tasks: Task[] }>('/tasks')
+    return {
+      ...response,
+      data: response.data?.tasks || [],
+      tasks: response.data?.tasks || []
+    } as any
   }
 
   async getDocuments(): Promise<ApiResponse<Document[]>> {
