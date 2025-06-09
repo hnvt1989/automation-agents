@@ -6,6 +6,7 @@ import Workspace from '@/components/Workspace'
 import ErrorBoundary from '@/components/common/ErrorBoundary'
 import ErrorNotifications from '@/components/common/ErrorNotifications'
 import BackendStatus from '@/components/common/BackendStatus'
+import NotificationContainer from '@/components/common/NotificationContainer'
 
 function App() {
   const { isConnected } = useWebSocket()
@@ -43,6 +44,7 @@ function App() {
         <Chat />
         <Workspace />
         <ErrorNotifications />
+        <NotificationContainer />
         
         {/* Backend and connection status */}
         <div

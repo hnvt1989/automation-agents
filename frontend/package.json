@@ -16,7 +16,9 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@types/lodash-es": "^4.17.12",
     "clsx": "^2.0.0",
+    "lodash-es": "^4.17.21",
     "lucide-react": "^0.298.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
@@ -28,7 +30,7 @@
     "@playwright/test": "^1.40.1",
     "@testing-library/jest-dom": "^6.1.5",
     "@testing-library/react": "^14.1.2",
-    "@testing-library/user-event": "^14.5.1",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^22.15.30",
     "@types/react": "^18.2.43",
     "@types/react-dom": "^18.2.17",
