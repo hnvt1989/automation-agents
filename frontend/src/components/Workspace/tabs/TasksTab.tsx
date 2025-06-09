@@ -10,6 +10,7 @@ const TasksTab = () => {
   const { setModal } = useAppStore()
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [completionStateFilter, setCompletionStateFilter] = useState('all')
   const [priorityFilter, setPriorityFilter] = useState('all')
   const [typeFilter, setTypeFilter] = useState('all')
   const [sortBy, setSortBy] = useState('lastModified')
@@ -26,10 +27,19 @@ const TasksTab = () => {
       const matchesSearch = task.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           task.description?.toLowerCase().includes(searchQuery.toLowerCase())
       const matchesStatus = statusFilter === 'all' || task.status === statusFilter
+      
+      // Completion state filter logic
+      let matchesCompletionState = true
+      if (completionStateFilter === 'active') {
+        matchesCompletionState = task.status === 'todo' || task.status === 'in_progress'
+      } else if (completionStateFilter === 'done') {
+        matchesCompletionState = task.status === 'completed' || task.status === 'cancelled'
+      }
+      
       const matchesPriority = priorityFilter === 'all' || task.priority === priorityFilter
       const matchesType = typeFilter === 'all' || (task.tags && task.tags.includes(typeFilter))
       
-      return matchesSearch && matchesStatus && matchesPriority && matchesType
+      return matchesSearch && matchesStatus && matchesCompletionState && matchesPriority && matchesType
     })
 
     // Sort tasks
@@ -50,7 +60,7 @@ const TasksTab = () => {
     })
 
     return filtered
-  }, [tasks, searchQuery, statusFilter, priorityFilter, typeFilter, sortBy])
+  }, [tasks, searchQuery, statusFilter, completionStateFilter, priorityFilter, typeFilter, sortBy])
 
   const handleAddTask = () => {
     setModal({
@@ -143,6 +153,17 @@ const TasksTab = () => {
           className="search-input"
         />
         
+        <select
+          value={completionStateFilter}
+          onChange={(e) => setCompletionStateFilter(e.target.value)}
+          className="filter-select"
+          data-testid="completion-state-filter"
+        >
+          <option value="all">All Tasks</option>
+          <option value="active">Active</option>
+          <option value="done">Done</option>
+        </select>
+
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}

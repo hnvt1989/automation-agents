@@ -1,5 +1,5 @@
 import config, { getApiUrl } from '@/config'
-import type { ApiResponse, WorkspaceItem, Task, Document, Note, DailyLog, AppConfig, Meeting, MeetingAnalysis, SuggestedTask } from '@/types'
+import type { ApiResponse, WorkspaceItem, Task, Document, Note, DailyLog, AppConfig, Meeting, Memo, MeetingAnalysis, SuggestedTask } from '@/types'
 
 class ApiClient {
   private baseURL: string
@@ -141,6 +141,10 @@ class ApiClient {
 
   async getMeetings(): Promise<ApiResponse<Meeting[]>> {
     return this.getItems<Meeting>('meeting')
+  }
+
+  async getMemos(): Promise<ApiResponse<Memo[]>> {
+    return this.getItems<Memo>('memo')
   }
 
   // Configuration

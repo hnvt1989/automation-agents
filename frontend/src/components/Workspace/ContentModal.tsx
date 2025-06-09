@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
 import { useAppStore } from '@/store'
-import { useTasks, useLogs, useDocuments, useNotes } from '@/hooks/useApi'
-import type { Task, Document, Note, DailyLog, WorkspaceItem } from '@/types'
+import { useTasks, useLogs, useDocuments, useNotes, useMemos } from '@/hooks/useApi'
+import type { Task, Document, Note, DailyLog, Memo, WorkspaceItem } from '@/types'
 
 const ContentModal = () => {
   const { modal, closeModal } = useAppStore()
@@ -10,6 +10,7 @@ const ContentModal = () => {
   const { createLog, updateLog } = useLogs()
   const { createDocument, updateDocument } = useDocuments()
   const { createNote, updateNote } = useNotes()
+  const { createMemo, updateMemo } = useMemos()
   
   const [formData, setFormData] = useState<any>({
     name: '',
@@ -124,6 +125,16 @@ const ContentModal = () => {
         })
         break
       
+      case 'memo':
+        const memo = item as Memo
+        setFormData({
+          ...baseData,
+          content: memo.content || '',
+          format: memo.format || 'markdown',
+          tags: memo.tags || [],
+        })
+        break
+      
       default:
         resetFormData()
     }
@@ -165,7 +176,7 @@ const ContentModal = () => {
       }
     }
 
-    if ((contentType === 'document' || contentType === 'note') && !formData.content.trim()) {
+    if ((contentType === 'document' || contentType === 'note' || contentType === 'memo') && !formData.content.trim()) {
       newErrors.content = 'Content is required'
     }
     
@@ -184,6 +195,8 @@ const ContentModal = () => {
         return { create: createNote, update: updateNote }
       case 'log':
         return { create: createLog, update: updateLog }
+      case 'memo':
+        return { create: createMemo, update: updateMemo }
       default:
         return { create: createTask, update: updateTask }
     }
@@ -234,6 +247,14 @@ const ContentModal = () => {
           actual_hours: formData.actual_hours ? parseFloat(formData.actual_hours) : undefined,
           mood: formData.mood,
           productivity: formData.productivity,
+          tags: formData.tags,
+        }
+      
+      case 'memo':
+        return {
+          ...baseData,
+          content: formData.content,
+          format: formData.format,
           tags: formData.tags,
         }
       
@@ -603,6 +624,41 @@ const ContentModal = () => {
                 className={`form-textarea ${errors.content ? 'error' : ''}`}
                 placeholder="Enter log content"
                 rows={8}
+                required
+              />
+              {errors.content && <div className="form-error">{errors.content}</div>}
+            </div>
+          </>
+        )
+
+      case 'memo':
+        return (
+          <>
+            <div className="form-group">
+              <label htmlFor="format" className="form-label">Format</label>
+              <select
+                id="format"
+                name="format"
+                value={formData.format}
+                onChange={handleInputChange}
+                className="form-select"
+              >
+                <option value="text">Plain Text</option>
+                <option value="markdown">Markdown</option>
+                <option value="rich">Rich Text</option>
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="content" className="form-label">Content *</label>
+              <textarea
+                id="content"
+                name="content"
+                value={formData.content}
+                onChange={handleInputChange}
+                className={`form-textarea ${errors.content ? 'error' : ''}`}
+                placeholder="Enter memo content"
+                rows={15}
                 required
               />
               {errors.content && <div className="form-error">{errors.content}</div>}

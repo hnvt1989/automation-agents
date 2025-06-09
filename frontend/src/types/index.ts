@@ -3,7 +3,7 @@ export interface WorkspaceItem {
   id: string
   name: string
   description?: string
-  type: 'task' | 'document' | 'note' | 'log' | 'meeting'
+  type: 'task' | 'document' | 'note' | 'log' | 'meeting' | 'memo'
   lastModified: Date
   status?: string
   content?: string
@@ -87,6 +87,15 @@ export interface Meeting extends WorkspaceItem {
   content?: string
   participants?: string[]
   location?: string
+}
+
+// Memo types
+export interface Memo extends WorkspaceItem {
+  type: 'memo'
+  content: string
+  format: 'markdown' | 'text' | 'rich'
+  version?: number
+  tags?: string[]
 }
 
 // Analysis types
@@ -226,6 +235,7 @@ export interface AppState {
   notes: Note[]
   logs: DailyLog[]
   meetings: Meeting[]
+  memos: Memo[]
   activeTab: string
   
   // UI state

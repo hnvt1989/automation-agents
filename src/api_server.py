@@ -994,6 +994,135 @@ async def get_meetings():
         return {"meetings": []}
 
 
+@app.get("/memos")
+async def get_memos():
+    """Get all memos from the data/memos directory"""
+    memos_dir = Path("data/memos")
+    if not memos_dir.exists():
+        memos_dir.mkdir(parents=True, exist_ok=True)
+        return {"memos": []}
+
+    memos = []
+    # Sort files by name for consistent ordering
+    sorted_files = sorted(memos_dir.glob("*.md"), key=lambda x: x.name)
+    
+    for file_path in sorted_files:
+        name = file_path.stem.replace("_", " ").title()
+        description = f"Memo - {file_path.name}"
+        memos.append({
+            "id": file_path.stem,
+            "name": name,
+            "description": description,
+            "filename": file_path.name,
+            "path": str(file_path.relative_to(BASE_DIR)),
+            "type": "memo",
+            "format": "markdown",
+            "lastModified": file_path.stat().st_mtime
+        })
+    
+    return {"memos": memos}
+
+
+@app.get("/memos/{memo_id}/content")
+async def get_memo_content(memo_id: str):
+    """Get the content of a specific memo"""
+    try:
+        memos_dir = Path("data/memos")
+        file_path = memos_dir / f"{memo_id}.md"
+        
+        if file_path.exists():
+            content = file_path.read_text()
+            return {"content": content}
+        else:
+            raise HTTPException(status_code=404, detail="Memo not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/memos")
+async def create_memo(memo_update: DocumentUpdate):
+    """Create a new memo"""
+    try:
+        memos_dir = Path("data/memos")
+        memos_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Generate filename from name
+        filename = memo_update.filename or f"{memo_update.name.lower().replace(' ', '_')}.md"
+        if not filename.endswith('.md'):
+            filename += '.md'
+        
+        file_path = memos_dir / filename
+        
+        # Write content to file
+        content = memo_update.content or ""
+        file_path.write_text(content)
+        
+        # Return memo data
+        memo = {
+            "id": file_path.stem,
+            "name": memo_update.name,
+            "description": memo_update.description or f"Memo - {filename}",
+            "filename": filename,
+            "path": str(file_path.relative_to(BASE_DIR)),
+            "type": "memo",
+            "format": "markdown",
+            "content": content,
+            "lastModified": file_path.stat().st_mtime
+        }
+        
+        return {"success": True, "memo": memo}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/memos/{memo_id}")
+async def update_memo(memo_id: str, memo_update: DocumentUpdate):
+    """Update an existing memo"""
+    try:
+        memos_dir = Path("data/memos")
+        file_path = memos_dir / f"{memo_id}.md"
+        
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="Memo not found")
+        
+        # Update content
+        if memo_update.content is not None:
+            file_path.write_text(memo_update.content)
+        
+        # Return updated memo data
+        memo = {
+            "id": memo_id,
+            "name": memo_update.name or file_path.stem.replace("_", " ").title(),
+            "description": memo_update.description or f"Memo - {file_path.name}",
+            "filename": file_path.name,
+            "path": str(file_path.relative_to(BASE_DIR)),
+            "type": "memo",
+            "format": "markdown",
+            "content": memo_update.content,
+            "lastModified": file_path.stat().st_mtime
+        }
+        
+        return {"success": True, "memo": memo}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/memos/{memo_id}")
+async def delete_memo(memo_id: str):
+    """Delete a specific memo"""
+    try:
+        memos_dir = Path("data/memos")
+        file_path = memos_dir / f"{memo_id}.md"
+        
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="Memo not found")
+        
+        file_path.unlink()
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("src.api_server:app", host="0.0.0.0", port=8000)

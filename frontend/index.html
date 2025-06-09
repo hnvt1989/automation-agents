@@ -761,9 +761,10 @@ function WorkspaceItem({ item, type, isSelected, onClick }) {
         return 'status-task';
     };
     
-    // Get deadline status for tasks
-    const deadlineStatus = (type === 'tasks' && item.dueDate) ? getDeadlineStatus(item.dueDate) : 'normal';
-    const deadlineBadge = (type === 'tasks' && item.dueDate) ? getDeadlineBadge(item.dueDate) : null;
+    // Get deadline status for tasks (but not for completed tasks)
+    const isCompleted = item.status === 'completed' || item.completed;
+    const deadlineStatus = (type === 'tasks' && item.dueDate && !isCompleted) ? getDeadlineStatus(item.dueDate) : 'normal';
+    const deadlineBadge = (type === 'tasks' && item.dueDate && !isCompleted) ? getDeadlineBadge(item.dueDate) : null;
     
     return (
         <div 
@@ -1254,6 +1255,7 @@ function Panel({ tab, send }) {
     // Filter states
     const [searchQuery, setSearchQuery] = useState('');
     const [typeFilter, setTypeFilter] = useState('all');
+    const [statusFilter, setStatusFilter] = useState('all');
     const [sortBy, setSortBy] = useState('name');
     const [tagFilter, setTagFilter] = useState('all');
 
@@ -1337,6 +1339,11 @@ function Panel({ tab, send }) {
         if (tab === 'tasks' && typeFilter !== 'all') {
             items = items.filter(item => item.tags && item.tags.includes(typeFilter));
         }
+        
+        // Apply status filter for tasks
+        if (tab === 'tasks' && statusFilter !== 'all') {
+            items = items.filter(item => item.status === statusFilter);
+        }
         if (tab === 'logs' && tagFilter !== 'all') {
             // For logs, filter by log_id pattern since they don't have tags
             // Personal tasks usually have TASK-* IDs, work tasks have other patterns
@@ -1400,7 +1407,7 @@ function Panel({ tab, send }) {
         return items;
     };
 
-    const items = React.useMemo(() => getCurrentItems(), [allItems, tab, searchQuery, typeFilter, sortBy, tagFilter]);
+    const items = React.useMemo(() => getCurrentItems(), [allItems, tab, searchQuery, typeFilter, statusFilter, sortBy, tagFilter]);
 
     const addItem = () => {
             console.log('🆕 ADD MODE: Creating new item');
@@ -1739,6 +1746,24 @@ function Panel({ tab, send }) {
                             </select>
                             
                             <select
+                                value={statusFilter}
+                                onChange={(e) => setStatusFilter(e.target.value)}
+                                style={{
+                                    padding: '8px 12px',
+                                    border: '1px solid #dee2e6',
+                                    borderRadius: '6px',
+                                    fontSize: '14px'
+                                }}
+                            >
+                                <option value="all">All Status</option>
+                                <option value="todo">To Do</option>
+                                <option value="in_progress">In Progress</option>
+                                <option value="completed">Completed</option>
+                                <option value="cancelled">Cancelled</option>
+                                <option value="pending">Pending</option>
+                            </select>
+                            
+                            <select
                                 value={sortBy}
                                 onChange={(e) => setSortBy(e.target.value)}
                                 style={{
@@ -2007,12 +2032,18 @@ function App() {
                 if (data.tasks) {
                     setTasks(data.tasks);
                     
-                    // Check for deadline alerts
+                    // Check for deadline alerts (exclude completed tasks)
                     const overdueTasks = data.tasks.filter(task => 
-                        task.dueDate && getDeadlineStatus(task.dueDate) === 'overdue'
+                        task.dueDate && 
+                        getDeadlineStatus(task.dueDate) === 'overdue' &&
+                        task.status !== 'completed' && 
+                        !task.completed
                     );
                     const dueSoonTasks = data.tasks.filter(task => 
-                        task.dueDate && getDeadlineStatus(task.dueDate) === 'due-soon'
+                        task.dueDate && 
+                        getDeadlineStatus(task.dueDate) === 'due-soon' &&
+                        task.status !== 'completed' && 
+                        !task.completed
                     );
                     
                     if (overdueTasks.length > 0) {

@@ -340,6 +340,52 @@ export function useMeetings() {
   }
 }
 
+export function useMemos() {
+  const { setMemos, addMemo, updateMemo, deleteMemo } = useAppStore()
+
+  const fetchMemos = useApi(
+    () => apiClient.getMemos(),
+    (memos) => setMemos(memos)
+  )
+
+  const createMemo = useApi(
+    (memo: Omit<any, 'id'>) => apiClient.createItem('memo', memo),
+    (memo) => addMemo(memo)
+  )
+
+  const editMemo = useApi(
+    (id: string, updates: Partial<any>) => apiClient.updateItem('memo', id, updates),
+    (memo) => updateMemo(memo.id, memo)
+  )
+
+  const removeMemo = useApi(
+    (id: string) => apiClient.deleteItem('memo', id),
+    () => {},
+    () => {}
+  )
+
+  const deleteMemoAction = useCallback(
+    async (id: string) => {
+      const result = await removeMemo.execute(id)
+      if (result !== null) {
+        deleteMemo(id)
+      }
+      return result
+    },
+    [removeMemo, deleteMemo]
+  )
+
+  return {
+    memos: useAppStore((state) => state.memos),
+    fetchMemos: fetchMemos.execute,
+    createMemo: createMemo.execute,
+    updateMemo: editMemo.execute,
+    deleteMemo: deleteMemoAction,
+    loading: fetchMemos.loading || createMemo.loading || editMemo.loading || removeMemo.loading,
+    error: fetchMemos.error || createMemo.error || editMemo.error || removeMemo.error,
+  }
+}
+
 export function useConfig() {
   const { setConfig } = useAppStore()
 
