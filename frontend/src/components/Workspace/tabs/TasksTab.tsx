@@ -10,6 +10,7 @@ const TasksTab = () => {
   const { setModal } = useAppStore()
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [completionStateFilter, setCompletionStateFilter] = useState('all')
   const [priorityFilter, setPriorityFilter] = useState('all')
   const [typeFilter, setTypeFilter] = useState('all')
   const [sortBy, setSortBy] = useState('lastModified')
@@ -26,10 +27,19 @@ const TasksTab = () => {
       const matchesSearch = task.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           task.description?.toLowerCase().includes(searchQuery.toLowerCase())
       const matchesStatus = statusFilter === 'all' || task.status === statusFilter
+      
+      // Completion state filter logic
+      let matchesCompletionState = true
+      if (completionStateFilter === 'active') {
+        matchesCompletionState = task.status === 'todo' || task.status === 'in_progress'
+      } else if (completionStateFilter === 'done') {
+        matchesCompletionState = task.status === 'completed' || task.status === 'cancelled'
+      }
+      
       const matchesPriority = priorityFilter === 'all' || task.priority === priorityFilter
       const matchesType = typeFilter === 'all' || (task.tags && task.tags.includes(typeFilter))
       
-      return matchesSearch && matchesStatus && matchesPriority && matchesType
+      return matchesSearch && matchesStatus && matchesCompletionState && matchesPriority && matchesType
     })
 
     // Sort tasks
@@ -50,21 +60,13 @@ const TasksTab = () => {
     })
 
     return filtered
-  }, [tasks, searchQuery, statusFilter, priorityFilter, typeFilter, sortBy])
+  }, [tasks, searchQuery, statusFilter, completionStateFilter, priorityFilter, typeFilter, sortBy])
 
   const handleAddTask = () => {
     setModal({
       isOpen: true,
       mode: 'add',
-      item: {
-        id: '',
-        name: '',
-        description: '',
-        type: 'task',
-        status: 'todo',
-        priority: 'medium',
-        lastModified: new Date(),
-      } as Task,
+      contentType: 'task',
     })
   }
 
@@ -73,12 +75,27 @@ const TasksTab = () => {
       isOpen: true,
       mode: 'edit',
       item: task,
+      contentType: 'task',
     })
   }
 
   const handleDeleteTask = async (taskId: string) => {
-    if (confirm('Are you sure you want to delete this task?')) {
+    // Find the task in the current tasks array
+    const taskToDelete = tasks.find(t => t.id === taskId)
+    console.log('=== FRONTEND DELETE DEBUG ===')
+    console.log('Task to delete:', taskToDelete)
+    console.log('Task ID:', taskId)
+    console.log('Task ID type:', typeof taskId)
+    console.log('Task ID JSON:', JSON.stringify(taskId))
+    console.log('Current tasks in frontend:', tasks.map(t => ({ id: t.id, name: t.name })))
+    console.log('Stack trace:')
+    console.trace()
+    
+    if (confirm(`Are you sure you want to delete this task?\n\nTask: ${taskToDelete?.name || 'Unknown'}\nID: ${taskId}`)) {
+      console.log('About to call deleteTask with ID:', taskId)
       await deleteTask(taskId)
+      // Refresh tasks after deletion to ensure sync
+      await fetchTasks()
     }
   }
 
@@ -136,6 +153,17 @@ const TasksTab = () => {
           className="search-input"
         />
         
+        <select
+          value={completionStateFilter}
+          onChange={(e) => setCompletionStateFilter(e.target.value)}
+          className="filter-select"
+          data-testid="completion-state-filter"
+        >
+          <option value="all">All Tasks</option>
+          <option value="active">Active</option>
+          <option value="done">Done</option>
+        </select>
+
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}

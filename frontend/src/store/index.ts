@@ -8,6 +8,8 @@ import type {
   Document, 
   Note, 
   DailyLog, 
+  Meeting,
+  Memo,
   AppConfig, 
   ModalState, 
   AppError,
@@ -44,6 +46,17 @@ interface AppStore extends AppState {
   addLog: (log: DailyLog) => void
   updateLog: (id: string, updates: Partial<DailyLog>) => void
   deleteLog: (id: string) => void
+
+  setMeetings: (meetings: Meeting[]) => void
+  addMeeting: (meeting: Meeting) => void
+  updateMeeting: (id: string, updates: Partial<Meeting>) => void
+  deleteMeeting: (id: string) => void
+
+  // Memos actions
+  setMemos: (memos: Memo[]) => void
+  addMemo: (memo: Memo) => void
+  updateMemo: (id: string, updates: Partial<Memo>) => void
+  deleteMemo: (id: string) => void
 
   // UI actions
   setActiveTab: (tab: string) => void
@@ -109,8 +122,10 @@ export const useAppStore = create<AppStore>()(
         documents: [],
         notes: [],
         logs: [],
+        meetings: [],
+        memos: [],
         activeTab: 'tasks',
-        modal: { isOpen: false, mode: 'add' },
+        modal: { isOpen: false, mode: 'add', contentType: 'task' },
         isLoading: false,
         errors: [],
         config: initialConfig,
@@ -241,12 +256,58 @@ export const useAppStore = create<AppStore>()(
           }))
         },
 
+        // Meeting actions
+        setMeetings: (meetings) => set({ meetings }),
+        
+        addMeeting: (meeting) => {
+          set((state) => ({
+            meetings: [...state.meetings, meeting],
+          }))
+        },
+
+        updateMeeting: (id, updates) => {
+          set((state) => ({
+            meetings: state.meetings.map((meeting) =>
+              meeting.id === id ? { ...meeting, ...updates, lastModified: new Date() } : meeting
+            ),
+          }))
+        },
+
+        deleteMeeting: (id) => {
+          set((state) => ({
+            meetings: state.meetings.filter((meeting) => meeting.id !== id),
+          }))
+        },
+
+        // Memos actions
+        setMemos: (memos) => set({ memos }),
+        
+        addMemo: (memo) => {
+          set((state) => ({
+            memos: [...state.memos, memo],
+          }))
+        },
+
+        updateMemo: (id, updates) => {
+          set((state) => ({
+            memos: state.memos.map((memo) =>
+              memo.id === id ? { ...memo, ...updates, lastModified: new Date() } : memo
+            ),
+          }))
+        },
+
+        deleteMemo: (id) => {
+          set((state) => ({
+            memos: state.memos.filter((memo) => memo.id !== id),
+          }))
+        },
+
         // UI actions
         setActiveTab: (activeTab) => set({ activeTab }),
 
         setModal: (modal) => set({ modal }),
 
-        closeModal: () => set({ modal: { isOpen: false, mode: 'add' } }),
+        closeModal: () => set({ modal: { isOpen: false, mode: 'add', contentType: 'task' } }),
 
         setLoading: (isLoading) => set({ isLoading }),
 
@@ -290,6 +351,10 @@ export const useAppStore = create<AppStore>()(
                 return { ...state, notes: state.notes.filter((item) => !ids.includes(item.id)) }
               case 'log':
                 return { ...state, logs: state.logs.filter((item) => !ids.includes(item.id)) }
+              case 'meeting':
+                return { ...state, meetings: state.meetings.filter((item) => !ids.includes(item.id)) }
+              case 'memo':
+                return { ...state, memos: state.memos.filter((item) => !ids.includes(item.id)) }
               default:
                 return state
             }
@@ -332,6 +397,24 @@ export const useAppStore = create<AppStore>()(
                 return {
                   ...state,
                   logs: state.logs.map((item) =>
+                    updateMap.has(item.id)
+                      ? { ...item, ...updateMap.get(item.id), lastModified: new Date() }
+                      : item
+                  ),
+                }
+              case 'meeting':
+                return {
+                  ...state,
+                  meetings: state.meetings.map((item) =>
+                    updateMap.has(item.id)
+                      ? { ...item, ...updateMap.get(item.id), lastModified: new Date() }
+                      : item
+                  ),
+                }
+              case 'memo':
+                return {
+                  ...state,
+                  memos: state.memos.map((item) =>
                     updateMap.has(item.id)
                       ? { ...item, ...updateMap.get(item.id), lastModified: new Date() }
                       : item
@@ -365,8 +448,10 @@ export const useAppStore = create<AppStore>()(
         documents: [],
         notes: [],
         logs: [],
+        meetings: [],
+        memos: [],
         activeTab: 'tasks',
-        modal: { isOpen: false, mode: 'add' },
+        modal: { isOpen: false, mode: 'add', contentType: 'task' },
         isLoading: false,
         errors: [],
         config: initialConfig,
@@ -497,12 +582,58 @@ export const useAppStore = create<AppStore>()(
           }))
         },
 
+        // Meeting actions
+        setMeetings: (meetings) => set({ meetings }),
+        
+        addMeeting: (meeting) => {
+          set((state) => ({
+            meetings: [...state.meetings, meeting],
+          }))
+        },
+
+        updateMeeting: (id, updates) => {
+          set((state) => ({
+            meetings: state.meetings.map((meeting) =>
+              meeting.id === id ? { ...meeting, ...updates, lastModified: new Date() } : meeting
+            ),
+          }))
+        },
+
+        deleteMeeting: (id) => {
+          set((state) => ({
+            meetings: state.meetings.filter((meeting) => meeting.id !== id),
+          }))
+        },
+
+        // Memos actions
+        setMemos: (memos) => set({ memos }),
+        
+        addMemo: (memo) => {
+          set((state) => ({
+            memos: [...state.memos, memo],
+          }))
+        },
+
+        updateMemo: (id, updates) => {
+          set((state) => ({
+            memos: state.memos.map((memo) =>
+              memo.id === id ? { ...memo, ...updates, lastModified: new Date() } : memo
+            ),
+          }))
+        },
+
+        deleteMemo: (id) => {
+          set((state) => ({
+            memos: state.memos.filter((memo) => memo.id !== id),
+          }))
+        },
+
         // UI actions
         setActiveTab: (activeTab) => set({ activeTab }),
 
         setModal: (modal) => set({ modal }),
 
-        closeModal: () => set({ modal: { isOpen: false, mode: 'add' } }),
+        closeModal: () => set({ modal: { isOpen: false, mode: 'add', contentType: 'task' } }),
 
         setLoading: (isLoading) => set({ isLoading }),
 
@@ -546,6 +677,10 @@ export const useAppStore = create<AppStore>()(
                 return { ...state, notes: state.notes.filter((item) => !ids.includes(item.id)) }
               case 'log':
                 return { ...state, logs: state.logs.filter((item) => !ids.includes(item.id)) }
+              case 'meeting':
+                return { ...state, meetings: state.meetings.filter((item) => !ids.includes(item.id)) }
+              case 'memo':
+                return { ...state, memos: state.memos.filter((item) => !ids.includes(item.id)) }
               default:
                 return state
             }
@@ -588,6 +723,24 @@ export const useAppStore = create<AppStore>()(
                 return {
                   ...state,
                   logs: state.logs.map((item) =>
+                    updateMap.has(item.id)
+                      ? { ...item, ...updateMap.get(item.id), lastModified: new Date() }
+                      : item
+                  ),
+                }
+              case 'meeting':
+                return {
+                  ...state,
+                  meetings: state.meetings.map((item) =>
+                    updateMap.has(item.id)
+                      ? { ...item, ...updateMap.get(item.id), lastModified: new Date() }
+                      : item
+                  ),
+                }
+              case 'memo':
+                return {
+                  ...state,
+                  memos: state.memos.map((item) =>
                     updateMap.has(item.id)
                       ? { ...item, ...updateMap.get(item.id), lastModified: new Date() }
                       : item

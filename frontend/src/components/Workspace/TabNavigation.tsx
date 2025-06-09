@@ -1,4 +1,4 @@
-import { CheckSquare, FileText, StickyNote, Calendar } from 'lucide-react'
+import { CheckSquare, FileText, StickyNote, Calendar, BookOpen } from 'lucide-react'
 import { useAppStore } from '@/store'
 
 interface TabNavigationProps {
@@ -11,6 +11,17 @@ const TabNavigation = ({ activeTab, onTabChange }: TabNavigationProps) => {
   const documents = useAppStore((state) => state.documents)
   const notes = useAppStore((state) => state.notes)
   const logs = useAppStore((state) => state.logs)
+  const memos = useAppStore((state) => (state as any).memos || [])
+
+  // Debug logging
+  console.log('TabNavigation Debug:', {
+    tasks: tasks?.length || 0,
+    documents: documents?.length || 0,
+    notes: notes?.length || 0,
+    logs: logs?.length || 0,
+    memos: memos?.length || 0,
+    hasMemos: !!memos
+  })
 
   const tabs = [
     {
@@ -27,7 +38,7 @@ const TabNavigation = ({ activeTab, onTabChange }: TabNavigationProps) => {
     },
     {
       id: 'notes',
-      label: 'Notes',
+      label: 'Meeting Notes',
       icon: StickyNote,
       count: notes.length,
     },
@@ -37,7 +48,15 @@ const TabNavigation = ({ activeTab, onTabChange }: TabNavigationProps) => {
       icon: Calendar,
       count: logs.length,
     },
+    {
+      id: 'memos',
+      label: 'Memos',
+      icon: BookOpen,
+      count: memos?.length || 0,
+    },
   ]
+
+  console.log('TabNavigation tabs:', tabs)
 
   return (
     <div className="tabs">

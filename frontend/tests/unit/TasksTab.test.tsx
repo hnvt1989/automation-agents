@@ -22,6 +22,7 @@ vi.mock('@/utils', () => ({
 const mockSetModal = vi.fn()
 const mockUpdateTask = vi.fn()
 const mockDeleteTask = vi.fn()
+const mockFetchTasks = vi.fn()
 
 const mockTasks: Task[] = [
   {
@@ -74,6 +75,7 @@ describe('TasksTab', () => {
     })
     ;(useTasks as any).mockReturnValue({
       tasks: mockTasks,
+      fetchTasks: mockFetchTasks,
       updateTask: mockUpdateTask,
       deleteTask: mockDeleteTask,
       loading: false
@@ -199,6 +201,89 @@ describe('TasksTab', () => {
         // Should be sorted by priority (high first)
         expect(priorities[0]).toBe('high')
         expect(priorities[1]).toBe('medium')
+      })
+    })
+  })
+
+  describe('Completion State Filtering', () => {
+    it('should show all tasks when "All" completion state is selected', () => {
+      render(<TasksTab />)
+      
+      const completionFilter = screen.getByTestId('completion-state-filter')
+      expect(completionFilter).toHaveValue('all')
+      
+      expect(screen.getByText('Personal Task 1')).toBeInTheDocument()
+      expect(screen.getByText('Work Task 1')).toBeInTheDocument()
+      expect(screen.getByText('Personal Task 2')).toBeInTheDocument()
+      expect(screen.getByText('Work Task 2')).toBeInTheDocument()
+    })
+
+    it('should filter active tasks (todo and in_progress)', async () => {
+      render(<TasksTab />)
+      
+      const completionFilter = screen.getByTestId('completion-state-filter')
+      fireEvent.change(completionFilter, { target: { value: 'active' } })
+      
+      await waitFor(() => {
+        expect(screen.getByText('Personal Task 1')).toBeInTheDocument() // todo
+        expect(screen.getByText('Work Task 1')).toBeInTheDocument() // in_progress
+        expect(screen.getByText('Work Task 2')).toBeInTheDocument() // todo
+        expect(screen.queryByText('Personal Task 2')).not.toBeInTheDocument() // completed
+      })
+    })
+
+    it('should filter done tasks (completed and cancelled)', async () => {
+      const tasksWithCancelled = [
+        ...mockTasks,
+        {
+          id: '5',
+          name: 'Cancelled Task',
+          description: 'A cancelled task',
+          type: 'task',
+          status: 'cancelled',
+          priority: 'low',
+          lastModified: new Date(),
+          tags: ['work']
+        }
+      ]
+      ;(useTasks as any).mockReturnValue({
+        tasks: tasksWithCancelled,
+        fetchTasks: mockFetchTasks,
+        updateTask: mockUpdateTask,
+        deleteTask: mockDeleteTask,
+        loading: false
+      })
+
+      render(<TasksTab />)
+      
+      const completionFilter = screen.getByTestId('completion-state-filter')
+      fireEvent.change(completionFilter, { target: { value: 'done' } })
+      
+      await waitFor(() => {
+        expect(screen.getByText('Personal Task 2')).toBeInTheDocument() // completed
+        expect(screen.getByText('Cancelled Task')).toBeInTheDocument() // cancelled
+        expect(screen.queryByText('Personal Task 1')).not.toBeInTheDocument() // todo
+        expect(screen.queryByText('Work Task 1')).not.toBeInTheDocument() // in_progress
+        expect(screen.queryByText('Work Task 2')).not.toBeInTheDocument() // todo
+      })
+    })
+
+    it('should work with both status filter and completion state filter', async () => {
+      render(<TasksTab />)
+      
+      // Set completion state to active
+      const completionFilter = screen.getByTestId('completion-state-filter')
+      fireEvent.change(completionFilter, { target: { value: 'active' } })
+      
+      // Set status filter to todo
+      const statusFilter = screen.getByDisplayValue('All Status')
+      fireEvent.change(statusFilter, { target: { value: 'todo' } })
+      
+      await waitFor(() => {
+        expect(screen.getByText('Personal Task 1')).toBeInTheDocument() // todo
+        expect(screen.getByText('Work Task 2')).toBeInTheDocument() // todo
+        expect(screen.queryByText('Work Task 1')).not.toBeInTheDocument() // in_progress (filtered by status)
+        expect(screen.queryByText('Personal Task 2')).not.toBeInTheDocument() // completed (filtered by completion state)
       })
     })
   })

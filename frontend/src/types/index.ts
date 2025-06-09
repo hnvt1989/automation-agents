@@ -3,7 +3,7 @@ export interface WorkspaceItem {
   id: string
   name: string
   description?: string
-  type: 'task' | 'document' | 'note' | 'log'
+  type: 'task' | 'document' | 'note' | 'log' | 'meeting' | 'memo'
   lastModified: Date
   status?: string
   content?: string
@@ -74,6 +74,54 @@ export interface DailyLog extends WorkspaceItem {
   mood?: 'positive' | 'neutral' | 'negative'
   productivity?: number // 1-10 scale
   tags?: string[]
+  actual_hours?: number
+  log_id?: string
+}
+
+// Meeting types
+export interface Meeting extends WorkspaceItem {
+  type: 'meeting'
+  date: string
+  time?: string
+  event: string
+  content?: string
+  participants?: string[]
+  location?: string
+}
+
+// Memo types
+export interface Memo extends WorkspaceItem {
+  type: 'memo'
+  content: string
+  format: 'markdown' | 'text' | 'rich'
+  version?: number
+  tags?: string[]
+}
+
+// Analysis types
+export interface SuggestedTask {
+  title: string
+  description: string
+  priority: 'high' | 'medium' | 'low'
+  deadline?: string
+  assignee?: string
+  category: string
+  confidence: number
+  context: string
+}
+
+export interface MeetingAnalysis {
+  meeting_date: string
+  meeting_title: string
+  analysis_timestamp: string
+  summary: string
+  key_decisions: string[]
+  action_items: string[]
+  suggested_tasks: SuggestedTask[]
+  next_steps: string[]
+  participants: string[]
+  rag_context: string[]
+  confidence_score: number
 }
 
 // Configuration types
@@ -131,6 +179,7 @@ export interface ModalState {
   isOpen: boolean
   mode: 'add' | 'edit' | 'view'
   item?: WorkspaceItem
+  contentType?: WorkspaceItem['type']
 }
 
 // Form types
@@ -185,6 +234,8 @@ export interface AppState {
   documents: Document[]
   notes: Note[]
   logs: DailyLog[]
+  meetings: Meeting[]
+  memos: Memo[]
   activeTab: string
   
   // UI state

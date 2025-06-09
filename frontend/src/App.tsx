@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useWebSocket } from '@/hooks/useWebSocket'
-import { useTasks, useDocuments, useNotes, useLogs, useConfig } from '@/hooks/useApi'
+import { useTasks, useDocuments, useNotes, useLogs, useMemos, useConfig } from '@/hooks/useApi'
 import Chat from '@/components/Chat'
 import Workspace from '@/components/Workspace'
 import ErrorBoundary from '@/components/common/ErrorBoundary'
@@ -13,6 +13,7 @@ function App() {
   const { fetchDocuments } = useDocuments()
   const { fetchNotes } = useNotes()
   const { fetchLogs } = useLogs()
+  const { fetchMemos } = useMemos()
   const { fetchConfig } = useConfig()
 
   // Load initial data
@@ -25,6 +26,7 @@ function App() {
           fetchDocuments(),
           fetchNotes(),
           fetchLogs(),
+          fetchMemos(),
           fetchConfig(),
         ])
       } catch (error) {
@@ -33,7 +35,7 @@ function App() {
     }
 
     loadInitialData()
-  }, [fetchTasks, fetchDocuments, fetchNotes, fetchLogs, fetchConfig])
+  }, [fetchTasks, fetchDocuments, fetchNotes, fetchLogs, fetchMemos, fetchConfig])
 
   return (
     <ErrorBoundary>

@@ -35,7 +35,23 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
+      '/meetings': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/analyze-meeting': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/create-task-from-suggestion': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
       '/config': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/debug': {
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
