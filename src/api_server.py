@@ -16,6 +16,7 @@ from src.agents.primary import PrimaryAgent
 from src.agents.brave_search import BraveSearchAgent
 from src.agents.filesystem import FilesystemAgent
 from src.agents.rag import RAGAgent
+from src.agents.analyzer import AnalyzerAgent
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 TASKS_FILE = BASE_DIR / "data" / "tasks.md"
@@ -76,6 +77,23 @@ class ConfigUpdate(BaseModel):
     logs_file: str | None = None
 
 
+class MeetingAnalysisRequest(BaseModel):
+    meeting_content: str
+    meeting_date: str
+    meeting_title: str
+
+
+class SuggestedTaskRequest(BaseModel):
+    title: str
+    description: str
+    priority: str
+    deadline: str | None = None
+    assignee: str | None = None
+    category: str
+    confidence: float
+    context: str
+
+
 # Load configuration from environment file
 ENV_FILE = BASE_DIR / "local.env"
 
@@ -113,12 +131,7 @@ config_storage = load_config_from_env()
 
 app = FastAPI()
 
-# Mount static files
-app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
-
-@app.get("/")
-async def read_root():
-    return FileResponse(str(FRONTEND_DIR / "index.html"))
+# Static file serving removed for development clarity
 
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
@@ -138,6 +151,7 @@ async def startup_event():
         "rag": RAGAgent(model),
     }
     app.state.primary_agent = PrimaryAgent(model, agents)
+    app.state.analyzer_agent = AnalyzerAgent()
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -168,8 +182,13 @@ async def get_tasks():
         with open(tasks_file, 'r') as f:
             yaml_tasks = yaml.safe_load(f) or []
         
+        print(f"\n=== GET TASKS DEBUG ===")
+        print(f"Total tasks in YAML file: {len(yaml_tasks)}")
+        for i, task in enumerate(yaml_tasks):
+            print(f"  [{i}] ID: {task.get('id')}, Title: {task.get('title')}")
+        
         tasks = []
-        for task in yaml_tasks:
+        for i, task in enumerate(yaml_tasks):
             # Format the task for frontend display
             formatted_task = {
                 "name": task.get("title", "Untitled Task"),
@@ -184,6 +203,7 @@ async def get_tasks():
             }
             tasks.append(formatted_task)
         
+        print(f"Returning {len(tasks)} formatted tasks")
         return {"tasks": tasks}
     except Exception as e:
         print(f"Error reading tasks.yaml: {e}")
@@ -348,7 +368,7 @@ async def create_task(task_update: TaskUpdate):
         
         # Create new task with provided data
         new_task = {
-            'id': f"TASK-{len(tasks) + 1}",  # Generate a simple ID
+            'id': task_update.id or f"TASK-{len(tasks) + 1}",  # Use provided ID or generate one
             'title': task_update.name or task_update.title or "New Task",
             'description': task_update.description,
             'status': task_update.status or 'pending',
@@ -371,71 +391,116 @@ async def create_task(task_update: TaskUpdate):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.delete("/tasks/{task_index}")
-async def delete_task(task_index: int):
-    """Delete a specific task by index"""
+@app.delete("/tasks/{task_id}")
+async def delete_task(task_id: str):
+    """Delete a specific task by ID"""
     try:
         tasks_file = Path(config_storage["tasks_file"])
-        with open(tasks_file, 'r') as f:
-            tasks = yaml.safe_load(f) or []
         
-        if 0 <= task_index < len(tasks):
-            # Remove the task at the specified index
-            deleted_task = tasks.pop(task_index)
-            
-            # Write back to file
-            with open(tasks_file, 'w') as f:
-                yaml.dump(tasks, f, default_flow_style=False, allow_unicode=True)
-            
-            return {"success": True, "message": "Task deleted successfully", "deleted_task": deleted_task}
-        else:
-            raise HTTPException(status_code=404, detail="Task not found")
+        # Read tasks before deletion
+        with open(tasks_file, 'r') as f:
+            tasks_before = yaml.safe_load(f) or []
+        
+        print(f"\n=== DELETE TASK DEBUG (Backend) ===")
+        print(f"Received request to delete task with ID: {task_id}")
+        print(f"Total tasks BEFORE deletion: {len(tasks_before)}")
+        print("Tasks BEFORE deletion:")
+        for i, task in enumerate(tasks_before):
+            print(f"  [{i}] ID: {task.get('id')}, Title: {task.get('title')}")
+        
+        # Find the task with the matching ID
+        task_to_delete = None
+        task_index = -1
+        for i, task in enumerate(tasks_before):
+            if str(task.get('id')) == str(task_id):
+                task_to_delete = task
+                task_index = i
+                break
+        
+        if task_to_delete is None:
+            print(f"\nERROR: Task with ID '{task_id}' not found")
+            raise HTTPException(status_code=404, detail=f"Task with ID '{task_id}' not found")
+        
+        print(f"\nDeleting task:")
+        print(f"  - ID: {task_to_delete.get('id')}")
+        print(f"  - Title: {task_to_delete.get('title')}")
+        print(f"  - Found at index: {task_index}")
+        
+        # Remove the task
+        tasks_after = [task for task in tasks_before if str(task.get('id')) != str(task_id)]
+        
+        # Write back to file
+        with open(tasks_file, 'w') as f:
+            yaml.dump(tasks_after, f, default_flow_style=False, allow_unicode=True)
+        
+        # Read tasks after deletion to verify
+        with open(tasks_file, 'r') as f:
+            tasks_verified = yaml.safe_load(f) or []
+        
+        print(f"\nTotal tasks AFTER deletion: {len(tasks_verified)}")
+        print("Tasks AFTER deletion:")
+        for i, task in enumerate(tasks_verified):
+            print(f"  [{i}] ID: {task.get('id')}, Title: {task.get('title')}")
+        
+        return {"success": True, "message": "Task deleted successfully", "deleted_task": task_to_delete}
+        
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.put("/tasks/{task_index}")
-async def update_task(task_index: int, task_update: TaskUpdate):
-    """Update a specific task by index"""
+@app.put("/tasks/{task_id}")
+async def update_task(task_id: str, task_update: TaskUpdate):
+    """Update a specific task by ID"""
     try:
         tasks_file = Path(config_storage["tasks_file"])
         with open(tasks_file, 'r') as f:
             tasks = yaml.safe_load(f) or []
         
-        if 0 <= task_index < len(tasks):
-            # Update the task with new values
-            if task_update.title is not None:
-                tasks[task_index]['title'] = task_update.title
-            if task_update.name is not None:
-                tasks[task_index]['title'] = task_update.name  # Map name to title
-            if task_update.description is not None:
-                tasks[task_index]['description'] = task_update.description
-            if task_update.status is not None:
-                tasks[task_index]['status'] = task_update.status
-            if task_update.priority is not None:
-                tasks[task_index]['priority'] = task_update.priority
-            if task_update.due_date is not None:
-                tasks[task_index]['due_date'] = task_update.due_date
-            if task_update.tags is not None:
-                tasks[task_index]['tags'] = task_update.tags
-            if task_update.todo is not None:
-                tasks[task_index]['todo'] = task_update.todo
-            
-            # Preserve existing fields that weren't updated
-            for key in ['id', 'estimate_hours']:
-                if key in tasks[task_index] and key not in task_update.dict(exclude_unset=True):
-                    # Keep existing value
-                    pass
-            
-            # Write back to file
-            with open(tasks_file, 'w') as f:
-                yaml.dump(tasks, f, default_flow_style=False, allow_unicode=True)
-            
-            return {"success": True, "task": tasks[task_index]}
-        else:
-            raise HTTPException(status_code=404, detail="Task not found")
+        # Find the task with the matching ID
+        task_to_update = None
+        task_index = -1
+        for i, task in enumerate(tasks):
+            if str(task.get('id')) == str(task_id):
+                task_to_update = task
+                task_index = i
+                break
+        
+        if task_to_update is None:
+            raise HTTPException(status_code=404, detail=f"Task with ID '{task_id}' not found")
+        
+        # Update the task with new values
+        if task_update.title is not None:
+            tasks[task_index]['title'] = task_update.title
+        if task_update.name is not None:
+            tasks[task_index]['title'] = task_update.name  # Map name to title
+        if task_update.description is not None:
+            tasks[task_index]['description'] = task_update.description
+        if task_update.status is not None:
+            tasks[task_index]['status'] = task_update.status
+        if task_update.priority is not None:
+            tasks[task_index]['priority'] = task_update.priority
+        if task_update.due_date is not None:
+            tasks[task_index]['due_date'] = task_update.due_date
+        if task_update.tags is not None:
+            tasks[task_index]['tags'] = task_update.tags
+        if task_update.todo is not None:
+            tasks[task_index]['todo'] = task_update.todo
+        
+        # Preserve existing fields that weren't updated
+        for key in ['id', 'estimate_hours']:
+            if key in tasks[task_index] and key not in task_update.dict(exclude_unset=True):
+                # Keep existing value
+                pass
+        
+        # Write back to file
+        with open(tasks_file, 'w') as f:
+            yaml.dump(tasks, f, default_flow_style=False, allow_unicode=True)
+        
+        return {"success": True, "task": tasks[task_index]}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -737,6 +802,196 @@ async def update_config(config_update: ConfigUpdate):
     save_config_to_env(config_storage)
     
     return {"success": True, "message": "Configuration updated successfully"}
+
+
+@app.post("/analyze-meeting")
+async def analyze_meeting(request: MeetingAnalysisRequest):
+    """Analyze meeting content and suggest tasks"""
+    try:
+        analyzer_agent = app.state.analyzer_agent
+        
+        analysis = await analyzer_agent.analyze_meeting(
+            meeting_content=request.meeting_content,
+            meeting_date=request.meeting_date,
+            meeting_title=request.meeting_title
+        )
+        
+        if analysis is None:
+            raise HTTPException(status_code=500, detail="Failed to analyze meeting")
+        
+        return {
+            "success": True,
+            "analysis": analysis.to_dict()
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+
+
+@app.post("/create-task-from-suggestion")
+async def create_task_from_suggestion(request: SuggestedTaskRequest):
+    """Create a task from a suggested task with RAG enhancement"""
+    try:
+        analyzer_agent = app.state.analyzer_agent
+        
+        # First, enhance the task with RAG context
+        from src.agents.analyzer import SuggestedTask
+        suggested_task = SuggestedTask(
+            title=request.title,
+            description=request.description,
+            priority=request.priority,
+            deadline=request.deadline,
+            assignee=request.assignee,
+            category=request.category,
+            confidence=request.confidence,
+            context=request.context
+        )
+        
+        enhancement_result = await analyzer_agent.enhance_task_with_rag(suggested_task)
+        
+        if not enhancement_result['success']:
+            # Fall back to original description if enhancement fails
+            enhanced_todo = request.description
+        else:
+            enhanced_todo = enhancement_result['enhanced_todo']
+        
+        # Generate unique task ID
+        import uuid
+        task_id = str(uuid.uuid4())[:8]
+        
+        # Create task data structure
+        new_task = {
+            "id": task_id,
+            "title": request.title,
+            "description": enhanced_todo,
+            "status": "todo",
+            "priority": request.priority,
+            "due_date": request.deadline,
+            "assignee": request.assignee,
+            "category": request.category,
+            "confidence": request.confidence,
+            "context": request.context,
+            "todo": enhanced_todo,
+            "created_from": "meeting_analysis",
+            "created_at": datetime.now().isoformat()
+        }
+        
+        # Load existing tasks
+        tasks_file = Path(config_storage["tasks_file"])
+        if tasks_file.exists():
+            with open(tasks_file, 'r') as f:
+                tasks = yaml.safe_load(f) or []
+        else:
+            tasks = []
+        
+        # Add new task
+        tasks.append(new_task)
+        
+        # Save updated tasks
+        with open(tasks_file, 'w') as f:
+            yaml.dump(tasks, f, default_flow_style=False, sort_keys=False)
+        
+        return {
+            "success": True,
+            "task_id": task_id,
+            "enhanced_todo": enhanced_todo if enhancement_result['success'] else None
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create task: {str(e)}")
+
+
+@app.get("/debug/tasks")
+async def debug_tasks():
+    """Debug endpoint to check tasks state"""
+    tasks_file = Path(config_storage["tasks_file"])
+    with open(tasks_file, 'r') as f:
+        tasks = yaml.safe_load(f) or []
+    
+    return {
+        "total_tasks": len(tasks),
+        "tasks": [
+            {
+                "index": i,
+                "id": task.get("id"),
+                "title": task.get("title"),
+                "description": task.get("description", "")[:50] + "..." if task.get("description") else ""
+            }
+            for i, task in enumerate(tasks)
+        ]
+    }
+
+
+@app.get("/meetings")
+async def get_meetings():
+    """Get all meetings from meetings.yaml and load their content from meeting_notes directory"""
+    meetings_file = BASE_DIR / "data" / "meetings.yaml"
+    meeting_notes_dir = BASE_DIR / "data" / "meeting_notes"
+    
+    if not meetings_file.exists():
+        return {"meetings": []}
+    
+    try:
+        with open(meetings_file, 'r') as f:
+            meetings_data = yaml.safe_load(f) or []
+        
+        meetings = []
+        for i, meeting in enumerate(meetings_data):
+            # Try to find corresponding meeting note file
+            meeting_content = ""
+            date = meeting.get('date', '').replace('-', '')  # Convert 2025-06-02 to 20250602
+            event = meeting.get('event', '')
+            
+            # Look for meeting note files that might correspond to this meeting
+            # Check various patterns in the meeting_notes directory
+            possible_paths = [
+                meeting_notes_dir / "scrum" / f"{date}standup.md",
+                meeting_notes_dir / "scrum" / f"{date.replace('2025', '')}standup.md",  # 0602standup.md
+                meeting_notes_dir / "1on1" / f"{date.replace('2025', '')}_*.md"
+            ]
+            
+            # Search through meeting_notes directory for files that match this meeting
+            try:
+                import glob
+                # Search for files that might match this date
+                search_patterns = [
+                    str(meeting_notes_dir / "**" / f"*{date.replace('2025', '')}*.md"),
+                    str(meeting_notes_dir / "**" / f"*{date[2:]}*.md"),  # 250602
+                ]
+                
+                found_file = None
+                for pattern in search_patterns:
+                    files = glob.glob(pattern, recursive=True)
+                    if files:
+                        found_file = files[0]  # Take the first match
+                        break
+                
+                if found_file:
+                    with open(found_file, 'r', encoding='utf-8') as f:
+                        meeting_content = f.read()
+                
+            except Exception as e:
+                print(f"Error loading meeting content for {date}: {e}")
+            
+            # Format meeting for frontend
+            formatted_meeting = {
+                "id": f"meeting_{meeting.get('date', '')}_{i}",
+                "name": meeting.get("event", "Untitled Meeting"),
+                "type": "meeting",
+                "date": meeting.get("date", ""),
+                "time": meeting.get("time", ""),
+                "event": meeting.get("event", ""),
+                "content": meeting_content,
+                "participants": meeting.get("participants", []),
+                "location": meeting.get("location", ""),
+                "lastModified": datetime.now()
+            }
+            meetings.append(formatted_meeting)
+        
+        return {"meetings": meetings}
+    except Exception as e:
+        print(f"Error reading meetings.yaml: {e}")
+        return {"meetings": []}
 
 
 if __name__ == "__main__":

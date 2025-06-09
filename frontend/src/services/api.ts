@@ -1,5 +1,5 @@
 import config, { getApiUrl } from '@/config'
-import type { ApiResponse, WorkspaceItem, Task, Document, Note, DailyLog, AppConfig } from '@/types'
+import type { ApiResponse, WorkspaceItem, Task, Document, Note, DailyLog, AppConfig, Meeting, MeetingAnalysis, SuggestedTask } from '@/types'
 
 class ApiClient {
   private baseURL: string
@@ -69,17 +69,11 @@ class ApiClient {
   }
 
   async updateItem<T extends WorkspaceItem>(type: T['type'], id: string, item: Partial<T>): Promise<ApiResponse<T>> {
-    // For tasks, we need to find the index based on the ID
+    // For tasks, we can now use the ID directly since the backend supports it
     if (type === 'task') {
-      const tasksResponse = await this.getTasks()
-      const tasks = tasksResponse.tasks || []
-      const taskIndex = tasks.findIndex(t => t.id === id)
+      console.log(`Updating task with ID ${id} directly (no index lookup needed)`)
       
-      if (taskIndex === -1) {
-        throw new Error('Task not found')
-      }
-      
-      return this.request<T>(`/${type}s/${taskIndex}`, {
+      return this.request<T>(`/tasks/${id}`, {
         method: 'PUT',
         body: JSON.stringify(item),
       })
@@ -92,19 +86,30 @@ class ApiClient {
   }
 
   async deleteItem(type: WorkspaceItem['type'], id: string): Promise<ApiResponse<void>> {
-    // For tasks, we need to find the index based on the ID
+    // For tasks, we can now use the ID directly since the backend supports it
     if (type === 'task') {
-      const tasksResponse = await this.getTasks()
-      const tasks = tasksResponse.tasks || []
-      const taskIndex = tasks.findIndex(t => t.id === id)
+      console.log('=== DELETE TASK DEBUG (Frontend API) ===')
+      console.log(`Timestamp: ${new Date().toISOString()}`)
+      console.log('Deleting task with ID:', id)
+      console.log('Type of ID being sent:', typeof id)
+      console.log('ID value (JSON stringified):', JSON.stringify(id))
+      console.log('ID length:', id.length)
+      console.log('Stack trace:')
+      console.trace()
+      console.log(`Will send DELETE request to: /tasks/${id}`)
       
-      if (taskIndex === -1) {
-        throw new Error('Task not found')
+      try {
+        const deleteResponse = await this.request<any>(`/tasks/${id}`, {
+          method: 'DELETE',
+        })
+        
+        console.log('Delete response from backend:', deleteResponse)
+        
+        return deleteResponse
+      } catch (error) {
+        console.error('Error during deletion:', error)
+        throw error
       }
-      
-      return this.request<void>(`/${type}s/${taskIndex}`, {
-        method: 'DELETE',
-      })
     }
     
     return this.request<void>(`/${type}s/${id}`, {
@@ -132,6 +137,10 @@ class ApiClient {
 
   async getLogs(): Promise<ApiResponse<DailyLog[]>> {
     return this.getItems<DailyLog>('log')
+  }
+
+  async getMeetings(): Promise<ApiResponse<Meeting[]>> {
+    return this.getItems<Meeting>('meeting')
   }
 
   // Configuration
@@ -187,7 +196,48 @@ class ApiClient {
 
     return this.request<WorkspaceItem[]>(`/search?${params}`)
   }
+
+  // Meeting Analysis
+  async analyzeMeeting(meetingData: {
+    meeting_content: string
+    meeting_date: string
+    meeting_title: string
+  }): Promise<ApiResponse<{ analysis: MeetingAnalysis }>> {
+    return this.request<{ analysis: MeetingAnalysis }>('/analyze-meeting', {
+      method: 'POST',
+      body: JSON.stringify(meetingData),
+    })
+  }
+
+  // Task Creation from Analysis
+  async createTaskFromSuggestion(suggestedTask: SuggestedTask): Promise<ApiResponse<{ task_id: string; enhanced_todo?: string }>> {
+    return this.request<{ task_id: string; enhanced_todo?: string }>('/create-task-from-suggestion', {
+      method: 'POST',
+      body: JSON.stringify(suggestedTask),
+    })
+  }
 }
 
 export const apiClient = new ApiClient()
+
+// Export specific methods for easier use in components
+export const {
+  getItems,
+  getItem,
+  createItem,
+  updateItem,
+  deleteItem,
+  getTasks,
+  getDocuments,
+  getNotes,
+  getLogs,
+  getMeetings,
+  getConfig,
+  updateConfig,
+  uploadFile,
+  search,
+  analyzeMeeting,
+  createTaskFromSuggestion
+} = apiClient
+
 export default apiClient

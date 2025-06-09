@@ -922,6 +922,60 @@ function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 
         setShowLoggingModal(true);
     };
 
+    const handleAnalyze = async () => {
+        if (!item || !item.meetingData) {
+            alert('No meeting data available for analysis');
+            return;
+        }
+
+        try {
+            const meetingData = item.meetingData;
+            const response = await fetch('/analyze-meeting', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    meeting_content: meetingData.content || formData.content,
+                    meeting_date: meetingData.date,
+                    meeting_title: meetingData.event || meetingData.name
+                })
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                
+                // Show the analysis results in a simple alert for now
+                // In a real implementation, this would open a modal with task suggestions
+                const analysis = result.analysis;
+                const tasksList = analysis.suggested_tasks
+                    .map((task, i) => `${i + 1}. ${task.name}: ${task.description}`)
+                    .join('\n');
+                
+                const message = `Meeting Analysis Complete!\n\nSuggested Tasks (${analysis.suggested_tasks.length}):\n${tasksList}\n\nWould you like to create these tasks?`;
+                
+                if (confirm(message)) {
+                    // Create tasks from suggestions
+                    for (const suggestedTask of analysis.suggested_tasks) {
+                        try {
+                            await fetch('/create-task-from-suggestion', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(suggestedTask)
+                            });
+                        } catch (error) {
+                            console.error('Error creating task:', error);
+                        }
+                    }
+                    alert('Tasks created successfully!');
+                }
+            } else {
+                throw new Error('Failed to analyze meeting');
+            }
+        } catch (error) {
+            console.error('Analysis error:', error);
+            alert('Failed to analyze meeting. Please try again.');
+        }
+    };
+
     const handleLoggingInputChange = (field, value) => {
         setLoggingData(prev => ({ ...prev, [field]: value }));
         
@@ -1162,6 +1216,9 @@ function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 
                         {!isAddMode && (type === 'documents' || type === 'notes') && (
                             <button className="editor-button secondary" onClick={handleIndex}>Index</button>
                         )}
+                        {!isAddMode && type === 'notes' && item.type === 'meeting' && (
+                            <button className="editor-button secondary" onClick={handleAnalyze}>Analyze</button>
+                        )}
                         {!isAddMode && type === 'tasks' && (
                             <button className="editor-button secondary" onClick={onLog}>Log</button>
                         )}
@@ -1226,15 +1283,28 @@ function Panel({ tab, send }) {
                 })
                 .catch(() => {});
             
-            // Fetch notes
-            fetch('/notes')
+            // Fetch notes (meeting notes)
+            fetch('/meetings')
                 .then(r => r.json())
                 .then(data => { 
-                    if (data.notes) {
-                        setAllItems(prev => ({ ...prev, notes: data.notes }));
+                    console.log('🔍 Meetings API Response:', data);
+                    if (data.meetings) {
+                        // Convert meetings to notes format for compatibility
+                        const meetingNotes = data.meetings.map(meeting => ({
+                            name: meeting.event || meeting.name,
+                            description: `${meeting.date}${meeting.time ? ' ' + meeting.time : ''} / ${meeting.event || meeting.name}`,
+                            content: meeting.content,
+                            path: meeting.id,
+                            type: 'meeting',
+                            meetingData: meeting // Store full meeting data for analysis
+                        }));
+                        console.log('📝 Converted Meeting Notes:', meetingNotes);
+                        setAllItems(prev => ({ ...prev, notes: meetingNotes }));
                     }
                 })
-                .catch(() => {});
+                .catch(error => {
+                    console.error('❌ Error fetching meetings:', error);
+                });
             
             // Fetch logs
             fetch('/logs')
@@ -1253,6 +1323,7 @@ function Panel({ tab, send }) {
 
     const getCurrentItems = () => {
         let items = allItems[tab] || [];
+        console.log(`🗂️ Getting items for tab "${tab}":`, items);
         
         // Apply search filter
         if (searchQuery) {
@@ -1455,6 +1526,7 @@ function Panel({ tab, send }) {
                     // IMPORTANT: Need to find the correct index in the ORIGINAL allItems array, 
                     // not the filtered/sorted items array that's displayed
                     let originalIndex = -1;
+                    let itemId = null;
                     
                     if (editingItem) {
                         // Find the item in the original unfiltered array
@@ -1467,13 +1539,19 @@ function Panel({ tab, send }) {
                             return item.name === editingItem.name && 
                                    item.description === editingItem.description;
                         });
+                        
+                        // Use the actual item ID if available, fallback to index for backward compatibility
+                        if (originalIndex >= 0) {
+                            const originalItem = allItems[tab][originalIndex];
+                            itemId = originalItem.id || originalIndex;
+                        }
                     }
                     
-                    console.log('📝 PUT: Original editingItemIndex =', editingItemIndex, 'but finding correct index in original array =', originalIndex);
+                    console.log('📝 PUT: Original editingItemIndex =', editingItemIndex, 'but finding correct index in original array =', originalIndex, 'using itemId =', itemId);
                     
-                    if (originalIndex >= 0) {
-                        console.log('🌐 API Request: PUT /' + tab + '/' + originalIndex, requestData);
-                        response = await fetch(`/${tab}/${originalIndex}`, {
+                    if (originalIndex >= 0 && itemId !== null) {
+                        console.log('🌐 API Request: PUT /' + tab + '/' + itemId, requestData);
+                        response = await fetch(`/${tab}/${itemId}`, {
                             method: 'PUT',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(requestData)
@@ -1585,7 +1663,13 @@ function Panel({ tab, send }) {
         
         if (itemIndex !== null && itemIndex >= 0) {
             try {
-                const response = await fetch(`/${tab}/${itemIndex}`, {
+                // Get the actual item to extract its ID
+                const item = items[itemIndex];
+                const itemId = item.id || itemIndex; // Use ID if available, fallback to index for backward compatibility
+                
+                console.log('🗑️ DELETE: Using ID:', itemId, 'for item at index:', itemIndex, 'item:', item);
+                
+                const response = await fetch(`/${tab}/${itemId}`, {
                     method: 'DELETE'
                 });
                 

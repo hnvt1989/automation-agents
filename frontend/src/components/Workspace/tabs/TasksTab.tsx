@@ -56,15 +56,7 @@ const TasksTab = () => {
     setModal({
       isOpen: true,
       mode: 'add',
-      item: {
-        id: '',
-        name: '',
-        description: '',
-        type: 'task',
-        status: 'todo',
-        priority: 'medium',
-        lastModified: new Date(),
-      } as Task,
+      contentType: 'task',
     })
   }
 
@@ -73,12 +65,27 @@ const TasksTab = () => {
       isOpen: true,
       mode: 'edit',
       item: task,
+      contentType: 'task',
     })
   }
 
   const handleDeleteTask = async (taskId: string) => {
-    if (confirm('Are you sure you want to delete this task?')) {
+    // Find the task in the current tasks array
+    const taskToDelete = tasks.find(t => t.id === taskId)
+    console.log('=== FRONTEND DELETE DEBUG ===')
+    console.log('Task to delete:', taskToDelete)
+    console.log('Task ID:', taskId)
+    console.log('Task ID type:', typeof taskId)
+    console.log('Task ID JSON:', JSON.stringify(taskId))
+    console.log('Current tasks in frontend:', tasks.map(t => ({ id: t.id, name: t.name })))
+    console.log('Stack trace:')
+    console.trace()
+    
+    if (confirm(`Are you sure you want to delete this task?\n\nTask: ${taskToDelete?.name || 'Unknown'}\nID: ${taskId}`)) {
+      console.log('About to call deleteTask with ID:', taskId)
       await deleteTask(taskId)
+      // Refresh tasks after deletion to ensure sync
+      await fetchTasks()
     }
   }
 

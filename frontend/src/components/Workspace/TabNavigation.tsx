@@ -27,7 +27,7 @@ const TabNavigation = ({ activeTab, onTabChange }: TabNavigationProps) => {
     },
     {
       id: 'notes',
-      label: 'Notes',
+      label: 'Meeting Notes',
       icon: StickyNote,
       count: notes.length,
     },

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Plus, Edit2, Trash2, Calendar, Check } from 'lucide-react'
 import { useAppStore } from '@/store'
 import { useLogs } from '@/hooks/useApi'
@@ -6,11 +6,16 @@ import { getStatusColor, formatRelativeTime } from '@/utils'
 import type { DailyLog } from '@/types'
 
 const LogsTab = () => {
-  const { logs, updateLog, deleteLog, loading } = useLogs()
+  const { logs, fetchLogs, updateLog, deleteLog, loading } = useLogs()
   const { setModal } = useAppStore()
   const [searchQuery, setSearchQuery] = useState('')
   const [tagFilter, setTagFilter] = useState('all')
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set())
+
+  // Fetch logs on mount
+  useEffect(() => {
+    fetchLogs()
+  }, [])
 
   // Filter and search logs
   const filteredLogs = useMemo(() => {
@@ -28,17 +33,7 @@ const LogsTab = () => {
     setModal({
       isOpen: true,
       mode: 'add',
-      item: {
-        id: '',
-        name: '',
-        description: '',
-        type: 'log',
-        date: new Date(),
-        content: '',
-        lastModified: new Date(),
-        mood: 'neutral',
-        productivity: 5,
-      } as DailyLog,
+      contentType: 'log',
     })
   }
 
@@ -47,6 +42,7 @@ const LogsTab = () => {
       isOpen: true,
       mode: 'edit',
       item: log,
+      contentType: 'log',
     })
   }
 

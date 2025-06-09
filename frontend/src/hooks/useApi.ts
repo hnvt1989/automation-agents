@@ -125,9 +125,20 @@ export function useTasks() {
 
   const deleteTaskAction = useCallback(
     async (id: string) => {
+      console.log(`=== useApi deleteTaskAction called ===`)
+      console.log(`Deleting task with ID: ${id}`)
+      console.log(`ID type: ${typeof id}`)
+      console.log(`ID JSON: ${JSON.stringify(id)}`)
+      console.log('Stack trace:')
+      console.trace()
+      
       const result = await removeTask.execute(id)
       if (result !== null) {
+        console.log(`Successfully deleted task ${id} from backend`)
         deleteTask(id)
+        console.log(`Removed task ${id} from local store`)
+      } else {
+        console.error(`Failed to delete task ${id} from backend`)
       }
       return result
     },
@@ -280,6 +291,52 @@ export function useLogs() {
     deleteLog: deleteLogAction,
     loading: fetchLogs.loading || createLog.loading || editLog.loading || removeLog.loading,
     error: fetchLogs.error || createLog.error || editLog.error || removeLog.error,
+  }
+}
+
+export function useMeetings() {
+  const { setMeetings, addMeeting, updateMeeting, deleteMeeting } = useAppStore()
+
+  const fetchMeetings = useApi(
+    () => apiClient.getMeetings(),
+    (meetings) => setMeetings(meetings)
+  )
+
+  const createMeeting = useApi(
+    (meeting: Omit<any, 'id'>) => apiClient.createItem('meeting', meeting),
+    (meeting) => addMeeting(meeting)
+  )
+
+  const editMeeting = useApi(
+    (id: string, updates: Partial<any>) => apiClient.updateItem('meeting', id, updates),
+    (meeting) => updateMeeting(meeting.id, meeting)
+  )
+
+  const removeMeeting = useApi(
+    (id: string) => apiClient.deleteItem('meeting', id),
+    () => {},
+    () => {}
+  )
+
+  const deleteMeetingAction = useCallback(
+    async (id: string) => {
+      const result = await removeMeeting.execute(id)
+      if (result !== null) {
+        deleteMeeting(id)
+      }
+      return result
+    },
+    [removeMeeting, deleteMeeting]
+  )
+
+  return {
+    meetings: useAppStore((state) => state.meetings),
+    fetchMeetings: fetchMeetings.execute,
+    createMeeting: createMeeting.execute,
+    updateMeeting: editMeeting.execute,
+    deleteMeeting: deleteMeetingAction,
+    loading: fetchMeetings.loading || createMeeting.loading || editMeeting.loading || removeMeeting.loading,
+    error: fetchMeetings.error || createMeeting.error || editMeeting.error || removeMeeting.error,
   }
 }
 

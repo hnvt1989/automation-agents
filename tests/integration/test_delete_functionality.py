@@ -154,8 +154,8 @@ class TestDeleteTaskAPI:
         """Test successful deletion of a task"""
         monkeypatch.setattr("src.api_server.TASKS_YAML_FILE", temp_data_dir / "tasks.yaml")
         
-        # Delete the second task (index 1)
-        response = client.delete("/tasks/1")
+        # Delete the second task using its actual ID
+        response = client.delete("/tasks/TASK-2")
         
         assert response.status_code == 200
         data = response.json()
@@ -175,19 +175,19 @@ class TestDeleteTaskAPI:
         """Test deleting a task that doesn't exist"""
         monkeypatch.setattr("src.api_server.TASKS_YAML_FILE", temp_data_dir / "tasks.yaml")
         
-        # Try to delete task at index 999
-        response = client.delete("/tasks/999")
+        # Try to delete task with non-existent ID
+        response = client.delete("/tasks/NONEXISTENT-TASK")
         
         assert response.status_code == 404
         data = response.json()
-        assert "Task not found" in data["detail"]
+        assert "Task with ID 'NONEXISTENT-TASK' not found" in data["detail"]
     
     def test_delete_last_task(self, client, temp_data_dir, monkeypatch):
         """Test deleting the last task in the list"""
         monkeypatch.setattr("src.api_server.TASKS_YAML_FILE", temp_data_dir / "tasks.yaml")
         
-        # Delete the last task (index 2)
-        response = client.delete("/tasks/2")
+        # Delete the third task using its actual ID
+        response = client.delete("/tasks/TASK-3")
         
         assert response.status_code == 200
         
@@ -196,7 +196,8 @@ class TestDeleteTaskAPI:
             tasks = yaml.safe_load(f)
         
         assert len(tasks) == 2
-        assert tasks[-1]["id"] == "TASK-2"
+        assert tasks[0]["id"] == "TASK-1"
+        assert tasks[1]["id"] == "TASK-2"
 
 
 class TestDeleteLogAPI:
