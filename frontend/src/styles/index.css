@@ -114,6 +114,30 @@ body {
   margin-top: 4px;
 }
 
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.word-count {
+  font-size: 12px;
+  color: #6c757d;
+  font-weight: normal;
+  margin-left: 8px;
+}
+
+.form-textarea {
+  resize: vertical;
+  min-height: 100px;
+}
+
+@media (max-width: 600px) {
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Button styles */
 .btn {
   display: inline-flex;

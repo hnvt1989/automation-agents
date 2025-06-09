@@ -6,7 +6,6 @@ const TasksTab = lazy(() => import('./tabs/TasksTab'))
 const DocumentsTab = lazy(() => import('./tabs/DocumentsTab'))
 const NotesTab = lazy(() => import('./tabs/NotesTab'))
 const LogsTab = lazy(() => import('./tabs/LogsTab'))
-const ConfigurationTab = lazy(() => import('@/components/Configuration'))
 
 interface WorkspaceContentProps {
   activeTab: string
@@ -23,8 +22,6 @@ const WorkspaceContent = ({ activeTab }: WorkspaceContentProps) => {
         return <NotesTab />
       case 'logs':
         return <LogsTab />
-      case 'configuration':
-        return <ConfigurationTab />
       default:
         return <TasksTab />
     }

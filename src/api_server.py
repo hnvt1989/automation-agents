@@ -172,7 +172,7 @@ async def get_tasks():
             # Format the task for frontend display
             formatted_task = {
                 "name": task.get("title", "Untitled Task"),
-                "description": f"ID: {task.get('id', 'N/A')} | Priority: {task.get('priority', 'N/A')} | Status: {task.get('status', 'N/A')}",
+                "description": task.get("description", ""),
                 "id": task.get("id"),
                 "priority": task.get("priority"),
                 "status": task.get("status"),
@@ -348,6 +348,7 @@ async def create_task(task_update: TaskUpdate):
         new_task = {
             'id': f"TASK-{len(tasks) + 1}",  # Generate a simple ID
             'title': task_update.name or task_update.title or "New Task",
+            'description': task_update.description,
             'status': task_update.status or 'pending',
             'priority': task_update.priority or 'medium',
             'due_date': task_update.due_date,
@@ -406,6 +407,8 @@ async def update_task(task_index: int, task_update: TaskUpdate):
                 tasks[task_index]['title'] = task_update.title
             if task_update.name is not None:
                 tasks[task_index]['title'] = task_update.name  # Map name to title
+            if task_update.description is not None:
+                tasks[task_index]['description'] = task_update.description
             if task_update.status is not None:
                 tasks[task_index]['status'] = task_update.status
             if task_update.priority is not None:

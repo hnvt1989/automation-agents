@@ -1,4 +1,4 @@
-import { CheckSquare, FileText, StickyNote, Calendar, Settings } from 'lucide-react'
+import { CheckSquare, FileText, StickyNote, Calendar } from 'lucide-react'
 import { useAppStore } from '@/store'
 
 interface TabNavigationProps {
@@ -36,12 +36,6 @@ const TabNavigation = ({ activeTab, onTabChange }: TabNavigationProps) => {
       label: 'Daily Logs',
       icon: Calendar,
       count: logs.length,
-    },
-    {
-      id: 'configuration',
-      label: 'Settings',
-      icon: Settings,
-      count: 0,
     },
   ]
 
