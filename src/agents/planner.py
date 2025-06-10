@@ -538,7 +538,13 @@ def _get_target_date_meetings(meetings: List[Dict[str, Any]], target_date: datet
             if "date" in meeting and "event" in meeting:
                 meeting_date_str = str(meeting["date"])
                 try:
-                    meeting_date = datetime.fromisoformat(meeting_date_str).date()
+                    # Handle date-only strings (YYYY-MM-DD)
+                    if len(meeting_date_str) == 10 and meeting_date_str.count('-') == 2:
+                        meeting_date = datetime.strptime(meeting_date_str, '%Y-%m-%d').date()
+                    else:
+                        # Handle full datetime strings
+                        meeting_date = datetime.fromisoformat(meeting_date_str).date()
+                    
                     meeting_title = str(meeting.get("event", "")).strip()
                     if meeting.get("time"):
                         time_str = str(meeting["time"]).strip('"')

@@ -1,5 +1,6 @@
 """Primary orchestration agent."""
 from typing import Dict, Any, Optional, List
+from datetime import date, timedelta
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.openai import OpenAIModel
@@ -133,6 +134,53 @@ class PrimaryAgent(BaseAgent):
                 return f"Error: {str(e)}"
         
         @self.agent.tool
+        async def crawl_and_index_website(
+            ctx: RunContext[PrimaryAgentDeps], 
+            url: str,
+            sitemap_url: str = None
+        ) -> str:
+            """Crawl and index a website's content for search and retrieval.
+            
+            Use this to:
+            - Scrape website content and add it to the knowledge base
+            - Index documentation sites for later search
+            - Process multiple pages from a sitemap
+            """
+            log_info(f"Crawling and indexing website: {url}")
+            try:
+                from src.processors.crawler import run_crawler
+                from src.storage.chromadb_client import get_chromadb_client
+                from src.storage.collection_manager import CollectionManager
+                
+                # Get ChromaDB client and collection manager
+                chromadb_client = get_chromadb_client()
+                collection_manager = CollectionManager(chromadb_client)
+                
+                # Get or create the websites collection
+                try:
+                    websites_collection = chromadb_client.get_collection("automation_agents_websites")
+                except Exception:
+                    # Create collection if it doesn't exist
+                    websites_collection = chromadb_client.create_collection("automation_agents_websites")
+                
+                # Prepare URLs to crawl
+                urls_to_crawl = [url]
+                
+                # Run the crawler
+                await run_crawler(
+                    urls_to_crawl=urls_to_crawl,
+                    chroma_collection=websites_collection,
+                    max_concurrent_crawls=3,
+                    sitemap_url=sitemap_url
+                )
+                
+                return f"Successfully crawled and indexed {url}. Content is now available for search through the RAG agent."
+                
+            except Exception as e:
+                log_error(f"Error crawling website {url}: {str(e)}")
+                return f"Error crawling website: {str(e)}"
+        
+        @self.agent.tool
         async def handle_planner_task(ctx: RunContext[PrimaryAgentDeps], task: str) -> str:
             """Handle planning, task management, and meeting scheduling tasks.
             
@@ -205,6 +253,36 @@ class PrimaryAgent(BaseAgent):
                         return result["message"]
                     else:
                         return f"Failed to remove meeting: {result['error']}"
+                
+                elif action == "list_meetings":
+                    # Parse the date
+                    date_str = data.get("date", "today")
+                    target_date = self._parse_date(date_str)
+                    
+                    # Load meetings
+                    meetings_path = ops.paths.get("meets", "data/meetings.yaml")
+                    try:
+                        with open(meetings_path, "r", encoding="utf-8") as f:
+                            import yaml
+                            meetings = yaml.safe_load(f) or []
+                    except Exception as e:
+                        return f"Error loading meetings: {str(e)}"
+                    
+                    # Filter meetings for target date
+                    from src.agents.planner import _get_target_date_meetings
+                    target_meetings = _get_target_date_meetings(meetings, target_date)
+                    
+                    if target_meetings:
+                        meeting_list = "\n".join(f"- {meeting}" for meeting in target_meetings)
+                        today_date = date.today()
+                        tomorrow_date = today_date + timedelta(days=1)
+                        date_display = "today" if target_date == today_date else "tomorrow" if target_date == tomorrow_date else str(target_date)
+                        return f"Meetings for {date_display}:\n\n{meeting_list}"
+                    else:
+                        today_date = date.today()
+                        tomorrow_date = today_date + timedelta(days=1)
+                        date_display = "today" if target_date == today_date else "tomorrow" if target_date == tomorrow_date else str(target_date)
+                        return f"No meetings scheduled for {date_display}."
                 
                 elif action == "add_log":
                     # Check if we need to create a task first
@@ -351,6 +429,25 @@ class PrimaryAgent(BaseAgent):
             except Exception as e:
                 log_error(f"Error in planner task: {str(e)}")
                 return f"Error: {str(e)}"
+    
+    def _parse_date(self, date_str: str) -> date:
+        """Parse a date string like 'today', 'tomorrow', etc. into a date object."""
+        today = date.today()
+        
+        if date_str.lower() in ["today"]:
+            return today
+        elif date_str.lower() in ["tomorrow"]:
+            return today + timedelta(days=1)
+        elif date_str.lower() in ["yesterday"]:
+            return today - timedelta(days=1)
+        else:
+            # Try to parse as ISO date
+            try:
+                from datetime import datetime
+                return datetime.strptime(date_str, "%Y-%m-%d").date()
+            except ValueError:
+                # Default to today if we can't parse
+                return today
     
     async def run(self, prompt: str, **kwargs) -> Any:
         """Run the primary agent.

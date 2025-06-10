@@ -26,6 +26,7 @@ Available actions:
 - remove_task: Remove a task
 - add_meeting: Schedule a meeting
 - remove_meeting: Cancel a meeting
+- list_meetings: List meetings for a specific date
 - add_log: Log work done
 - remove_log: Remove a work log
 - plan_day: Generate daily plan
@@ -66,6 +67,18 @@ Output: {"action": "add_log", "data": {"log_id": "TASK-1", "description": "imple
 
 Input: "schedule meeting team standup tomorrow at 10am"
 Output: {"action": "add_meeting", "data": {"title": "team standup", "date": "tomorrow", "time": "10:00"}}
+
+Input: "do I have meetings tomorrow?"
+Output: {"action": "list_meetings", "data": {"date": "tomorrow"}}
+
+Input: "what meetings do I have today?"
+Output: {"action": "list_meetings", "data": {"date": "today"}}
+
+Input: "show me my meetings for next Monday"
+Output: {"action": "list_meetings", "data": {"date": "next Monday"}}
+
+Input: "check for meetings scheduled for tomorrow"
+Output: {"action": "list_meetings", "data": {"date": "tomorrow"}}
 
 Input: "remove task TASK-1"
 Output: {"action": "remove_task", "data": {"identifier": "TASK-1"}}
