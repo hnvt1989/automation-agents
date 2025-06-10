@@ -1258,6 +1258,7 @@ function Panel({ tab, send }) {
     const [statusFilter, setStatusFilter] = useState('all');
     const [sortBy, setSortBy] = useState('name');
     const [tagFilter, setTagFilter] = useState('all');
+    const [dateFilter, setDateFilter] = useState('');
 
     useEffect(() => {
         setSelected(null);
@@ -1358,6 +1359,16 @@ function Panel({ tab, send }) {
             });
         }
         
+        // Apply date filter for logs
+        if (tab === 'logs' && dateFilter) {
+            items = items.filter(item => {
+                if (!item.date) return false;
+                // Compare dates without time components
+                const itemDate = new Date(item.date).toISOString().split('T')[0];
+                return itemDate === dateFilter;
+            });
+        }
+        
         // Apply sorting for tasks
         if (tab === 'tasks') {
             items = items.slice().sort((a, b) => {
@@ -1407,7 +1418,7 @@ function Panel({ tab, send }) {
         return items;
     };
 
-    const items = React.useMemo(() => getCurrentItems(), [allItems, tab, searchQuery, typeFilter, statusFilter, sortBy, tagFilter]);
+    const items = React.useMemo(() => getCurrentItems(), [allItems, tab, searchQuery, typeFilter, statusFilter, sortBy, tagFilter, dateFilter]);
 
     const addItem = () => {
             console.log('🆕 ADD MODE: Creating new item');
@@ -1784,20 +1795,35 @@ function Panel({ tab, send }) {
                     )}
                     
                     {tab === 'logs' && (
-                        <select
-                            value={tagFilter}
-                            onChange={(e) => setTagFilter(e.target.value)}
-                            style={{
-                                padding: '8px 12px',
-                                border: '1px solid #dee2e6',
-                                borderRadius: '6px',
-                                fontSize: '14px'
-                            }}
-                        >
-                            <option value="all">All Tags</option>
-                            <option value="personal">Personal</option>
-                            <option value="work">Work</option>
-                        </select>
+                        <React.Fragment>
+                            <input
+                                type="date"
+                                value={dateFilter || ''}
+                                onChange={(e) => setDateFilter(e.target.value)}
+                                style={{
+                                    padding: '8px 12px',
+                                    border: '1px solid #dee2e6',
+                                    borderRadius: '6px',
+                                    fontSize: '14px',
+                                    minWidth: '150px'
+                                }}
+                                title="Filter by date"
+                            />
+                            <select
+                                value={tagFilter}
+                                onChange={(e) => setTagFilter(e.target.value)}
+                                style={{
+                                    padding: '8px 12px',
+                                    border: '1px solid #dee2e6',
+                                    borderRadius: '6px',
+                                    fontSize: '14px'
+                                }}
+                            >
+                                <option value="all">All Tags</option>
+                                <option value="personal">Personal</option>
+                                <option value="work">Work</option>
+                            </select>
+                        </React.Fragment>
                     )}
                 </div>
             </div>
@@ -1805,8 +1831,15 @@ function Panel({ tab, send }) {
             <div className="items-list">
                 {items.length === 0 ? (
                     <div className="empty-state">
-                        <div className="empty-state-title">No items yet</div>
-                        <div className="empty-state-description">Add your first {tab.slice(0, -1)} to get started</div>
+                        <div className="empty-state-title">
+                            {tab === 'logs' && dateFilter ? 'No daily logs for this date' : 'No items yet'}
+                        </div>
+                        <div className="empty-state-description">
+                            {tab === 'logs' && dateFilter 
+                                ? `No logs found for ${new Date(dateFilter + 'T00:00:00').toLocaleDateString()}. Try selecting a different date or create a new log for this date.`
+                                : `Add your first ${tab.slice(0, -1)} to get started`
+                            }
+                        </div>
                     </div>
                 ) : (
                     items.map((item, i) => (

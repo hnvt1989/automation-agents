@@ -584,58 +584,106 @@ def _format_plan(plan: List[Tuple[datetime, datetime, Dict[str, Any]]], target_d
     # Get meetings for the target date
     target_meetings = _get_target_date_meetings(meetings or [], target_date)
     
+    # Format date for header (e.g., "June 6, 2025")
+    # Use %d and strip leading zero for cross-platform compatibility
+    day = str(target_date.day)
+    formatted_date = target_date.strftime(f"%B {day}, %Y")
+    
     # Start with the header
-    content = [f"## Plan for {target_date.isoformat()}"]
+    content = [f"# Daily Plan for {formatted_date}", ""]
     
     # Add focus areas section if available
     if focus_analysis and (focus_analysis.get('rule_based_focus') or focus_analysis.get('llm_focus')):
-        content.append("\n### Focus Areas (Based on Recent Meetings)")
+        content.append("## Focus Areas (Based on Recent Meetings)")
+        content.append("")
         
         # Add rule-based focus points
         rule_based = focus_analysis.get('rule_based_focus', [])
         if rule_based:
             for point in rule_based:
-                content.append(f"- {point}")
+                content.append(f"• {point}")
         
         # Add LLM focus if available
         llm_focus = focus_analysis.get('llm_focus', '').strip()
         if llm_focus and not llm_focus.startswith('Error') and not llm_focus.startswith('LLM analysis unavailable'):
-            content.append("\n**AI Analysis:**")
+            content.append("")
+            content.append("**AI Analysis:**")
             # Split LLM response into lines and format as bullet points if not already formatted
             llm_lines = llm_focus.split('\n')
             for line in llm_lines:
                 line = line.strip()
                 if line:
                     if not line.startswith('•') and not line.startswith('-') and not line.startswith('*'):
-                        content.append(f"- {line}")
+                        content.append(f"• {line}")
                     else:
-                        content.append(f"{line}")
+                        content.append(f"• {line.lstrip('•-* ')}")
         
         content.append("")  # Empty line before next section
     
     # Add meetings section if there are any
     if target_meetings:
-        content.append("### Meetings")
+        content.append("## Meetings")
+        content.append("")
         for meeting in target_meetings:
-            content.append(f"- {meeting}")
+            content.append(f"• {meeting}")
         content.append("")  # Empty line before tasks
     
     # Add tasks table
-    content.append("### Tasks")
-    content.append("| Time | Task | Reason |")
-    content.append("| - | - | - |")
+    content.append("## Tasks")
+    content.append("")
     
-    # Add task rows
-    task_rows = []
-    for st, et, task in plan:
-        block = f"{st.strftime('%H:%M')}-{et.strftime('%H:%M')}"
-        reason = f"Priority {task.get('priority')}, due {task.get('due_date')}"
-        task_rows.append(f"| {block} | {task.get('id')} {task.get('title')} | {reason} |")
+    if plan:
+        content.append("| Time | Task | Reason |")
+        content.append("|------|------|--------|")
+        
+        # Add task rows
+        for st, et, task in plan:
+            # Format time with AM/PM (e.g., "9:00 - 10:00 AM")
+            # Use cross-platform time formatting
+            start_hour = str(st.hour if st.hour <= 12 else st.hour - 12)
+            if st.hour == 0:
+                start_hour = "12"
+            start_ampm = "AM" if st.hour < 12 else "PM"
+            start_time = f"{start_hour}:{st.strftime('%M')} {start_ampm}"
+            
+            end_hour = str(et.hour if et.hour <= 12 else et.hour - 12)
+            if et.hour == 0:
+                end_hour = "12"
+            end_ampm = "AM" if et.hour < 12 else "PM"
+            end_time = f"{end_hour}:{et.strftime('%M')} {end_ampm}"
+            
+            time_block = f"{start_time} - {end_time}"
+            
+            # Format task with ID and title
+            task_desc = f"**{task.get('id')}**: {task.get('title')}"
+            
+            # Format reason with priority and due date
+            priority = task.get('priority', 'medium').title()
+            due_date = task.get('due_date')
+            if due_date:
+                # Format due date nicely
+                try:
+                    from datetime import datetime
+                    if isinstance(due_date, str):
+                        due_dt = datetime.fromisoformat(due_date.replace('Z', '+00:00')).date()
+                    else:
+                        due_dt = due_date
+                    due_day = str(due_dt.day)
+                    formatted_due = due_dt.strftime(f"%B {due_day}, %Y")
+                    reason = f"Priority: {priority}, Due: {formatted_due}"
+                except:
+                    reason = f"Priority: {priority}, Due: {due_date}"
+            else:
+                reason = f"Priority: {priority}"
+            
+            content.append(f"| {time_block} | {task_desc} | {reason} |")
+    else:
+        content.append("*No tasks scheduled for this day.*")
     
-    if not task_rows:
-        task_rows.append("| - | No tasks scheduled | - |")
+    content.append("")  # Add final empty line
+    content.append("---")
+    content.append("*Feel free to adjust any tasks or add more details as needed!*")
     
-    content.extend(task_rows)
     return "\n".join(content)
 
 

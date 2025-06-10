@@ -100,7 +100,7 @@ const LogsTab = () => {
       <div className="search-filters">
         <input
           type="text"
-          placeholder="Search logs..."
+          placeholder="Search logs... (DATE PICKER TEST)"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="search-input"
