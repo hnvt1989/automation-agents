@@ -1359,27 +1359,17 @@ function Panel({ tab, send }) {
                 })
                 .catch(() => {});
             
-            // Fetch notes (meeting notes)
-            fetch(`${CONFIG.API_BASE_URL}/meetings`)
+            // Fetch notes (meeting notes from files)
+            fetch(`${CONFIG.API_BASE_URL}/notes`)
                 .then(r => r.json())
                 .then(data => { 
-                    console.log('🔍 Meetings API Response:', data);
-                    if (data.meetings) {
-                        // Convert meetings to notes format for compatibility
-                        const meetingNotes = data.meetings.map(meeting => ({
-                            name: meeting.event || meeting.name,
-                            description: `${meeting.date}${meeting.time ? ' ' + meeting.time : ''} / ${meeting.event || meeting.name}`,
-                            content: meeting.content,
-                            path: meeting.id,
-                            type: 'meeting',
-                            meetingData: meeting // Store full meeting data for analysis
-                        }));
-                        console.log('📝 Converted Meeting Notes:', meetingNotes);
-                        setAllItems(prev => ({ ...prev, notes: meetingNotes }));
+                    console.log('🔍 Notes API Response:', data);
+                    if (data.notes) {
+                        setAllItems(prev => ({ ...prev, notes: data.notes }));
                     }
                 })
                 .catch(error => {
-                    console.error('❌ Error fetching meetings:', error);
+                    console.error('❌ Error fetching notes:', error);
                 });
             
             // Fetch logs
