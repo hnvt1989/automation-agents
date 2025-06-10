@@ -844,7 +844,7 @@ function LoggingModal({ isOpen, onClose, onSave, taskItem, errors, isSubmitting 
     if (!isOpen) return null;
 
     return (
-        <div className="editor-overlay" onClick={onClose}>
+        <div className="editor-overlay">
             <div className="editor-container" onClick={e => e.stopPropagation()}>
                 <div className="editor-header">
                     <div className="editor-title">Log Task Completion</div>
@@ -1091,7 +1091,7 @@ function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 
     if (!item) return null;
 
     return (
-        <div className="editor-overlay" onClick={onClose}>
+        <div className="editor-overlay">
             <div className="editor-container" onClick={e => e.stopPropagation()}>
                 <div className="editor-header">
                     <div className="editor-title">{isAddMode ? 'Add' : 'Edit'} {type.slice(0, -1)}</div>
