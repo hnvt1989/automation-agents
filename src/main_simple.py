@@ -86,9 +86,13 @@ class SimpleAutomationAgentsCLI:
             self.display_help()
             return True
         
-        if query.lower().startswith("plan"):
+        if query.lower().startswith("plan") or query.lower() == "planner":
             # Extract date from query if present
-            date_query = query[4:].strip() if len(query) > 4 else "today"
+            if query.lower() == "planner":
+                # Default to today for bare "planner" command
+                date_query = "today"
+            else:
+                date_query = query[4:].strip() if len(query) > 4 else "today"
             await self.handle_planning(date_query)
             return True
         
@@ -107,7 +111,46 @@ class SimpleAutomationAgentsCLI:
         try:
             console.print(f"\n[dim]Creating plan for: {date_query}[/dim]")
             
-            result = await plan_day(date_query, model=self.get_model())
+            # Parse the date query
+            from datetime import date, datetime, timedelta
+            target_date = date.today()
+            
+            if date_query.lower() == "today":
+                target_date = date.today()
+            elif date_query.lower() == "tomorrow":
+                target_date = date.today() + timedelta(days=1)
+            elif date_query.lower() == "yesterday":
+                target_date = date.today() - timedelta(days=1)
+            else:
+                # Try to parse specific date formats
+                try:
+                    target_date = datetime.fromisoformat(date_query).date()
+                except ValueError:
+                    try:
+                        # Try other common formats
+                        target_date = datetime.strptime(date_query, "%Y-%m-%d").date()
+                    except ValueError:
+                        log_error(f"Could not parse date '{date_query}', using today")
+                        target_date = date.today()
+            
+            # Create payload for plan_day function
+            payload = {
+                'paths': {
+                    'tasks': 'data/tasks.yaml',
+                    'logs': 'data/daily_logs.yaml',
+                    'meets': 'data/meetings.yaml'
+                },
+                'target_date': target_date.isoformat(),
+                'work_hours': {'start': '09:00', 'end': '17:00'}
+            }
+            
+            result_dict = plan_day(payload)
+            
+            if "error" in result_dict:
+                raise Exception(result_dict["error"])
+            
+            # Combine the markdown sections
+            result = f"{result_dict.get('yesterday_markdown', '')}\n\n{result_dict.get('tomorrow_markdown', '')}"
             
             console.print("\n[bold]Your Plan:[/bold]")
             console.print(Markdown(result))

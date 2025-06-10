@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { Plus, Edit2, Trash2, Calendar, Check } from 'lucide-react'
+import { Plus, Edit2, Trash2, Calendar, Check, CalendarDays } from 'lucide-react'
 import { useAppStore } from '@/store'
 import { useLogs } from '@/hooks/useApi'
 import { getStatusColor, formatRelativeTime } from '@/utils'
@@ -10,6 +10,7 @@ const LogsTab = () => {
   const { setModal } = useAppStore()
   const [searchQuery, setSearchQuery] = useState('')
   const [tagFilter, setTagFilter] = useState('all')
+  const [dateFilter, setDateFilter] = useState<string>('')
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set())
 
   // Fetch logs on mount
@@ -25,9 +26,13 @@ const LogsTab = () => {
                           log.content?.toLowerCase().includes(searchQuery.toLowerCase())
       const matchesTag = tagFilter === 'all' || (log.tags && log.tags.includes(tagFilter))
       
-      return matchesSearch && matchesTag
+      // Date filtering - compare dates without time
+      const matchesDate = !dateFilter || 
+        (log.date && new Date(log.date).toISOString().split('T')[0] === dateFilter)
+      
+      return matchesSearch && matchesTag && matchesDate
     })
-  }, [logs, searchQuery, tagFilter])
+  }, [logs, searchQuery, tagFilter, dateFilter])
 
   const handleAddLog = () => {
     setModal({
@@ -95,11 +100,31 @@ const LogsTab = () => {
       <div className="search-filters">
         <input
           type="text"
-          placeholder="Search logs..."
+          placeholder="Search logs... (DATE PICKER TEST)"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="search-input"
         />
+        
+        <div className="date-filter">
+          <CalendarDays size={16} className="date-filter-icon" />
+          <input
+            type="date"
+            placeholder="Filter by date..."
+            value={dateFilter}
+            onChange={(e) => setDateFilter(e.target.value)}
+            className="date-picker"
+          />
+          {dateFilter && (
+            <button
+              onClick={() => setDateFilter('')}
+              className="clear-date-filter"
+              title="Clear date filter"
+            >
+              ×
+            </button>
+          )}
+        </div>
         
         <select
           value={tagFilter}
@@ -139,12 +164,19 @@ const LogsTab = () => {
             <Calendar size={32} />
           </div>
           <h3 className="empty-state-title">
-            {logs.length === 0 ? 'No logs yet' : 'No logs match your filters'}
+            {logs.length === 0 
+              ? 'No logs yet' 
+              : dateFilter 
+                ? 'No daily logs for this date'
+                : 'No logs match your filters'
+            }
           </h3>
           <p className="empty-state-description">
             {logs.length === 0 
               ? 'Get started by creating your first daily log to track your activities and progress.'
-              : 'Try adjusting your search or filter criteria to find the logs you\'re looking for.'
+              : dateFilter
+                ? `No logs found for ${new Date(dateFilter + 'T00:00:00').toLocaleDateString()}. Try selecting a different date or create a new log for this date.`
+                : 'Try adjusting your search or filter criteria to find the logs you\'re looking for.'
             }
           </p>
           {logs.length === 0 && (
