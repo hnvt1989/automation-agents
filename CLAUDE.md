@@ -18,6 +18,9 @@ python -m src.main_simple
 
 # Web API server for frontend
 uvicorn src.api_server:app --reload
+
+# Frontend (HTML-based with inline React)
+# Simply open frontend/index.html in browser or serve via HTTP
 ```
 
 ### Testing
@@ -93,6 +96,14 @@ This is a PydanticAI-based multi-agent system using Model Context Protocol (MCP)
 - `image.py` - Vision API integration for calendar/chat screenshots
 - `calendar.py` - Calendar event extraction
 - `crawler.py` - Web content processing
+
+#### Frontend Layer (`frontend/`)
+- `index.html` - Single-page application with inline React and Babel
+- **Technology Stack**: HTML5, inline React 18, Babel transpilation
+- **Architecture**: Standalone HTML file with WebSocket connection to backend
+- **Features**: Task management, document editing, daily logs with date filtering, meeting notes
+- **API Integration**: RESTful endpoints for CRUD operations
+- **Real-time**: WebSocket for chat functionality
 
 ### Data Flow
 ```
