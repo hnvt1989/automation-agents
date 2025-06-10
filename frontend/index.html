@@ -381,6 +381,15 @@
             content: '📊';
         }
         
+        .status-memos .item-icon {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .status-memos .item-icon::before {
+            content: '📝';
+        }
+        
         .empty-state {
             text-align: center;
             padding: 80px 24px;
@@ -496,6 +505,23 @@
         .editor-textarea {
             min-height: 200px;
             resize: vertical;
+        }
+        
+        .memo-content {
+            min-height: 400px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 14px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            tab-size: 4;
+            -moz-tab-size: 4;
+        }
+        
+        .memo-content::placeholder {
+            font-family: inherit;
+            color: #6c757d;
+            font-style: italic;
         }
         
         .editor-footer {
@@ -698,6 +724,12 @@
     <script type="text/babel">
 const { useState, useEffect, useRef } = React;
 
+// Configuration - Update these URLs to match your backend server
+const CONFIG = {
+    API_BASE_URL: 'http://localhost:8000',  // Backend API server URL
+    WS_URL: 'ws://localhost:8000/ws'        // WebSocket URL for real-time chat
+};
+
 // Deadline calculation helper function
 function getDeadlineStatus(dueDate) {
     if (!dueDate) return 'normal';
@@ -734,7 +766,8 @@ function Tabs({ current, onSelect }) {
         { id: 'tasks', label: 'Tasks' },
         { id: 'documents', label: 'Documents' },
         { id: 'notes', label: 'Meeting Notes' },
-        { id: 'logs', label: 'Daily Logs' }
+        { id: 'logs', label: 'Daily Logs' },
+        { id: 'memos', label: 'Memos' }
     ];
     
     return (
@@ -758,6 +791,7 @@ function WorkspaceItem({ item, type, isSelected, onClick }) {
         if (type === 'documents') return 'status-document';
         if (type === 'notes') return 'status-note';
         if (type === 'logs') return 'status-logs';
+        if (type === 'memos') return 'status-memos';
         return 'status-task';
     };
     
@@ -931,7 +965,7 @@ function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 
 
         try {
             const meetingData = item.meetingData;
-            const response = await fetch('/analyze-meeting', {
+            const response = await fetch(`${CONFIG.API_BASE_URL}/analyze-meeting`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -957,7 +991,7 @@ function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 
                     // Create tasks from suggestions
                     for (const suggestedTask of analysis.suggested_tasks) {
                         try {
-                            await fetch('/create-task-from-suggestion', {
+                            await fetch(`${CONFIG.API_BASE_URL}/create-task-from-suggestion`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify(suggestedTask)
@@ -1023,7 +1057,7 @@ function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 
             };
             
             // Save the log entry
-            const response = await fetch('/logs', {
+            const response = await fetch(`${CONFIG.API_BASE_URL}/logs`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(logEntry)
@@ -1204,11 +1238,49 @@ function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 
                             </div>
                         </React.Fragment>
                     )}
+                    
+                    {type === 'memos' && (
+                        <React.Fragment>
+                            <div className="editor-field">
+                                <label className="editor-label">Content</label>
+                                <textarea
+                                    className="editor-textarea memo-content"
+                                    value={formData.content}
+                                    onChange={e => handleChange('content', e.target.value)}
+                                    placeholder="Enter memo content... (supports rich text formatting, lists, code blocks, etc.)"
+                                    rows={20}
+                                    onKeyDown={(e) => {
+                                        // Handle Tab key for indentation
+                                        if (e.key === 'Tab') {
+                                            e.preventDefault();
+                                            const textarea = e.target;
+                                            const start = textarea.selectionStart;
+                                            const end = textarea.selectionEnd;
+                                            const value = textarea.value;
+                                            
+                                            // Insert tab character
+                                            const newValue = value.substring(0, start) + '\t' + value.substring(end);
+                                            handleChange('content', newValue);
+                                            
+                                            // Move cursor position
+                                            setTimeout(() => {
+                                                textarea.selectionStart = textarea.selectionEnd = start + 1;
+                                            }, 0);
+                                        }
+                                    }}
+                                />
+                                <div style={{fontSize: '12px', color: '#6c757d', marginTop: '8px'}}>
+                                    💡 Tip: This field preserves formatting including indentation, line breaks, and spacing. 
+                                    Use Tab for indentation, supports Markdown syntax.
+                                </div>
+                            </div>
+                        </React.Fragment>
+                    )}
                 </div>
                 
                 <div className="editor-footer">
                     <div className="editor-footer-left">
-                        {!isAddMode && (type === 'tasks' || type === 'logs') && (
+                        {!isAddMode && (type === 'tasks' || type === 'logs' || type === 'memos') && (
                             <button className="editor-button danger" onClick={handleDelete}>Delete</button>
                         )}
                     </div>
@@ -1238,7 +1310,8 @@ function Panel({ tab, send }) {
         tasks: [],
         documents: [],
         notes: [],
-        logs: []
+        logs: [],
+        memos: []
     });
     
     const [selected, setSelected] = useState(null);
@@ -1267,7 +1340,7 @@ function Panel({ tab, send }) {
     useEffect(() => {
         if (!loaded) {
             // Fetch tasks
-            fetch('/tasks')
+            fetch(`${CONFIG.API_BASE_URL}/tasks`)
                 .then(r => r.json())
                 .then(data => { 
                     if (data.tasks) {
@@ -1277,7 +1350,7 @@ function Panel({ tab, send }) {
                 .catch(() => {});
             
             // Fetch documents
-            fetch('/documents')
+            fetch(`${CONFIG.API_BASE_URL}/documents`)
                 .then(r => r.json())
                 .then(data => { 
                     if (data.documents) {
@@ -1286,35 +1359,35 @@ function Panel({ tab, send }) {
                 })
                 .catch(() => {});
             
-            // Fetch notes (meeting notes)
-            fetch('/meetings')
+            // Fetch notes (meeting notes from files)
+            fetch(`${CONFIG.API_BASE_URL}/notes`)
                 .then(r => r.json())
                 .then(data => { 
-                    console.log('🔍 Meetings API Response:', data);
-                    if (data.meetings) {
-                        // Convert meetings to notes format for compatibility
-                        const meetingNotes = data.meetings.map(meeting => ({
-                            name: meeting.event || meeting.name,
-                            description: `${meeting.date}${meeting.time ? ' ' + meeting.time : ''} / ${meeting.event || meeting.name}`,
-                            content: meeting.content,
-                            path: meeting.id,
-                            type: 'meeting',
-                            meetingData: meeting // Store full meeting data for analysis
-                        }));
-                        console.log('📝 Converted Meeting Notes:', meetingNotes);
-                        setAllItems(prev => ({ ...prev, notes: meetingNotes }));
+                    console.log('🔍 Notes API Response:', data);
+                    if (data.notes) {
+                        setAllItems(prev => ({ ...prev, notes: data.notes }));
                     }
                 })
                 .catch(error => {
-                    console.error('❌ Error fetching meetings:', error);
+                    console.error('❌ Error fetching notes:', error);
                 });
             
             // Fetch logs
-            fetch('/logs')
+            fetch(`${CONFIG.API_BASE_URL}/logs`)
                 .then(r => r.json())
                 .then(data => { 
                     if (data.logs) {
                         setAllItems(prev => ({ ...prev, logs: data.logs }));
+                    }
+                })
+                .catch(() => {});
+            
+            // Fetch memos
+            fetch(`${CONFIG.API_BASE_URL}/memos`)
+                .then(r => r.json())
+                .then(data => { 
+                    if (data.memos) {
+                        setAllItems(prev => ({ ...prev, memos: data.memos }));
                     }
                 })
                 .catch(() => {});
@@ -1438,7 +1511,7 @@ function Panel({ tab, send }) {
 
     const saveTasks = () => {
         if (tab !== 'tasks') return;
-        fetch('/tasks', {
+        fetch(`${CONFIG.API_BASE_URL}/tasks`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ tasks: allItems.tasks }),
@@ -1481,7 +1554,7 @@ function Panel({ tab, send }) {
                 status: 'completed'
             };
 
-            const response = await fetch('/logs', {
+            const response = await fetch(`${CONFIG.API_BASE_URL}/logs`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(logEntry),
@@ -1534,7 +1607,7 @@ function Panel({ tab, send }) {
                 if (addMode) {
                     console.log('📤 POST: Creating new item');
                     // For add mode, POST to create new item
-                    response = await fetch(`/${tab}`, {
+                    response = await fetch(`${CONFIG.API_BASE_URL}/${tab}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(requestData)
@@ -1569,7 +1642,7 @@ function Panel({ tab, send }) {
                     
                     if (originalIndex >= 0 && itemId !== null) {
                         console.log('🌐 API Request: PUT /' + tab + '/' + itemId, requestData);
-                        response = await fetch(`/${tab}/${itemId}`, {
+                        response = await fetch(`${CONFIG.API_BASE_URL}/${tab}/${itemId}`, {
                             method: 'PUT',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(requestData)
@@ -1589,7 +1662,7 @@ function Panel({ tab, send }) {
                         // to get the correct indices after adding
                         if (tab === 'documents' || tab === 'notes') {
                             try {
-                                const listResponse = await fetch(`/${tab}`);
+                                const listResponse = await fetch(`${CONFIG.API_BASE_URL}/${tab}`);
                                 if (listResponse.ok) {
                                     const data = await listResponse.json();
                                     setAllItems(prev => ({
@@ -1860,6 +1933,7 @@ function Panel({ tab, send }) {
                              tab === 'documents' ? 'document' : 
                              tab === 'notes' ? 'note' : 
                              tab === 'logs' ? 'log' : 
+                             tab === 'memos' ? 'memo' :
                              tab.slice(0, -1)}
                     </button>
                     {selected !== null && (
@@ -1868,10 +1942,19 @@ function Panel({ tab, send }) {
                             console.log('✏️ EDIT MODE: Editing item at index', selected, 'item:', item);
                             // Store the original index of the item being edited
                             setEditingItemIndex(selected);
-                            // For documents and notes, fetch the content first
-                            if (tab === 'documents' || tab === 'notes') {
+                            // For documents, notes, and memos, fetch the content first
+                            if (tab === 'documents' || tab === 'notes' || tab === 'memos') {
                                 try {
-                                    const response = await fetch(`/${tab}/${selected}/content`);
+                                    let endpoint;
+                                    if (tab === 'memos') {
+                                        // Memos use ID-based endpoints
+                                        endpoint = `${CONFIG.API_BASE_URL}/${tab}/${item.id}/content`;
+                                    } else {
+                                        // Documents and notes use index-based endpoints
+                                        endpoint = `${CONFIG.API_BASE_URL}/${tab}/${selected}/content`;
+                                    }
+                                    
+                                    const response = await fetch(endpoint);
                                     if (response.ok) {
                                         const data = await response.json();
                                         setEditingItem({ ...item, content: data.content });
@@ -2038,7 +2121,7 @@ function App() {
     const wsRef = useRef(null);
 
     useEffect(() => {
-        const ws = new WebSocket('ws://localhost:8000/ws');
+        const ws = new WebSocket(CONFIG.WS_URL);
         wsRef.current = ws;
         ws.onmessage = (e) => {
             const text = e.data;
@@ -2059,7 +2142,7 @@ function App() {
 
     // Fetch tasks and check for deadline alerts
     useEffect(() => {
-        fetch('/tasks')
+        fetch(`${CONFIG.API_BASE_URL}/tasks`)
             .then(r => r.json())
             .then(data => {
                 if (data.tasks) {

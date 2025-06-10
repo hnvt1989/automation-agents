@@ -1,6 +1,7 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Response
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pathlib import Path
 from pydantic_ai.providers.openai import OpenAIProvider
@@ -130,6 +131,15 @@ def save_config_to_env(config):
 config_storage = load_config_from_env()
 
 app = FastAPI()
+
+# Add CORS middleware to allow frontend requests
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "file://"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Static file serving removed for development clarity
 
@@ -997,7 +1007,7 @@ async def get_meetings():
 @app.get("/memos")
 async def get_memos():
     """Get all memos from the data/memos directory"""
-    memos_dir = Path("data/memos")
+    memos_dir = BASE_DIR / "data" / "memos"
     if not memos_dir.exists():
         memos_dir.mkdir(parents=True, exist_ok=True)
         return {"memos": []}
@@ -1027,7 +1037,7 @@ async def get_memos():
 async def get_memo_content(memo_id: str):
     """Get the content of a specific memo"""
     try:
-        memos_dir = Path("data/memos")
+        memos_dir = BASE_DIR / "data" / "memos"
         file_path = memos_dir / f"{memo_id}.md"
         
         if file_path.exists():
@@ -1043,7 +1053,7 @@ async def get_memo_content(memo_id: str):
 async def create_memo(memo_update: DocumentUpdate):
     """Create a new memo"""
     try:
-        memos_dir = Path("data/memos")
+        memos_dir = BASE_DIR / "data" / "memos"
         memos_dir.mkdir(parents=True, exist_ok=True)
         
         # Generate filename from name
@@ -1079,7 +1089,7 @@ async def create_memo(memo_update: DocumentUpdate):
 async def update_memo(memo_id: str, memo_update: DocumentUpdate):
     """Update an existing memo"""
     try:
-        memos_dir = Path("data/memos")
+        memos_dir = BASE_DIR / "data" / "memos"
         file_path = memos_dir / f"{memo_id}.md"
         
         if not file_path.exists():
@@ -1111,7 +1121,7 @@ async def update_memo(memo_id: str, memo_update: DocumentUpdate):
 async def delete_memo(memo_id: str):
     """Delete a specific memo"""
     try:
-        memos_dir = Path("data/memos")
+        memos_dir = BASE_DIR / "data" / "memos"
         file_path = memos_dir / f"{memo_id}.md"
         
         if not file_path.exists():

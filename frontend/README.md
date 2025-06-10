@@ -1,108 +1,61 @@
 # Automation Agents Frontend
 
-Modern React frontend for the Automation Agents application.
-
-## Environment Configuration
-
-The frontend uses Vite environment variables. Create a `.env` file in the frontend directory:
-
-```bash
-cp .env.example .env
-```
-
-### Environment Variables
-
-All frontend environment variables must be prefixed with `VITE_` to be accessible in the browser:
-
-```env
-# API Configuration
-VITE_API_BASE_URL=http://localhost:8000
-VITE_WS_URL=ws://localhost:8000/ws
-
-# Application Configuration
-VITE_APP_TITLE=Automation Agents
-VITE_APP_VERSION=1.0.0
-
-# Development Configuration
-VITE_DEV_MODE=true
-VITE_ENABLE_DEVTOOLS=true
-```
-
-### Backend Integration
-
-The frontend is designed to work with the backend API server. Make sure to:
-
-1. **Start the backend first:**
-   ```bash
-   # In the root directory
-   uvicorn src.api_server:app --reload
-   # OR
-   ./run.sh
-   ```
-
-2. **Then start the frontend:**
-   ```bash
-   # In the frontend directory
-   npm run dev
-   ```
-
-### Configuration vs Backend local.env
-
-| **Backend (local.env)** | **Frontend (.env)** | **Purpose** |
-|------------------------|---------------------|-------------|
-| `MODEL_CHOICE` | N/A | Server-side only |
-| `LLM_API_KEY` | N/A | Server-side only |
-| `OPENAI_API_KEY` | N/A | Server-side only |
-| N/A | `VITE_API_BASE_URL` | Frontend API endpoint |
-| N/A | `VITE_WS_URL` | Frontend WebSocket URL |
-
-The backend's `local.env` contains sensitive API keys and server configuration that should never be exposed to the frontend. The frontend's `.env` only contains safe, public configuration.
-
-## Development Commands
-
-```bash
-# Install dependencies
-npm install
-
-# Start development server
-npm run dev
-
-# Build for production
-npm run build
-
-# Preview production build
-npm run preview
-
-# Run tests
-npm test
-
-# Run E2E tests
-npm run test:e2e
-
-# Lint code
-npm run lint
-
-# Format code
-npm run format
-
-# Type check
-npm run type-check
-```
+A simple HTML-based frontend for the automation agents system.
 
 ## Architecture
 
-- **Vite + React 18 + TypeScript**
-- **Zustand** for state management
-- **React Router** for navigation
-- **Tailwind CSS** for styling
-- **Vitest + RTL** for testing
-- **Playwright** for E2E testing
+- **Technology**: HTML5 with inline React 18 and Babel transpilation
+- **No Build Process**: Runs directly in the browser
+- **Real-time**: WebSocket connection to backend for chat functionality
+- **API**: RESTful endpoints for CRUD operations
 
-## API Integration
+## Configuration
 
-The frontend automatically connects to the backend API using the configured environment variables:
+Before running the frontend, ensure the backend API URLs are correct in `index.html`:
 
-- **REST API**: `VITE_API_BASE_URL/api/*`
-- **WebSocket**: `VITE_WS_URL`
+```javascript
+// Configuration - Update these URLs to match your backend server
+const CONFIG = {
+    API_BASE_URL: 'http://localhost:8000',  // Backend API server URL
+    WS_URL: 'ws://localhost:8000/ws'        // WebSocket URL for real-time chat
+};
+```
 
-All API calls are proxied through Vite during development for CORS handling.
+## Running the Frontend
+
+### Option 1: Direct File Access
+Simply open `index.html` in your web browser.
+
+### Option 2: HTTP Server
+```bash
+# Using Python (recommended)
+python -m http.server 3000
+
+# Using npm scripts
+npm run dev
+```
+
+Then open http://localhost:3000
+
+## Features
+
+- **Task Management**: Create, edit, and track tasks with priorities and due dates
+- **Documents**: Manage and edit documents with indexing capability
+- **Meeting Notes**: View and analyze meeting notes with task suggestions
+- **Daily Logs**: Track daily work logs with date filtering (✨ recently added)
+- **Real-time Chat**: WebSocket-based chat with the AI assistant
+
+## Backend Requirements
+
+The frontend requires the backend API server to be running:
+
+```bash
+# From the root directory
+uvicorn src.api_server:app --reload --host 0.0.0.0 --port 8000
+```
+
+## Recent Updates
+
+- ✅ Added date picker filtering for Daily Logs
+- ✅ Cleaned up TypeScript/Vite artifacts
+- ✅ Simplified to HTML-only architecture
