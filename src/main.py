@@ -130,13 +130,17 @@ class AutomationAgentsCLI:
             self.display_help()
             return True
         
-        if query.lower().startswith("plan"):
+        if query.lower().startswith("plan") or query.lower() == "planner":
             # Extract date from query if present
-            # Remove "plan" and any leading "for" from the query
-            date_part = query[4:].strip()
-            if date_part.lower().startswith("for "):
-                date_part = date_part[4:].strip()
-            date_query = date_part if date_part else "today"
+            if query.lower() == "planner":
+                # Default to today for bare "planner" command
+                date_query = "today"
+            else:
+                # Remove "plan" and any leading "for" from the query
+                date_part = query[4:].strip()
+                if date_part.lower().startswith("for "):
+                    date_part = date_part[4:].strip()
+                date_query = date_part if date_part else "today"
             await self.handle_planning(date_query)
             return True
         

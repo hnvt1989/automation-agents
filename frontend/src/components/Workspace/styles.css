@@ -181,6 +181,64 @@
   background: white;
 }
 
+/* Date Filter */
+.date-filter {
+  display: flex;
+  align-items: center;
+  position: relative;
+  min-width: 180px;
+}
+
+.date-filter-icon {
+  position: absolute;
+  left: 12px;
+  color: #6c757d;
+  z-index: 1;
+}
+
+.date-picker {
+  width: 100%;
+  padding: 10px 16px 10px 40px;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  font-size: 14px;
+  outline: none;
+  background: #f8f9fa;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.date-picker:focus {
+  border-color: #007bff;
+  background: white;
+  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+}
+
+.clear-date-filter {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #6c757d;
+  cursor: pointer;
+  font-size: 18px;
+  font-weight: bold;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.2s;
+}
+
+.clear-date-filter:hover {
+  background: #e9ecef;
+  color: #495057;
+}
+
 /* Bulk Actions */
 .bulk-actions {
   display: flex;

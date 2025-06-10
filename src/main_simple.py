@@ -86,9 +86,13 @@ class SimpleAutomationAgentsCLI:
             self.display_help()
             return True
         
-        if query.lower().startswith("plan"):
+        if query.lower().startswith("plan") or query.lower() == "planner":
             # Extract date from query if present
-            date_query = query[4:].strip() if len(query) > 4 else "today"
+            if query.lower() == "planner":
+                # Default to today for bare "planner" command
+                date_query = "today"
+            else:
+                date_query = query[4:].strip() if len(query) > 4 else "today"
             await self.handle_planning(date_query)
             return True
         

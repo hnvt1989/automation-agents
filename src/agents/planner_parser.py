@@ -80,6 +80,18 @@ Output: {"action": "list_meetings", "data": {"date": "next Monday"}}
 Input: "check for meetings scheduled for tomorrow"
 Output: {"action": "list_meetings", "data": {"date": "tomorrow"}}
 
+Input: "get meetings for 6/11"
+Output: {"action": "list_meetings", "data": {"date": "6/11"}}
+
+Input: "get meetings for wednesday"
+Output: {"action": "list_meetings", "data": {"date": "wednesday"}}
+
+Input: "meetings on 12/25"
+Output: {"action": "list_meetings", "data": {"date": "12/25"}}
+
+Input: "meetings for June 11"
+Output: {"action": "list_meetings", "data": {"date": "June 11"}}
+
 Input: "remove task TASK-1"
 Output: {"action": "remove_task", "data": {"identifier": "TASK-1"}}
 
@@ -112,7 +124,13 @@ Output: {"action": "brainstorm_task", "data": {"task_id": "ONBOARDING-1", "force
 
 Always return valid JSON with "action" and "data" fields.
 For update_task, use "identifier" for task ID or title, and "updates" for changes.
-For dates, preserve the natural language (e.g., "tomorrow") - we'll parse it later.
+CRITICAL DATE HANDLING: You MUST preserve the EXACT natural language as given by the user. 
+- If user says "6/11", output "6/11" (NOT "2025-06-11", "2025-06-16", or any ISO format)
+- If user says "wednesday", output "wednesday" (NOT "2025-06-11")
+- If user says "tomorrow", output "tomorrow" (NOT "2025-06-10")
+- NEVER convert, calculate, or interpret dates - keep them exactly as typed
+- WRONG: {"date": "2025-06-16"} for input "6/11"
+- CORRECT: {"date": "6/11"} for input "6/11"
 """
 
 
@@ -155,8 +173,12 @@ class PlannerParser:
                 log_error(f"Invalid response structure: {parsed}")
                 return {"action": "error", "data": {"message": "Invalid response from parser"}}
             
-            # Post-process dates if present
-            parsed["data"] = self._process_dates(parsed["data"])
+            # Fix incorrect date conversions by LLM
+            self._fix_date_conversions(parsed, query)
+            
+            # Post-process dates if present (only for actions that need ISO dates)
+            if parsed["action"] not in ["list_meetings"]:
+                parsed["data"] = self._process_dates(parsed["data"])
             
             # Post-process times if present
             parsed["data"] = self._process_times(parsed["data"])
@@ -167,6 +189,58 @@ class PlannerParser:
         except Exception as e:
             log_error(f"Error parsing query: {str(e)}")
             return {"action": "error", "data": {"message": str(e)}}
+    
+    def _fix_date_conversions(self, parsed: Dict[str, Any], original_query: str) -> None:
+        """Fix incorrect date conversions by the LLM."""
+        import re
+        
+        # Only fix list_meetings actions
+        if parsed.get("action") != "list_meetings":
+            return
+            
+        data = parsed.get("data", {})
+        if "date" not in data:
+            return
+            
+        llm_date = data["date"]
+        
+        # Extract date patterns from the original query
+        date_patterns = [
+            r'\b(\d{1,2})/(\d{1,2})\b',           # 6/11, 12/25
+            r'\b(\d{1,2})-(\d{1,2})\b',           # 6-11, 12-25  
+            r'\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b',  # weekdays
+            r'\b(today|tomorrow|yesterday)\b',     # relative dates
+        ]
+        
+        found_dates = []
+        for pattern in date_patterns:
+            matches = re.findall(pattern, original_query.lower())
+            found_dates.extend(matches)
+        
+        # If we found date patterns in the original query, check if LLM corrupted them
+        if found_dates:
+            # Check for MM/DD patterns
+            mm_dd_match = re.search(r'\b(\d{1,2})/(\d{1,2})\b', original_query)
+            if mm_dd_match:
+                month, day = mm_dd_match.groups()
+                original_date = f"{month}/{day}"
+                
+                # If LLM converted MM/DD to something else, revert it
+                if llm_date != original_date and re.match(r'\d{4}-\d{2}-\d{2}', llm_date):
+                    log_info(f"Fixing incorrect date conversion: '{original_date}' was converted to '{llm_date}', reverting to '{original_date}'")
+                    data["date"] = original_date
+                    return
+            
+            # Check for weekdays
+            weekday_match = re.search(r'\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b', original_query.lower())
+            if weekday_match:
+                weekday = weekday_match.group(1)
+                
+                # If LLM converted weekday to ISO date, revert it
+                if llm_date != weekday and re.match(r'\d{4}-\d{2}-\d{2}', llm_date):
+                    log_info(f"Fixing incorrect date conversion: '{weekday}' was converted to '{llm_date}', reverting to '{weekday}'")
+                    data["date"] = weekday
+                    return
     
     def _process_dates(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Convert natural language dates to ISO format."""

@@ -51,6 +51,7 @@ Here are the assistant agents and tools you have access to:
    - Crawling multiple pages via sitemap
 8. Planner Tool (handle_planner_task) - for:
    - Adding/scheduling meetings (e.g., "add meeting tomorrow at 10am")
+   - Querying/listing meetings (e.g., "get meetings for tomorrow", "what meetings do I have on 6/11", "meetings for wednesday")
    - Adding tasks to the task list (e.g., "add task: finish report")
    - Updating task attributes (e.g., "change status of job search to in progress", "update TASK-1 priority to high")
    - Logging work done (e.g., "spent 3 hours on TASK-1")
@@ -60,7 +61,7 @@ Here are the assistant agents and tools you have access to:
 
 When you receive a request:
 - First analyze what kind of task it is
-- For meeting scheduling, task management, work logging, or brainstorming tasks, use the Planner Tool
+- For meeting scheduling, meeting queries/listing, task management, work logging, or brainstorming tasks, use the Planner Tool
 - For website scraping/crawling and indexing, use the Web Scraper Tool
 - Delegate to the appropriate specialist agent for other tasks
 - For image analysis tasks (calendar or conversations), use the Filesystem Agent

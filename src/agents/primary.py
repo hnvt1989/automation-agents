@@ -308,17 +308,16 @@ class PrimaryAgent(BaseAgent):
                 
                 elif action == "plan_day":
                     # For plan_day, we still use the original function
-                    from datetime import date, timedelta
-                    
-                    target_date = date.today()
+                    today_date = date.today()
+                    target_date = today_date
                     if "date" in data:
                         date_str = data["date"].lower()
                         if "tomorrow" in date_str:
-                            target_date = date.today() + timedelta(days=1)
+                            target_date = today_date + timedelta(days=1)
                         elif "yesterday" in date_str:
-                            target_date = date.today() - timedelta(days=1)
+                            target_date = today_date - timedelta(days=1)
                         elif "next week" in date_str:
-                            target_date = date.today() + timedelta(weeks=1)
+                            target_date = today_date + timedelta(weeks=1)
                     
                     payload = {
                         'paths': {
@@ -431,23 +430,58 @@ class PrimaryAgent(BaseAgent):
                 return f"Error: {str(e)}"
     
     def _parse_date(self, date_str: str) -> date:
-        """Parse a date string like 'today', 'tomorrow', etc. into a date object."""
+        """Parse a date string like 'today', 'tomorrow', 'wednesday', '6/11' etc. into a date object."""
+        from datetime import datetime
         today = date.today()
         
-        if date_str.lower() in ["today"]:
+        date_str_lower = date_str.lower().strip()
+        
+        # Handle relative dates
+        if date_str_lower in ["today"]:
             return today
-        elif date_str.lower() in ["tomorrow"]:
+        elif date_str_lower in ["tomorrow"]:
             return today + timedelta(days=1)
-        elif date_str.lower() in ["yesterday"]:
+        elif date_str_lower in ["yesterday"]:
             return today - timedelta(days=1)
-        else:
-            # Try to parse as ISO date
+        
+        # Handle weekdays (find next occurrence)
+        weekdays = {
+            'monday': 0, 'tuesday': 1, 'wednesday': 2, 'thursday': 3,
+            'friday': 4, 'saturday': 5, 'sunday': 6
+        }
+        
+        if date_str_lower in weekdays:
+            target_weekday = weekdays[date_str_lower]
+            current_weekday = today.weekday()
+            days_ahead = target_weekday - current_weekday
+            if days_ahead <= 0:  # Target day already happened this week
+                days_ahead += 7  # Get next week's occurrence
+            return today + timedelta(days=days_ahead)
+        
+        # Handle date formats
+        date_formats = [
+            "%Y-%m-%d",      # 2025-06-11
+            "%m/%d/%Y",      # 6/11/2025
+            "%m/%d",         # 6/11 (assume current year)
+            "%m-%d",         # 6-11 (assume current year)
+            "%B %d, %Y",     # June 11, 2025
+            "%B %d",         # June 11 (assume current year)
+            "%b %d, %Y",     # Jun 11, 2025
+            "%b %d",         # Jun 11 (assume current year)
+        ]
+        
+        for fmt in date_formats:
             try:
-                from datetime import datetime
-                return datetime.strptime(date_str, "%Y-%m-%d").date()
+                parsed_date = datetime.strptime(date_str, fmt)
+                # If year not specified, use current year
+                if parsed_date.year == 1900:
+                    parsed_date = parsed_date.replace(year=today.year)
+                return parsed_date.date()
             except ValueError:
-                # Default to today if we can't parse
-                return today
+                continue
+        
+        # Default to today if we can't parse
+        return today
     
     async def run(self, prompt: str, **kwargs) -> Any:
         """Run the primary agent.
