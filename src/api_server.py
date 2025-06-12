@@ -26,6 +26,7 @@ DAILY_LOGS_FILE = BASE_DIR / "data" / "daily_logs.yaml"
 FRONTEND_DIR = BASE_DIR / "frontend"
 VA_NOTES_DIR = BASE_DIR / "data" / "va_notes"
 MEETING_NOTES_DIR = BASE_DIR / "data" / "meeting_notes"
+INTERVIEWS_DIR = BASE_DIR / "data" / "interviews"
 
 
 class Task(BaseModel):
@@ -60,6 +61,15 @@ class DocumentUpdate(BaseModel):
     name: str
     description: str | None = None
     content: str | None = None
+    filename: str | None = None
+
+
+class InterviewUpdate(BaseModel):
+    name: str
+    description: str | None = None
+    notes: str | None = None
+    priority: str | None = None
+    status: str | None = None
     filename: str | None = None
 
 
@@ -1126,6 +1136,196 @@ async def delete_memo(memo_id: str):
         
         if not file_path.exists():
             raise HTTPException(status_code=404, detail="Memo not found")
+        
+        file_path.unlink()
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/interviews")
+async def get_interviews():
+    """Get all interviews from the data/interviews directory"""
+    interviews_dir = INTERVIEWS_DIR
+    if not interviews_dir.exists():
+        interviews_dir.mkdir(parents=True, exist_ok=True)
+        return {"interviews": []}
+
+    interviews = []
+    # Sort files by name for consistent ordering
+    sorted_files = sorted(interviews_dir.glob("*.yaml"), key=lambda x: x.name)
+    
+    for file_path in sorted_files:
+        try:
+            with open(file_path, 'r') as f:
+                interview_data = yaml.safe_load(f) or {}
+            
+            # Extract data from YAML content
+            interview_id = interview_data.get('id', file_path.stem)
+            title = interview_data.get('title', file_path.stem.replace("_", " ").title())
+            
+            interviews.append({
+                "id": interview_id,
+                "name": title,
+                "description": f"Interview - {file_path.name}",
+                "filename": file_path.name,
+                "path": str(file_path.relative_to(BASE_DIR)),
+                "type": "interview",
+                "format": "yaml",
+                "priority": interview_data.get('priority', 'medium'),
+                "status": interview_data.get('status', 'pending'),
+                "notes": interview_data.get('notes', ''),
+                "lastModified": file_path.stat().st_mtime
+            })
+        except Exception as e:
+            print(f"Error reading interview file {file_path}: {e}")
+            # Add minimal data even if YAML parsing fails
+            interviews.append({
+                "id": file_path.stem,
+                "name": file_path.stem.replace("_", " ").title(),
+                "description": f"Interview - {file_path.name} (Parse Error)",
+                "filename": file_path.name,
+                "path": str(file_path.relative_to(BASE_DIR)),
+                "type": "interview",
+                "format": "yaml",
+                "priority": "medium",
+                "status": "pending",
+                "lastModified": file_path.stat().st_mtime
+            })
+    
+    return {"interviews": interviews}
+
+
+@app.get("/interviews/{interview_id}/content")
+async def get_interview_content(interview_id: str):
+    """Get the content of a specific interview"""
+    try:
+        interviews_dir = INTERVIEWS_DIR
+        file_path = interviews_dir / f"{interview_id}.yaml"
+        
+        if file_path.exists():
+            with open(file_path, 'r') as f:
+                interview_data = yaml.safe_load(f) or {}
+            
+            # Return the structured data including notes field
+            return {
+                "content": file_path.read_text(),  # Full YAML for backup
+                "notes": interview_data.get('notes', ''),
+                "priority": interview_data.get('priority', 'medium'),
+                "status": interview_data.get('status', 'pending'),
+                "title": interview_data.get('title', ''),
+                "id": interview_data.get('id', interview_id)
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Interview not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/interviews")
+async def create_interview(interview_update: InterviewUpdate):
+    """Create a new interview"""
+    try:
+        interviews_dir = INTERVIEWS_DIR
+        interviews_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Generate filename from name
+        filename = interview_update.filename or f"{interview_update.name.lower().replace(' ', '_')}.yaml"
+        if not filename.endswith('.yaml'):
+            filename += '.yaml'
+        
+        file_path = interviews_dir / filename
+        
+        # Create YAML structure
+        interview_data = {
+            "id": f"INTERVIEW-{file_path.stem.upper()}",
+            "priority": interview_update.priority or "medium",
+            "status": interview_update.status or "pending",
+            "title": interview_update.name,
+            "notes": interview_update.notes or ""
+        }
+        
+        # Write YAML to file
+        with open(file_path, 'w') as f:
+            yaml.dump(interview_data, f, default_flow_style=False, allow_unicode=True)
+        
+        # Return interview data
+        interview = {
+            "id": interview_data["id"],
+            "name": interview_update.name,
+            "description": interview_update.description or f"Interview - {filename}",
+            "filename": filename,
+            "path": str(file_path.relative_to(BASE_DIR)),
+            "type": "interview",
+            "format": "yaml",
+            "priority": interview_data["priority"],
+            "status": interview_data["status"],
+            "notes": interview_data["notes"],
+            "lastModified": file_path.stat().st_mtime
+        }
+        
+        return {"success": True, "interview": interview}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/interviews/{interview_id}")
+async def update_interview(interview_id: str, interview_update: InterviewUpdate):
+    """Update an existing interview"""
+    try:
+        interviews_dir = INTERVIEWS_DIR
+        file_path = interviews_dir / f"{interview_id}.yaml"
+        
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="Interview not found")
+        
+        # Read existing data
+        with open(file_path, 'r') as f:
+            interview_data = yaml.safe_load(f) or {}
+        
+        # Update fields if provided
+        if interview_update.name is not None:
+            interview_data['title'] = interview_update.name
+        if interview_update.notes is not None:
+            interview_data['notes'] = interview_update.notes
+        if interview_update.priority is not None:
+            interview_data['priority'] = interview_update.priority
+        if interview_update.status is not None:
+            interview_data['status'] = interview_update.status
+        
+        # Write updated YAML back to file
+        with open(file_path, 'w') as f:
+            yaml.dump(interview_data, f, default_flow_style=False, allow_unicode=True)
+        
+        # Return updated interview data
+        interview = {
+            "id": interview_data.get('id', interview_id),
+            "name": interview_data.get('title', interview_update.name or file_path.stem.replace("_", " ").title()),
+            "description": interview_update.description or f"Interview - {file_path.name}",
+            "filename": file_path.name,
+            "path": str(file_path.relative_to(BASE_DIR)),
+            "type": "interview",
+            "format": "yaml",
+            "priority": interview_data.get('priority', 'medium'),
+            "status": interview_data.get('status', 'pending'),
+            "notes": interview_data.get('notes', ''),
+            "lastModified": file_path.stat().st_mtime
+        }
+        
+        return {"success": True, "interview": interview}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/interviews/{interview_id}")
+async def delete_interview(interview_id: str):
+    """Delete a specific interview"""
+    try:
+        interviews_dir = INTERVIEWS_DIR
+        file_path = interviews_dir / f"{interview_id}.yaml"
+        
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="Interview not found")
         
         file_path.unlink()
         return {"success": True}
