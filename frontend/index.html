@@ -1334,6 +1334,11 @@ function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 
                                     }}
                                 />
                             </div>
+                            {!isAddMode && (
+                                <div style={{fontSize: '12px', color: '#6c757d', marginTop: '-10px'}}>
+                                    Note: Name and Description are read-only for interviews. Only status, priority, and notes can be edited.
+                                </div>
+                            )}
                         </React.Fragment>
                     )}
                 </div>
