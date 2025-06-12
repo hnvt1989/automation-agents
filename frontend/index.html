@@ -767,7 +767,8 @@ function Tabs({ current, onSelect }) {
         { id: 'documents', label: 'Documents' },
         { id: 'notes', label: 'Meeting Notes' },
         { id: 'logs', label: 'Daily Logs' },
-        { id: 'memos', label: 'Memos' }
+        { id: 'memos', label: 'Memos' },
+        { id: 'interviews', label: 'Interviews' }
     ];
     
     return (
@@ -1107,8 +1108,8 @@ function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 
                                 value={formData.name}
                                 onChange={e => handleChange('name', e.target.value)}
                                 placeholder="Enter name..."
-                                readOnly={!isAddMode && (type === 'notes' || type === 'documents')}
-                                style={!isAddMode && (type === 'notes' || type === 'documents') ? {backgroundColor: '#f8f9fa', cursor: 'not-allowed'} : {}}
+                                readOnly={!isAddMode && (type === 'notes' || type === 'documents' || type === 'interviews')}
+                                style={!isAddMode && (type === 'notes' || type === 'documents' || type === 'interviews') ? {backgroundColor: '#f8f9fa', cursor: 'not-allowed'} : {}}
                             />
                         </div>
                     )}
@@ -1120,8 +1121,8 @@ function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 
                             value={type === 'logs' ? formData.name : formData.description}
                             onChange={e => handleChange(type === 'logs' ? 'name' : 'description', e.target.value)}
                             placeholder={type === 'logs' ? "Enter log description..." : "Enter description..."}
-                            readOnly={!isAddMode && (type === 'notes' || type === 'documents')}
-                            style={!isAddMode && (type === 'notes' || type === 'documents') ? {backgroundColor: '#f8f9fa', cursor: 'not-allowed'} : {}}
+                            readOnly={!isAddMode && (type === 'notes' || type === 'documents' || type === 'interviews')}
+                            style={!isAddMode && (type === 'notes' || type === 'documents' || type === 'interviews') ? {backgroundColor: '#f8f9fa', cursor: 'not-allowed'} : {}}
                         />
                     </div>
                     
@@ -1276,11 +1277,70 @@ function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 
                             </div>
                         </React.Fragment>
                     )}
+                    
+                    {type === 'interviews' && (
+                        <React.Fragment>
+                            <div className="editor-field">
+                                <label className="editor-label">Status</label>
+                                <select
+                                    className="editor-input"
+                                    value={formData.status || 'pending'}
+                                    onChange={e => handleChange('status', e.target.value)}
+                                >
+                                    <option value="pending">Pending</option>
+                                    <option value="scheduled">Scheduled</option>
+                                    <option value="in_progress">In Progress</option>
+                                    <option value="completed">Completed</option>
+                                    <option value="cancelled">Cancelled</option>
+                                </select>
+                            </div>
+                            
+                            <div className="editor-field">
+                                <label className="editor-label">Priority</label>
+                                <select
+                                    className="editor-input"
+                                    value={formData.priority || 'medium'}
+                                    onChange={e => handleChange('priority', e.target.value)}
+                                >
+                                    <option value="low">Low</option>
+                                    <option value="medium">Medium</option>
+                                    <option value="high">High</option>
+                                </select>
+                            </div>
+                            
+                            <div className="editor-field">
+                                <label className="editor-label">Notes</label>
+                                <textarea
+                                    className="editor-textarea memo-content"
+                                    value={formData.notes || ''}
+                                    onChange={e => handleChange('notes', e.target.value)}
+                                    placeholder="Enter interview notes..."
+                                    rows={20}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Tab') {
+                                            e.preventDefault();
+                                            const textarea = e.target;
+                                            const start = textarea.selectionStart;
+                                            const end = textarea.selectionEnd;
+                                            const value = textarea.value;
+                                            
+                                            const newValue = value.substring(0, start) + '\t' + value.substring(end);
+                                            handleChange('notes', newValue);
+                                            
+                                            setTimeout(() => {
+                                                textarea.selectionStart = textarea.selectionEnd = start + 1;
+                                            }, 0);
+                                        }
+                                    }}
+                                />
+                            </div>
+                        </React.Fragment>
+                    )}
                 </div>
                 
                 <div className="editor-footer">
                     <div className="editor-footer-left">
-                        {!isAddMode && (type === 'tasks' || type === 'logs' || type === 'memos') && (
+                        {!isAddMode && (type === 'tasks' || type === 'logs' || type === 'memos' || type === 'interviews') && (
                             <button className="editor-button danger" onClick={handleDelete}>Delete</button>
                         )}
                     </div>
@@ -1311,7 +1371,8 @@ function Panel({ tab, send }) {
         documents: [],
         notes: [],
         logs: [],
-        memos: []
+        memos: [],
+        interviews: []
     });
     
     const [selected, setSelected] = useState(null);
@@ -1388,6 +1449,16 @@ function Panel({ tab, send }) {
                 .then(data => { 
                     if (data.memos) {
                         setAllItems(prev => ({ ...prev, memos: data.memos }));
+                    }
+                })
+                .catch(() => {});
+            
+            // Fetch interviews
+            fetch(`${CONFIG.API_BASE_URL}/interviews`)
+                .then(r => r.json())
+                .then(data => { 
+                    if (data.interviews) {
+                        setAllItems(prev => ({ ...prev, interviews: data.interviews }));
                     }
                 })
                 .catch(() => {});
@@ -1942,12 +2013,12 @@ function Panel({ tab, send }) {
                             console.log('✏️ EDIT MODE: Editing item at index', selected, 'item:', item);
                             // Store the original index of the item being edited
                             setEditingItemIndex(selected);
-                            // For documents, notes, and memos, fetch the content first
-                            if (tab === 'documents' || tab === 'notes' || tab === 'memos') {
+                            // For documents, notes, memos, and interviews, fetch the content first
+                            if (tab === 'documents' || tab === 'notes' || tab === 'memos' || tab === 'interviews') {
                                 try {
                                     let endpoint;
-                                    if (tab === 'memos') {
-                                        // Memos use ID-based endpoints
+                                    if (tab === 'memos' || tab === 'interviews') {
+                                        // Memos and interviews use ID-based endpoints
                                         endpoint = `${CONFIG.API_BASE_URL}/${tab}/${item.id}/content`;
                                     } else {
                                         // Documents and notes use index-based endpoints
@@ -1957,7 +2028,19 @@ function Panel({ tab, send }) {
                                     const response = await fetch(endpoint);
                                     if (response.ok) {
                                         const data = await response.json();
-                                        setEditingItem({ ...item, content: data.content });
+                                        if (tab === 'interviews') {
+                                            // For interviews, populate all the structured fields
+                                            setEditingItem({ 
+                                                ...item, 
+                                                content: data.content,
+                                                notes: data.notes,
+                                                priority: data.priority,
+                                                status: data.status,
+                                                title: data.title
+                                            });
+                                        } else {
+                                            setEditingItem({ ...item, content: data.content });
+                                        }
                                     } else {
                                         setEditingItem(item);
                                     }
