@@ -831,6 +831,7 @@ function LoggingModal({ isOpen, onClose, onSave, taskItem, errors, isSubmitting 
     const [loggingData, setLoggingData] = useState({
         hours: '',
         description: '',
+        date: new Date().toISOString().split('T')[0], // Default to current date
     });
 
     const handleInputChange = (field, value) => {
@@ -858,6 +859,23 @@ function LoggingModal({ isOpen, onClose, onSave, taskItem, errors, isSubmitting 
                             {errors.submit}
                         </div>
                     )}
+
+                    <div className="editor-field">
+                        <label className="editor-label">Date *</label>
+                        <input
+                            type="date"
+                            className="editor-input"
+                            value={loggingData.date}
+                            onChange={e => handleInputChange('date', e.target.value)}
+                            required
+                            style={errors.date ? { borderColor: '#dc3545' } : {}}
+                        />
+                        {errors.date && (
+                            <div style={{ color: '#dc3545', fontSize: '12px', marginTop: '4px' }}>
+                                {errors.date}
+                            </div>
+                        )}
+                    </div>
 
                     <div className="editor-field">
                         <label className="editor-label">Logging Hours *</label>
@@ -1024,6 +1042,15 @@ function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 
     const validateLoggingForm = () => {
         const newErrors = {};
         
+        if (!loggingData.date || !loggingData.date.trim()) {
+            newErrors.date = 'Date is required';
+        } else {
+            const dateObj = new Date(loggingData.date);
+            if (isNaN(dateObj.getTime())) {
+                newErrors.date = 'Invalid date format';
+            }
+        }
+        
         if (!loggingData.hours.trim()) {
             newErrors.hours = 'Logging hours is required';
         } else {
@@ -1052,7 +1079,7 @@ function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 
             const logEntry = {
                 name: `Task Log: ${formData.name}`,
                 description: loggingData.description || `Logged work on task: ${formData.name}`,
-                date: new Date().toISOString().split('T')[0],
+                date: loggingData.date,
                 actual_hours: hours,
                 log_id: item.id || `TASK-${Date.now()}`
             };
@@ -1067,7 +1094,7 @@ function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 
             if (response.ok) {
                 // Close logging modal
                 setShowLoggingModal(false);
-                setLoggingData({ hours: '', description: '' });
+                setLoggingData({ hours: '', description: '', date: new Date().toISOString().split('T')[0] });
                 setLoggingErrors({});
                 
                 // Optionally show success message
@@ -1085,7 +1112,7 @@ function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 
 
     const handleLoggingCancel = () => {
         setShowLoggingModal(false);
-        setLoggingData({ hours: '', description: '' });
+        setLoggingData({ hours: '', description: '', date: new Date().toISOString().split('T')[0] });
         setLoggingErrors({});
     };
 
@@ -1394,7 +1421,7 @@ function Panel({ tab, send }) {
     // Filter states
     const [searchQuery, setSearchQuery] = useState('');
     const [typeFilter, setTypeFilter] = useState('all');
-    const [statusFilter, setStatusFilter] = useState('all');
+    const [statusFilter, setStatusFilter] = useState(['todo', 'in_progress', 'pending']);
     const [sortBy, setSortBy] = useState('name');
     const [tagFilter, setTagFilter] = useState('all');
     const [dateFilter, setDateFilter] = useState('');
@@ -1402,6 +1429,25 @@ function Panel({ tab, send }) {
     useEffect(() => {
         setSelected(null);
     }, [tab]);
+
+    // Close dropdowns when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            // Close all status filter dropdowns
+            const dropdowns = document.querySelectorAll('[data-dropdown="status-filter"]');
+            dropdowns.forEach(dropdown => {
+                if (!dropdown.contains(event.target)) {
+                    const dropdownMenu = dropdown.querySelector('[data-dropdown-menu]');
+                    if (dropdownMenu) {
+                        dropdownMenu.style.display = 'none';
+                    }
+                }
+            });
+        };
+
+        document.addEventListener('click', handleClickOutside);
+        return () => document.removeEventListener('click', handleClickOutside);
+    }, []);
 
     useEffect(() => {
         if (!loaded) {
@@ -1491,8 +1537,8 @@ function Panel({ tab, send }) {
         }
         
         // Apply status filter for tasks
-        if (tab === 'tasks' && statusFilter !== 'all') {
-            items = items.filter(item => item.status === statusFilter);
+        if (tab === 'tasks' && Array.isArray(statusFilter) && statusFilter.length > 0) {
+            items = items.filter(item => statusFilter.includes(item.status));
         }
         if (tab === 'logs' && tagFilter !== 'all') {
             // For logs, filter by log_id pattern since they don't have tags
@@ -1609,6 +1655,11 @@ function Panel({ tab, send }) {
         setLoggingErrors({});
         
         // Validation
+        if (!loggingData.date || !loggingData.date.trim()) {
+            setLoggingErrors({ date: 'Date is required' });
+            return;
+        }
+        
         if (!loggingData.hours || parseFloat(loggingData.hours) <= 0) {
             setLoggingErrors({ hours: 'Please enter a valid number of hours' });
             return;
@@ -1623,7 +1674,7 @@ function Panel({ tab, send }) {
             const logEntry = {
                 name: `Worked on: ${taskName}`,
                 description: loggingData.description || `Completed work on task: ${taskName}`,
-                date: new Date().toISOString().split('T')[0],
+                date: loggingData.date,
                 log_id: `TASK-${taskId}`,
                 actual_hours: parseFloat(loggingData.hours),
                 planned_hours: parseFloat(loggingData.hours),
@@ -1905,23 +1956,80 @@ function Panel({ tab, send }) {
                                 <option value="work">Work</option>
                             </select>
                             
-                            <select
-                                value={statusFilter}
-                                onChange={(e) => setStatusFilter(e.target.value)}
-                                style={{
-                                    padding: '8px 12px',
-                                    border: '1px solid #dee2e6',
-                                    borderRadius: '6px',
-                                    fontSize: '14px'
-                                }}
-                            >
-                                <option value="all">All Status</option>
-                                <option value="todo">To Do</option>
-                                <option value="in_progress">In Progress</option>
-                                <option value="completed">Completed</option>
-                                <option value="cancelled">Cancelled</option>
-                                <option value="pending">Pending</option>
-                            </select>
+                            <div style={{ position: 'relative', display: 'inline-block' }} data-dropdown="status-filter">
+                                <div 
+                                    style={{
+                                        padding: '8px 12px',
+                                        border: '1px solid #dee2e6',
+                                        borderRadius: '6px',
+                                        fontSize: '14px',
+                                        minWidth: '150px',
+                                        cursor: 'pointer',
+                                        backgroundColor: 'white',
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center'
+                                    }}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        const dropdown = e.currentTarget.nextElementSibling;
+                                        dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+                                    }}
+                                >
+                                    <span>
+                                        {statusFilter.length === 0 ? 'No status selected' : 
+                                         statusFilter.length === 1 ? statusFilter[0].replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) :
+                                         `${statusFilter.length} statuses selected`}
+                                    </span>
+                                    <span>▼</span>
+                                </div>
+                                <div 
+                                    style={{
+                                        position: 'absolute',
+                                        top: '100%',
+                                        left: 0,
+                                        right: 0,
+                                        backgroundColor: 'white',
+                                        border: '1px solid #dee2e6',
+                                        borderRadius: '6px',
+                                        marginTop: '2px',
+                                        zIndex: 1000,
+                                        display: 'none',
+                                        boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                    data-dropdown-menu
+                                >
+                                    {['todo', 'in_progress', 'pending', 'completed', 'cancelled'].map(status => (
+                                        <label 
+                                            key={status}
+                                            style={{
+                                                display: 'block',
+                                                padding: '8px 12px',
+                                                cursor: 'pointer',
+                                                fontSize: '14px',
+                                                borderBottom: '1px solid #f1f3f4'
+                                            }}
+                                            onMouseEnter={(e) => e.target.style.backgroundColor = '#f8f9fa'}
+                                            onMouseLeave={(e) => e.target.style.backgroundColor = 'white'}
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={statusFilter.includes(status)}
+                                                onChange={(e) => {
+                                                    if (e.target.checked) {
+                                                        setStatusFilter(prev => [...prev, status]);
+                                                    } else {
+                                                        setStatusFilter(prev => prev.filter(s => s !== status));
+                                                    }
+                                                }}
+                                                style={{ marginRight: '8px' }}
+                                            />
+                                            {status.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
                             
                             <select
                                 value={sortBy}

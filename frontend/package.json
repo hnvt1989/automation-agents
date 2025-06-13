@@ -1,12 +1,18 @@
 {
   "name": "automation-agents-frontend",
   "version": "1.0.0",
-  "type": "module",
   "scripts": {
     "dev": "python -m http.server 3000",
     "serve": "python -m http.server 3000",
-    "start": "python -m http.server 3000"
+    "start": "python -m http.server 3000",
+    "test": "jest"
   },
   "description": "HTML-based frontend with inline React for automation agents system",
-  "main": "index.html"
+  "main": "index.html",
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.3",
+    "jest": "^30.0.0",
+    "jest-environment-jsdom": "^30.0.0",
+    "jsdom": "^26.1.0"
+  }
 }
