@@ -3,11 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Automation Agents</title>
+    <title>GALACTIC COMMAND CENTER</title>
     <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
     <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;900&family=Roboto+Mono:wght@300;400;500;600&display=swap');
+
         * {
             margin: 0;
             padding: 0;
@@ -15,36 +17,77 @@
         }
         
         body { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
-            background: #f8f9fa;
+            font-family: 'Roboto Mono', 'Orbitron', monospace;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
+            color: #00ff88;
             height: 100vh;
             overflow: hidden;
+            position: relative;
+        }
+        
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: 
+                radial-gradient(circle at 20% 80%, rgba(0, 123, 255, 0.05) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(255, 215, 0, 0.03) 0%, transparent 50%),
+                radial-gradient(circle at 40% 40%, rgba(255, 0, 0, 0.02) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: -1;
         }
         
         .container { 
             display: flex; 
             height: 100vh; 
-            background: white;
+            background: rgba(10, 10, 10, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(0, 255, 136, 0.2);
         }
         
         .assistant-panel { 
             width: 40%; 
-            background: #f8f9fa;
+            background: linear-gradient(180deg, rgba(22, 33, 62, 0.8) 0%, rgba(10, 10, 10, 0.9) 100%);
             display: flex; 
             flex-direction: column;
-            border-right: 1px solid #e9ecef;
+            border-right: 2px solid rgba(0, 255, 136, 0.3);
+            box-shadow: inset 0 0 20px rgba(0, 255, 136, 0.1);
         }
         
         .assistant-header {
             padding: 24px;
-            border-bottom: 1px solid #e9ecef;
-            background: white;
+            border-bottom: 2px solid rgba(0, 255, 136, 0.3);
+            background: linear-gradient(90deg, rgba(0, 255, 136, 0.1) 0%, rgba(255, 215, 0, 0.1) 100%);
+            position: relative;
+        }
+        
+        .assistant-header::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent 0%, #00ff88 50%, transparent 100%);
+            animation: pulse-line 2s infinite;
+        }
+        
+        @keyframes pulse-line {
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 1; }
         }
         
         .assistant-title {
             font-size: 24px;
-            font-weight: 600;
-            color: #212529;
+            font-weight: 700;
+            font-family: 'Orbitron', monospace;
+            color: #00ff88;
+            text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+            text-transform: uppercase;
+            letter-spacing: 2px;
         }
         
         .messages { 
@@ -54,6 +97,7 @@
             display: flex;
             flex-direction: column;
             gap: 16px;
+            background: linear-gradient(180deg, rgba(10, 10, 10, 0.3) 0%, rgba(22, 33, 62, 0.2) 100%);
         }
         
         .message {
@@ -64,18 +108,23 @@
             font-size: 14px;
             white-space: pre-wrap;
             word-wrap: break-word;
+            border: 1px solid rgba(0, 255, 136, 0.2);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(5px);
         }
         
         .message.assistant {
-            background: #e9ecef;
-            color: #495057;
+            background: linear-gradient(135deg, rgba(0, 255, 136, 0.1) 0%, rgba(22, 33, 62, 0.3) 100%);
+            color: #e0e0e0;
             align-self: flex-start;
+            border-left: 3px solid #00ff88;
         }
         
         .message.user {
-            background: #007bff;
-            color: white;
+            background: linear-gradient(135deg, rgba(255, 215, 0, 0.2) 0%, rgba(255, 69, 0, 0.1) 100%);
+            color: #ffffff;
             align-self: flex-end;
+            border-right: 3px solid #ffd700;
         }
         
         .message h1, .message h2, .message h3 {
@@ -126,74 +175,105 @@
         
         .input-area { 
             padding: 24px;
-            background: white;
-            border-top: 1px solid #e9ecef;
+            background: linear-gradient(90deg, rgba(0, 255, 136, 0.1) 0%, rgba(255, 215, 0, 0.1) 100%);
+            border-top: 2px solid rgba(0, 255, 136, 0.3);
             display: flex;
             gap: 12px;
             align-items: center;
+            position: relative;
+        }
+        
+        .input-area::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent 0%, #00ff88 50%, transparent 100%);
+            animation: pulse-line 2s infinite;
         }
         
         .input-area input { 
             flex: 1;
             padding: 12px 16px;
-            border: 1px solid #dee2e6;
+            border: 2px solid rgba(0, 255, 136, 0.3);
             border-radius: 8px;
             font-size: 14px;
+            font-family: 'Roboto Mono', monospace;
             outline: none;
-            background: #f8f9fa;
+            background: rgba(10, 10, 10, 0.5);
+            color: #00ff88;
+            backdrop-filter: blur(5px);
         }
         
         .input-area input:focus {
-            border-color: #007bff;
-            background: white;
+            border-color: #00ff88;
+            box-shadow: 0 0 15px rgba(0, 255, 136, 0.3);
+            background: rgba(10, 10, 10, 0.7);
         }
         
         .input-area input::placeholder {
-            color: #6c757d;
+            color: rgba(0, 255, 136, 0.6);
         }
         
         .send-button {
             padding: 12px 24px;
-            background: #007bff;
-            color: white;
-            border: none;
+            background: linear-gradient(135deg, #00ff88 0%, #ffd700 100%);
+            color: #000;
+            border: 2px solid #00ff88;
             border-radius: 8px;
             font-size: 14px;
-            font-weight: 500;
+            font-weight: 600;
+            font-family: 'Orbitron', monospace;
             cursor: pointer;
-            transition: background-color 0.2s;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
         
         .send-button:hover {
-            background: #0056b3;
+            background: linear-gradient(135deg, #ffd700 0%, #00ff88 100%);
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
+            transform: translateY(-2px);
         }
         
         .workspace-panel { 
             width: 60%; 
             display: flex; 
             flex-direction: column;
-            background: white;
+            background: linear-gradient(180deg, rgba(22, 33, 62, 0.8) 0%, rgba(10, 10, 10, 0.9) 100%);
+            border-left: 2px solid rgba(0, 255, 136, 0.3);
+            box-shadow: inset 0 0 20px rgba(0, 255, 136, 0.1);
         }
         
         .workspace-header {
             padding: 32px 32px 0 32px;
             border-bottom: none;
+            background: linear-gradient(90deg, rgba(255, 215, 0, 0.1) 0%, rgba(0, 255, 136, 0.1) 100%);
+            position: relative;
         }
         
         .workspace-title {
             font-size: 24px;
-            font-weight: 600;
-            color: #212529;
+            font-weight: 700;
+            font-family: 'Orbitron', monospace;
+            color: #ffd700;
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+            text-transform: uppercase;
+            letter-spacing: 2px;
             margin-bottom: 32px;
         }
         
         .tabs { 
             display: flex;
             gap: 0;
-            background: #f8f9fa;
+            background: linear-gradient(135deg, rgba(0, 255, 136, 0.1) 0%, rgba(255, 215, 0, 0.1) 100%);
+            border: 2px solid rgba(0, 255, 136, 0.3);
             border-radius: 12px;
             padding: 4px;
             margin-bottom: 32px;
+            backdrop-filter: blur(5px);
         }
         
         .tab-button {
@@ -203,21 +283,27 @@
             border: none;
             font-size: 14px;
             font-weight: 500;
-            color: #6c757d;
+            font-family: 'Roboto Mono', monospace;
+            color: rgba(0, 255, 136, 0.7);
             cursor: pointer;
             border-radius: 8px;
-            transition: all 0.2s;
+            transition: all 0.3s;
             text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
         
         .tab-button.active {
-            background: white;
-            color: #212529;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            background: linear-gradient(135deg, rgba(0, 255, 136, 0.2) 0%, rgba(255, 215, 0, 0.2) 100%);
+            color: #00ff88;
+            box-shadow: 0 0 15px rgba(0, 255, 136, 0.3);
+            border: 1px solid rgba(0, 255, 136, 0.5);
+            text-shadow: 0 0 5px rgba(0, 255, 136, 0.5);
         }
         
         .tab-button:hover:not(.active) {
-            color: #495057;
+            color: #00ff88;
+            background: rgba(0, 255, 136, 0.1);
         }
         
         .workspace-content { 
@@ -243,21 +329,25 @@
             border-radius: 12px;
             margin-bottom: 12px;
             cursor: pointer;
-            transition: all 0.2s;
-            border: 1px solid transparent;
-            background: #ffffff;
+            transition: all 0.3s;
+            border: 2px solid rgba(0, 255, 136, 0.2);
+            background: linear-gradient(135deg, rgba(10, 10, 10, 0.5) 0%, rgba(22, 33, 62, 0.3) 100%);
+            backdrop-filter: blur(5px);
+            color: #e0e0e0;
         }
         
         .workspace-item:hover {
-            background: #f8f9fa;
-            transform: translateY(-1px);
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            background: linear-gradient(135deg, rgba(0, 255, 136, 0.1) 0%, rgba(22, 33, 62, 0.5) 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0, 255, 136, 0.2);
+            border-color: rgba(0, 255, 136, 0.5);
         }
         
         .workspace-item.selected {
-            background: #f0f8ff;
-            border-color: #007bff;
-            box-shadow: 0 2px 8px rgba(0, 123, 255, 0.15);
+            background: linear-gradient(135deg, rgba(255, 215, 0, 0.2) 0%, rgba(0, 255, 136, 0.2) 100%);
+            border-color: #ffd700;
+            box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+            color: #ffffff;
         }
         
         .item-icon {
@@ -280,20 +370,24 @@
         .item-title {
             font-size: 16px;
             font-weight: 600;
-            color: #212529;
+            font-family: 'Orbitron', monospace;
+            color: #00ff88;
             margin-bottom: 4px;
             line-height: 1.4;
+            text-shadow: 0 0 5px rgba(0, 255, 136, 0.3);
         }
         
         .item-description {
             font-size: 14px;
-            color: #6c757d;
+            font-family: 'Roboto Mono', monospace;
+            color: rgba(224, 224, 224, 0.8);
             line-height: 1.4;
         }
         
         .item-meta {
             font-size: 12px;
-            color: #868e96;
+            font-family: 'Roboto Mono', monospace;
+            color: rgba(255, 215, 0, 0.7);
             margin-top: 8px;
         }
         
@@ -301,38 +395,56 @@
             display: flex;
             gap: 12px;
             padding: 24px 32px 32px 32px;
-            border-top: 1px solid #f1f3f4;
-            background: white;
+            border-top: 2px solid rgba(0, 255, 136, 0.3);
+            background: linear-gradient(90deg, rgba(0, 255, 136, 0.1) 0%, rgba(255, 215, 0, 0.1) 100%);
             margin-top: auto;
+            position: relative;
+        }
+        
+        .action-buttons::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent 0%, #00ff88 50%, transparent 100%);
+            animation: pulse-line 2s infinite;
         }
         
         .action-button {
             padding: 12px 24px;
-            border: 1px solid #dee2e6;
-            background: white;
-            color: #495057;
+            border: 2px solid rgba(0, 255, 136, 0.5);
+            background: linear-gradient(135deg, rgba(10, 10, 10, 0.7) 0%, rgba(22, 33, 62, 0.5) 100%);
+            color: #00ff88;
             border-radius: 8px;
             font-size: 14px;
-            font-weight: 500;
+            font-weight: 600;
+            font-family: 'Orbitron', monospace;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            backdrop-filter: blur(5px);
         }
         
         .action-button:hover {
-            background: #f8f9fa;
-            border-color: #adb5bd;
-            transform: translateY(-1px);
+            background: linear-gradient(135deg, rgba(0, 255, 136, 0.2) 0%, rgba(22, 33, 62, 0.7) 100%);
+            border-color: #00ff88;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0, 255, 136, 0.3);
         }
         
         .action-button.primary {
-            background: #007bff;
-            color: white;
-            border-color: #007bff;
+            background: linear-gradient(135deg, #00ff88 0%, #ffd700 100%);
+            color: #000;
+            border-color: #ffd700;
         }
         
         .action-button.primary:hover {
-            background: #0056b3;
-            border-color: #0056b3;
+            background: linear-gradient(135deg, #ffd700 0%, #00ff88 100%);
+            border-color: #00ff88;
+            box-shadow: 0 8px 20px rgba(255, 215, 0, 0.4);
         }
         
         .status-completed .item-icon {
@@ -414,7 +526,8 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0, 0, 0, 0.5);
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(10px);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -422,54 +535,79 @@
         }
         
         .editor-container {
-            background: white;
+            background: linear-gradient(135deg, rgba(10, 10, 10, 0.95) 0%, rgba(22, 33, 62, 0.9) 100%);
+            border: 2px solid rgba(0, 255, 136, 0.5);
             border-radius: 12px;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+            box-shadow: 0 20px 60px rgba(0, 255, 136, 0.3);
             width: 90%;
             max-width: 800px;
             max-height: 90vh;
             display: flex;
             flex-direction: column;
+            backdrop-filter: blur(20px);
         }
         
         .editor-header {
             padding: 24px;
-            border-bottom: 1px solid #e9ecef;
+            border-bottom: 2px solid rgba(0, 255, 136, 0.3);
+            background: linear-gradient(90deg, rgba(0, 255, 136, 0.1) 0%, rgba(255, 215, 0, 0.1) 100%);
             display: flex;
             justify-content: space-between;
             align-items: center;
+            position: relative;
+        }
+        
+        .editor-header::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent 0%, #00ff88 50%, transparent 100%);
+            animation: pulse-line 2s infinite;
         }
         
         .editor-title {
             font-size: 20px;
-            font-weight: 600;
-            color: #212529;
+            font-weight: 700;
+            font-family: 'Orbitron', monospace;
+            color: #00ff88;
+            text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
         
         .editor-close {
             width: 32px;
             height: 32px;
-            border: none;
-            background: #f8f9fa;
+            border: 2px solid rgba(255, 69, 0, 0.5);
+            background: linear-gradient(135deg, rgba(255, 69, 0, 0.2) 0%, rgba(139, 0, 0, 0.3) 100%);
             border-radius: 6px;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
             font-size: 20px;
-            color: #6c757d;
-            transition: all 0.2s;
+            font-family: 'Orbitron', monospace;
+            color: #ff4500;
+            transition: all 0.3s;
+            backdrop-filter: blur(5px);
         }
         
         .editor-close:hover {
-            background: #e9ecef;
-            color: #495057;
+            background: linear-gradient(135deg, rgba(255, 69, 0, 0.4) 0%, rgba(139, 0, 0, 0.5) 100%);
+            border-color: #ff4500;
+            color: #ffffff;
+            box-shadow: 0 0 15px rgba(255, 69, 0, 0.5);
+            transform: scale(1.1);
         }
         
         .editor-content {
             flex: 1;
             padding: 24px;
             overflow-y: auto;
+            background: linear-gradient(180deg, rgba(10, 10, 10, 0.3) 0%, rgba(22, 33, 62, 0.2) 100%);
         }
         
         .editor-field {
@@ -479,27 +617,41 @@
         .editor-label {
             display: block;
             font-size: 14px;
-            font-weight: 500;
-            color: #495057;
+            font-weight: 600;
+            font-family: 'Orbitron', monospace;
+            color: #00ff88;
             margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            text-shadow: 0 0 5px rgba(0, 255, 136, 0.3);
         }
         
         .editor-input,
         .editor-textarea {
             width: 100%;
             padding: 12px 16px;
-            border: 1px solid #dee2e6;
+            border: 2px solid rgba(0, 255, 136, 0.3);
             border-radius: 8px;
             font-size: 14px;
-            font-family: inherit;
+            font-family: 'Roboto Mono', monospace;
+            background: rgba(10, 10, 10, 0.5);
+            color: #e0e0e0;
             outline: none;
-            transition: border-color 0.2s;
+            transition: all 0.3s;
+            backdrop-filter: blur(5px);
         }
         
         .editor-input:focus,
         .editor-textarea:focus {
-            border-color: #007bff;
-            box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+            border-color: #00ff88;
+            box-shadow: 0 0 15px rgba(0, 255, 136, 0.3);
+            background: rgba(10, 10, 10, 0.7);
+            color: #ffffff;
+        }
+        
+        .editor-input::placeholder,
+        .editor-textarea::placeholder {
+            color: rgba(0, 255, 136, 0.5);
         }
         
         .editor-textarea {
@@ -526,60 +678,83 @@
         
         .editor-footer {
             padding: 24px;
-            border-top: 1px solid #e9ecef;
+            border-top: 2px solid rgba(0, 255, 136, 0.3);
+            background: linear-gradient(90deg, rgba(0, 255, 136, 0.1) 0%, rgba(255, 215, 0, 0.1) 100%);
             display: flex;
             justify-content: flex-end;
             gap: 12px;
+            position: relative;
+        }
+        
+        .editor-footer::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent 0%, #00ff88 50%, transparent 100%);
+            animation: pulse-line 2s infinite;
         }
         
         .editor-button {
             padding: 12px 24px;
-            border: 1px solid #dee2e6;
-            background: white;
-            color: #495057;
+            border: 2px solid rgba(0, 255, 136, 0.5);
+            background: linear-gradient(135deg, rgba(10, 10, 10, 0.7) 0%, rgba(22, 33, 62, 0.5) 100%);
+            color: #00ff88;
             border-radius: 8px;
             font-size: 14px;
-            font-weight: 500;
+            font-weight: 600;
+            font-family: 'Orbitron', monospace;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            backdrop-filter: blur(5px);
         }
         
         .editor-button:hover {
-            background: #f8f9fa;
-            border-color: #adb5bd;
+            background: linear-gradient(135deg, rgba(0, 255, 136, 0.2) 0%, rgba(22, 33, 62, 0.7) 100%);
+            border-color: #00ff88;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0, 255, 136, 0.3);
         }
         
         .editor-button.primary {
-            background: #007bff;
-            color: white;
-            border-color: #007bff;
+            background: linear-gradient(135deg, #00ff88 0%, #ffd700 100%);
+            color: #000;
+            border-color: #ffd700;
         }
         
         .editor-button.primary:hover {
-            background: #0056b3;
-            border-color: #0056b3;
+            background: linear-gradient(135deg, #ffd700 0%, #00ff88 100%);
+            border-color: #00ff88;
+            box-shadow: 0 8px 20px rgba(255, 215, 0, 0.4);
         }
         
         .editor-button.secondary {
-            background: #6c757d;
-            color: white;
-            border-color: #6c757d;
+            background: linear-gradient(135deg, rgba(169, 169, 169, 0.3) 0%, rgba(105, 105, 105, 0.5) 100%);
+            color: #a9a9a9;
+            border-color: rgba(169, 169, 169, 0.5);
         }
         
         .editor-button.secondary:hover {
-            background: #5a6268;
-            border-color: #545b62;
+            background: linear-gradient(135deg, rgba(169, 169, 169, 0.5) 0%, rgba(105, 105, 105, 0.7) 100%);
+            border-color: #a9a9a9;
+            color: #ffffff;
         }
         
         .editor-button.danger {
-            background: #dc3545;
-            color: white;
-            border-color: #dc3545;
+            background: linear-gradient(135deg, rgba(255, 69, 0, 0.3) 0%, rgba(139, 0, 0, 0.5) 100%);
+            color: #ff4500;
+            border-color: rgba(255, 69, 0, 0.5);
         }
         
         .editor-button.danger:hover {
-            background: #c82333;
-            border-color: #bd2130;
+            background: linear-gradient(135deg, rgba(255, 69, 0, 0.5) 0%, rgba(139, 0, 0, 0.7) 100%);
+            border-color: #ff4500;
+            color: #ffffff;
+            box-shadow: 0 8px 20px rgba(255, 69, 0, 0.4);
         }
         
         .editor-footer {
@@ -763,12 +938,12 @@ function getDeadlineBadge(dueDate) {
 
 function Tabs({ current, onSelect }) {
     const tabs = [
-        { id: 'tasks', label: 'Tasks' },
-        { id: 'documents', label: 'Documents' },
-        { id: 'notes', label: 'Meeting Notes' },
-        { id: 'logs', label: 'Daily Logs' },
-        { id: 'memos', label: 'Memos' },
-        { id: 'interviews', label: 'Interviews' }
+        { id: 'tasks', label: 'Missions' },
+        { id: 'documents', label: 'Intel Files' },
+        { id: 'notes', label: 'Briefings' },
+        { id: 'logs', label: 'Operations Log' },
+        { id: 'memos', label: 'Transmissions' },
+        { id: 'interviews', label: 'Interrogations' }
     ];
     
     return (
@@ -1922,7 +2097,11 @@ function Panel({ tab, send }) {
     return (
         <React.Fragment>
             {/* Search and Filter Controls */}
-            <div style={{ padding: '0 32px 16px 32px', borderBottom: '1px solid #f1f3f4' }}>
+            <div style={{ 
+                padding: '0 32px 16px 32px', 
+                borderBottom: '2px solid rgba(0, 255, 136, 0.3)',
+                background: 'linear-gradient(90deg, rgba(0, 255, 136, 0.05) 0%, rgba(255, 215, 0, 0.05) 100%)'
+            }}>
                 <input
                     type="text"
                     placeholder={`Search ${tab}...`}
@@ -1931,10 +2110,15 @@ function Panel({ tab, send }) {
                     style={{
                         width: '100%',
                         padding: '12px 16px',
-                        border: '1px solid #dee2e6',
+                        border: '2px solid rgba(0, 255, 136, 0.3)',
                         borderRadius: '8px',
                         fontSize: '14px',
-                        marginBottom: '12px'
+                        fontFamily: 'Roboto Mono, monospace',
+                        background: 'rgba(10, 10, 10, 0.5)',
+                        color: '#00ff88',
+                        marginBottom: '12px',
+                        backdropFilter: 'blur(5px)',
+                        outline: 'none'
                     }}
                 />
                 
@@ -1946,9 +2130,13 @@ function Panel({ tab, send }) {
                                 onChange={(e) => setTypeFilter(e.target.value)}
                                 style={{
                                     padding: '8px 12px',
-                                    border: '1px solid #dee2e6',
+                                    border: '2px solid rgba(0, 255, 136, 0.3)',
                                     borderRadius: '6px',
-                                    fontSize: '14px'
+                                    fontSize: '14px',
+                                    fontFamily: 'Roboto Mono, monospace',
+                                    background: 'rgba(10, 10, 10, 0.5)',
+                                    color: '#00ff88',
+                                    backdropFilter: 'blur(5px)'
                                 }}
                             >
                                 <option value="all">All Types</option>
@@ -1960,12 +2148,15 @@ function Panel({ tab, send }) {
                                 <div 
                                     style={{
                                         padding: '8px 12px',
-                                        border: '1px solid #dee2e6',
+                                        border: '2px solid rgba(0, 255, 136, 0.3)',
                                         borderRadius: '6px',
                                         fontSize: '14px',
+                                        fontFamily: 'Roboto Mono, monospace',
                                         minWidth: '150px',
                                         cursor: 'pointer',
-                                        backgroundColor: 'white',
+                                        background: 'rgba(10, 10, 10, 0.5)',
+                                        color: '#00ff88',
+                                        backdropFilter: 'blur(5px)',
                                         display: 'flex',
                                         justifyContent: 'space-between',
                                         alignItems: 'center'
@@ -1989,13 +2180,14 @@ function Panel({ tab, send }) {
                                         top: '100%',
                                         left: 0,
                                         right: 0,
-                                        backgroundColor: 'white',
-                                        border: '1px solid #dee2e6',
+                                        background: 'linear-gradient(135deg, rgba(10, 10, 10, 0.95) 0%, rgba(22, 33, 62, 0.9) 100%)',
+                                        border: '2px solid rgba(0, 255, 136, 0.5)',
                                         borderRadius: '6px',
                                         marginTop: '2px',
                                         zIndex: 1000,
                                         display: 'none',
-                                        boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                                        boxShadow: '0 8px 20px rgba(0, 255, 136, 0.3)',
+                                        backdropFilter: 'blur(10px)'
                                     }}
                                     onClick={(e) => e.stopPropagation()}
                                     data-dropdown-menu
@@ -2008,10 +2200,18 @@ function Panel({ tab, send }) {
                                                 padding: '8px 12px',
                                                 cursor: 'pointer',
                                                 fontSize: '14px',
-                                                borderBottom: '1px solid #f1f3f4'
+                                                fontFamily: 'Roboto Mono, monospace',
+                                                color: '#e0e0e0',
+                                                borderBottom: '1px solid rgba(0, 255, 136, 0.2)'
                                             }}
-                                            onMouseEnter={(e) => e.target.style.backgroundColor = '#f8f9fa'}
-                                            onMouseLeave={(e) => e.target.style.backgroundColor = 'white'}
+                                            onMouseEnter={(e) => {
+                                                e.target.style.backgroundColor = 'rgba(0, 255, 136, 0.2)';
+                                                e.target.style.color = '#00ff88';
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                e.target.style.backgroundColor = 'transparent';
+                                                e.target.style.color = '#e0e0e0';
+                                            }}
                                         >
                                             <input
                                                 type="checkbox"
@@ -2036,9 +2236,13 @@ function Panel({ tab, send }) {
                                 onChange={(e) => setSortBy(e.target.value)}
                                 style={{
                                     padding: '8px 12px',
-                                    border: '1px solid #dee2e6',
+                                    border: '2px solid rgba(0, 255, 136, 0.3)',
                                     borderRadius: '6px',
-                                    fontSize: '14px'
+                                    fontSize: '14px',
+                                    fontFamily: 'Roboto Mono, monospace',
+                                    background: 'rgba(10, 10, 10, 0.5)',
+                                    color: '#00ff88',
+                                    backdropFilter: 'blur(5px)'
                                 }}
                             >
                                 <option value="name">Sort by Name</option>
@@ -2071,9 +2275,13 @@ function Panel({ tab, send }) {
                                 onChange={(e) => setTagFilter(e.target.value)}
                                 style={{
                                     padding: '8px 12px',
-                                    border: '1px solid #dee2e6',
+                                    border: '2px solid rgba(0, 255, 136, 0.3)',
                                     borderRadius: '6px',
-                                    fontSize: '14px'
+                                    fontSize: '14px',
+                                    fontFamily: 'Roboto Mono, monospace',
+                                    background: 'rgba(10, 10, 10, 0.5)',
+                                    color: '#00ff88',
+                                    backdropFilter: 'blur(5px)'
                                 }}
                             >
                                 <option value="all">All Tags</option>
@@ -2261,12 +2469,12 @@ function Chat({ messages, send }) {
     return (
         <div className="assistant-panel">
             <div className="assistant-header">
-                <div className="assistant-title">Assistant</div>
+                <div className="assistant-title">Imperial Command</div>
             </div>
             <div className="messages">
                 {messages.length === 0 && (
                     <div className="message assistant">
-                        Hello! How can I assist you today?
+                        Greetings, Commander. Your orders await execution.
                     </div>
                 )}
                 {messages.map((m, i) => (
@@ -2393,7 +2601,7 @@ function App() {
             <Chat messages={messages} send={send} />
             <div className="workspace-panel">
                 <div className="workspace-header">
-                    <div className="workspace-title">Workspace</div>
+                    <div className="workspace-title">Mission Control</div>
                     <Tabs current={tab} onSelect={setTab} />
                 </div>
                 <div className="workspace-content">
