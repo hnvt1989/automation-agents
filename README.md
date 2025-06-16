@@ -2,6 +2,10 @@
 
 A sophisticated multi-agent system using the Model Context Protocol (MCP) for automation, quality assurance, and intelligent document processing. The system orchestrates specialized agents to handle various tasks including web search, file management, code analysis, and contextual information retrieval through an enhanced RAG (Retrieval Augmented Generation) system.
 
+![Application Interface](main.png)
+
+*The application features a sleek, dark Star Wars-inspired interface with a dual-pane layout: Imperial Command chat on the left and Mission Control workspace on the right, complete with task management, document indexing, and real-time agent interactions.*
+
 ## 🚀 Key Features
 
 ### **Multi-Agent Architecture**
