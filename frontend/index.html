@@ -780,10 +780,10 @@
         }
         
         .workspace-item.due-soon {
-            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-            border: 2px solid #f59e0b;
+            background: linear-gradient(135deg, rgba(255, 215, 0, 0.4) 0%, rgba(255, 193, 7, 0.6) 100%);
+            border: 2px solid #ffd700;
             animation: pulse-warning 3s infinite;
-            box-shadow: 0 4px 12px rgba(245, 158, 11, 0.2);
+            box-shadow: 0 4px 12px rgba(255, 215, 0, 0.4);
         }
         
         @keyframes pulse-danger {
@@ -846,8 +846,9 @@
         }
         
         .workspace-item.due-soon .item-title {
-            color: #92400e;
-            font-weight: 600;
+            color: #1a1a1a;
+            font-weight: 700;
+            text-shadow: 0 0 3px rgba(255, 255, 255, 0.8);
         }
         
         .workspace-item.overdue .item-icon {
@@ -857,9 +858,19 @@
         }
         
         .workspace-item.due-soon .item-icon {
-            background: #fef3c7;
-            color: #f59e0b;
-            border: 2px solid #f59e0b;
+            background: rgba(255, 215, 0, 0.3);
+            color: #1a1a1a;
+            border: 2px solid #ffd700;
+        }
+        
+        .workspace-item.due-soon .item-description {
+            color: #2d2d2d;
+            font-weight: 500;
+        }
+        
+        .workspace-item.due-soon .item-meta {
+            color: #1a1a1a;
+            font-weight: 600;
         }
         
         .deadline-alert {
