@@ -1,9 +1,14 @@
 """Primary orchestration agent."""
 from typing import Dict, Any, Optional, List
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.openai import OpenAIModel
+import httpx
+import re
+import pytz
+import yaml
+import os
 
 from src.agents.base import BaseAgent
 from src.core.constants import AgentType, SYSTEM_PROMPTS
@@ -428,6 +433,235 @@ class PrimaryAgent(BaseAgent):
             except Exception as e:
                 log_error(f"Error in planner task: {str(e)}")
                 return f"Error: {str(e)}"
+        
+        @self.agent.tool
+        async def parse_calendar_events(ctx: RunContext[PrimaryAgentDeps], time_range: str = "this week", force_refresh: bool = False) -> str:
+            """Parse calendar events from Google Calendar and save to meetings.yaml.
+            
+            Args:
+                time_range: Time range to fetch events for (e.g., "this week", "next week", "today", "tomorrow")
+                force_refresh: If True, clear existing meetings.yaml before adding new events
+            
+            Returns:
+                Summary of parsed events
+            """
+            log_info(f"Parsing calendar events for: {time_range}")
+            try:
+                # Get the calendar URL from environment
+                calendar_url = os.getenv("GOOGLE_DRIVE_CALENDAR_SECRET_LINK")
+                if not calendar_url:
+                    return "Error: Calendar URL not configured in environment variables"
+                
+                # Fetch ICS data
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(calendar_url, timeout=30.0)
+                    response.raise_for_status()
+                    ics_content = response.text
+                
+                # Parse the time range
+                today = date.today()
+                start_date, end_date = self._parse_time_range(time_range, today)
+                
+                # Parse events from ICS
+                events = []
+                event_blocks = re.findall(r'BEGIN:VEVENT.*?END:VEVENT', ics_content, re.DOTALL)
+                
+                for block in event_blocks:
+                    # Extract event details
+                    summary_match = re.search(r'SUMMARY:(.+)', block)
+                    dtstart_match = re.search(r'DTSTART(?:;[^:]+)?:(.+)', block)
+                    
+                    # Check if this is a recurring event
+                    rrule_match = re.search(r'RRULE:(.+)', block)
+                    
+                    # For recurring events, we need to check if there are specific instances
+                    # Look for RECURRENCE-ID which indicates a specific instance of a recurring event
+                    recurrence_id_match = re.search(r'RECURRENCE-ID(?:;[^:]+)?:(.+)', block)
+                    
+                    # If it has RRULE but no RECURRENCE-ID, it's the master recurring event
+                    # We should still parse it for the first occurrence
+                    
+                    if summary_match and dtstart_match:
+                        summary = summary_match.group(1).strip()
+                        dtstart_full = dtstart_match.group(0)  # Get full DTSTART line
+                        dtstart = dtstart_match.group(1).strip()
+                        
+                        try:
+                            # Parse the date/time
+                            if 'T' in dtstart and len(dtstart) >= 15:
+                                # Full datetime format YYYYMMDDTHHMMSSZ or YYYYMMDDTHHMMSS
+                                if dtstart.endswith('Z'):
+                                    # UTC time - this needs conversion
+                                    dt = datetime.strptime(dtstart, '%Y%m%dT%H%M%SZ')
+                                    dt = pytz.UTC.localize(dt)
+                                    # Convert UTC to Eastern
+                                    eastern = pytz.timezone('US/Eastern')
+                                    dt_eastern = dt.astimezone(eastern)
+                                else:
+                                    # Local time without Z - assume it's already in Eastern Time
+                                    dt = datetime.strptime(dtstart[:15], '%Y%m%dT%H%M%S')
+                                    # Just use the time as-is, assuming it's already ET
+                                    dt_eastern = dt
+                            else:
+                                # Date only format YYYYMMDD
+                                dt = datetime.strptime(dtstart[:8], '%Y%m%d')
+                                dt_eastern = dt
+                            
+                            # Check if event is within the time range
+                            event_date = dt_eastern.date()
+                            
+                            # For recurring events, we need special handling
+                            if rrule_match and not recurrence_id_match:
+                                # This is a recurring event master
+                                # Parse RRULE to check if it occurs within our date range
+                                rrule_str = rrule_match.group(1)
+                                
+                                # Simple check: if it's a weekly recurring event and the start date is before our range
+                                # we should check what day of week it occurs on
+                                if 'WEEKLY' in rrule_str or 'WEEKLY' in rrule_str.upper():
+                                    # Get the day of week from the original start date
+                                    event_weekday = dt_eastern.weekday()
+                                    
+                                    # Check each day in our date range
+                                    current = start_date
+                                    while current <= end_date:
+                                        if current.weekday() == event_weekday and current >= event_date:
+                                            # This recurring event occurs on this day
+                                            events.append({
+                                                'date': current.strftime('%Y-%m-%d'),
+                                                'time': dt_eastern.strftime('%H:%M'),
+                                                'event': summary
+                                            })
+                                        current += timedelta(days=1)
+                                else:
+                                    # For non-weekly recurring events, just check the start date
+                                    if start_date <= event_date <= end_date:
+                                        events.append({
+                                            'date': dt_eastern.strftime('%Y-%m-%d'),
+                                            'time': dt_eastern.strftime('%H:%M'),
+                                            'event': summary
+                                        })
+                            else:
+                                # Non-recurring event or specific instance
+                                if start_date <= event_date <= end_date:
+                                    events.append({
+                                        'date': dt_eastern.strftime('%Y-%m-%d'),
+                                        'time': dt_eastern.strftime('%H:%M'),
+                                        'event': summary
+                                    })
+                        except Exception as e:
+                            log_error(f"Error parsing event '{summary}': {e}")
+                            continue
+                
+                # Sort events by date and time
+                events.sort(key=lambda x: (x['date'], x['time']))
+                
+                if not events:
+                    return f"No calendar events found for {time_range}"
+                
+                # Load existing meetings
+                meetings_path = "data/meetings.yaml"
+                if force_refresh:
+                    existing_meetings = []
+                else:
+                    try:
+                        with open(meetings_path, 'r') as f:
+                            existing_meetings = yaml.safe_load(f) or []
+                    except:
+                        existing_meetings = []
+                
+                # Convert existing meetings to a set for duplicate checking
+                # Note: This might incorrectly dedupe different events with same name/time
+                existing_set = {(m['date'], m['time'], m['event']) for m in existing_meetings}
+                
+                # Add new events that don't already exist
+                new_events_count = 0
+                skipped_events = []
+                for event in events:
+                    event_tuple = (event['date'], event['time'], event['event'])
+                    if event_tuple not in existing_set:
+                        existing_meetings.append(event)
+                        existing_set.add(event_tuple)  # Add to set to prevent duplicates within this run
+                        new_events_count += 1
+                    else:
+                        skipped_events.append(event)
+                
+                # Sort all meetings by date and time
+                existing_meetings.sort(key=lambda x: (x['date'], x['time']))
+                
+                # Save back to meetings.yaml
+                with open(meetings_path, 'w') as f:
+                    yaml.dump(existing_meetings, f, default_flow_style=False, allow_unicode=True)
+                
+                # Create summary
+                summary = f"Calendar events for {time_range}:\n"
+                summary += f"- Found {len(events)} events in the specified range\n"
+                summary += f"- Added {new_events_count} new events to meetings.yaml\n"
+                summary += f"- Skipped {len(skipped_events)} duplicate events\n\n"
+                
+                if skipped_events:
+                    summary += "Note: The following events were skipped as duplicates:\n"
+                    for event in skipped_events:
+                        summary += f"  - {event['date']} at {event['time']}: {event['event']}\n"
+                    summary += "\n"
+                
+                summary += "All events in range:\n"
+                for event in events:
+                    summary += f"- {event['date']} at {event['time']}: {event['event']}\n"
+                
+                return summary
+                
+            except httpx.HTTPError as e:
+                return f"Error fetching calendar: {str(e)}"
+            except Exception as e:
+                log_error(f"Error parsing calendar events: {str(e)}")
+                return f"Error: {str(e)}"
+    
+    def _parse_time_range(self, time_range: str, today: date) -> tuple[date, date]:
+        """Parse a time range string and return start and end dates.
+        
+        Args:
+            time_range: String like "this week", "next week", "today", "tomorrow"
+            today: Current date
+            
+        Returns:
+            Tuple of (start_date, end_date)
+        """
+        time_range_lower = time_range.lower().strip()
+        
+        if time_range_lower == "today":
+            return today, today
+        elif time_range_lower == "tomorrow":
+            tomorrow = today + timedelta(days=1)
+            return tomorrow, tomorrow
+        elif time_range_lower == "this week":
+            # Get start of week (Monday) and end of week (Sunday)
+            days_since_monday = today.weekday()
+            start_of_week = today - timedelta(days=days_since_monday)
+            end_of_week = start_of_week + timedelta(days=6)
+            return start_of_week, end_of_week
+        elif time_range_lower == "next week":
+            # Get start of next week (Monday) and end of next week (Sunday)
+            days_since_monday = today.weekday()
+            start_of_this_week = today - timedelta(days=days_since_monday)
+            start_of_next_week = start_of_this_week + timedelta(days=7)
+            end_of_next_week = start_of_next_week + timedelta(days=6)
+            return start_of_next_week, end_of_next_week
+        elif time_range_lower == "this month":
+            # First day of current month to last day of current month
+            start_of_month = today.replace(day=1)
+            # Get last day of month
+            if today.month == 12:
+                end_of_month = today.replace(year=today.year + 1, month=1, day=1) - timedelta(days=1)
+            else:
+                end_of_month = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
+            return start_of_month, end_of_month
+        else:
+            # Default to this week if not recognized
+            days_since_monday = today.weekday()
+            start_of_week = today - timedelta(days=days_since_monday)
+            end_of_week = start_of_week + timedelta(days=6)
+            return start_of_week, end_of_week
     
     def _parse_date(self, date_str: str) -> date:
         """Parse a date string like 'today', 'tomorrow', 'wednesday', '6/11' etc. into a date object."""
