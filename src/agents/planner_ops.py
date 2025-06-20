@@ -4,6 +4,8 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 import yaml
 import os
+import time
+from pathlib import Path
 
 from src.utils.logging import log_info, log_error
 
@@ -17,13 +19,32 @@ def load_yaml(path: str) -> Any:
 
 
 def save_yaml(path: str, data: Any) -> None:
-    """Save data to a YAML file."""
+    """Save data to a YAML file with atomic write to prevent corruption."""
     # Convert datetime.date keys to strings for consistency
     if isinstance(data, dict):
         data = {str(k): v for k, v in data.items()}
     
-    with open(path, "w", encoding="utf-8") as fh:
-        yaml.dump(data, fh, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    # Create a temporary file first
+    temp_path = f"{path}.tmp.{os.getpid()}"
+    
+    try:
+        # Write to temporary file
+        with open(temp_path, "w", encoding="utf-8") as fh:
+            yaml.dump(data, fh, default_flow_style=False, allow_unicode=True, sort_keys=False)
+            fh.flush()
+            os.fsync(fh.fileno())
+        
+        # Atomically replace the original file
+        os.replace(temp_path, path)
+        
+    except Exception as e:
+        # Clean up temporary file if it exists
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except:
+                pass
+        raise e
 
 
 def generate_task_id(tasks: List[Dict[str, Any]]) -> str:
@@ -99,6 +120,13 @@ class PlannerOperations:
             if not isinstance(tasks, list):
                 return {"success": False, "error": "Invalid tasks file structure"}
             
+            # Check if a task with the same title already exists (prevent duplicates)
+            title = data.get("title", "New task")
+            for existing_task in tasks:
+                if existing_task.get("title", "").lower() == title.lower():
+                    log_info(f"Task with title '{title}' already exists, skipping creation")
+                    return {"success": False, "error": f"Task with title '{title}' already exists"}
+            
             # Use custom ID if provided, otherwise generate one
             custom_id = data.get("id") or data.get("identifier")
             if custom_id:
@@ -113,7 +141,7 @@ class PlannerOperations:
             # Create task with defaults
             task = {
                 "id": task_id,
-                "title": data.get("title", "New task"),
+                "title": title,
                 "priority": data.get("priority", "medium"),
                 "status": data.get("status", "pending"),
                 "tags": data.get("tags", []),
@@ -127,18 +155,24 @@ class PlannerOperations:
             tasks.append(task)
             save_yaml(self.paths['tasks'], tasks)
             
+            log_info(f"Successfully created task: {task_id} - {title}")
             return {"success": True, "task": task}
             
         except Exception as e:
+            log_error(f"Error adding task: {str(e)}")
             return {"success": False, "error": str(e)}
     
     def update_task(self, identifier: str, updates: Dict[str, Any]) -> Dict[str, Any]:
         """Update an existing task."""
         try:
+            log_info(f"Updating task '{identifier}' with updates: {updates}")
+            
             tasks = load_yaml(self.paths['tasks']) or []
+            initial_task_count = len(tasks)
             task = find_task(tasks, identifier)
             
             if not task:
+                log_error(f"Task '{identifier}' not found for update")
                 return {"success": False, "error": f"Task '{identifier}' not found"}
             
             # Track what changed
@@ -162,7 +196,13 @@ class PlannerOperations:
                     task[field] = value
                     changes.append(f"{field}: {old_value} → {value}")
             
+            # Verify no new tasks were created
+            if len(tasks) != initial_task_count:
+                log_error(f"Task count changed during update! Before: {initial_task_count}, After: {len(tasks)}")
+            
             save_yaml(self.paths['tasks'], tasks)
+            
+            log_info(f"Successfully updated task '{task['id']}' - {task['title']}: {'; '.join(changes)}")
             
             return {
                 "success": True,
@@ -172,6 +212,7 @@ class PlannerOperations:
             }
             
         except Exception as e:
+            log_error(f"Error updating task: {str(e)}")
             return {"success": False, "error": str(e)}
     
     def remove_task(self, identifier: str) -> Dict[str, Any]:
