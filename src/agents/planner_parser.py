@@ -173,6 +173,18 @@ class PlannerParser:
                 log_error(f"Invalid response structure: {parsed}")
                 return {"action": "error", "data": {"message": "Invalid response from parser"}}
             
+            # Log the parsed action
+            log_info(f"Parsed action: {parsed['action']}")
+            
+            # Special handling for update_task to ensure it's not misinterpreted as add_task
+            if parsed["action"] == "add_task" and any(word in query.lower() for word in ["update", "change", "modify", "mark", "set"]):
+                log_error(f"Potential misparse: Query '{query}' parsed as add_task but contains update keywords")
+                # Try to correct it
+                if "identifier" not in parsed["data"] and any(word in query.lower() for word in ["status", "priority", "tag"]):
+                    log_info("Attempting to correct parse to update_task")
+                    # This might be an update request
+                    return {"action": "error", "data": {"message": "Ambiguous request - please specify the task ID or title to update"}}
+            
             # Fix incorrect date conversions by LLM
             self._fix_date_conversions(parsed, query)
             
@@ -183,7 +195,7 @@ class PlannerParser:
             # Post-process times if present
             parsed["data"] = self._process_times(parsed["data"])
             
-            log_info(f"Parsed result: {parsed}")
+            log_info(f"Final parsed result: {parsed}")
             return parsed
             
         except Exception as e:

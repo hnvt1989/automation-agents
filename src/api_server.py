@@ -475,8 +475,17 @@ async def update_task(task_id: str, task_update: TaskUpdate):
     """Update a specific task by ID"""
     try:
         tasks_file = Path(config_storage["tasks_file"])
+        
+        # Log the update request
+        print(f"\n=== UPDATE TASK DEBUG ===")
+        print(f"Updating task ID: {task_id}")
+        print(f"Update data: {task_update.dict(exclude_unset=True)}")
+        
         with open(tasks_file, 'r') as f:
             tasks = yaml.safe_load(f) or []
+        
+        initial_task_count = len(tasks)
+        print(f"Total tasks before update: {initial_task_count}")
         
         # Find the task with the matching ID
         task_to_update = None
@@ -490,6 +499,8 @@ async def update_task(task_id: str, task_update: TaskUpdate):
         if task_to_update is None:
             raise HTTPException(status_code=404, detail=f"Task with ID '{task_id}' not found")
         
+        print(f"Found task at index {task_index}: {task_to_update.get('title')}")
+        
         # Update the task with new values
         if task_update.title is not None:
             tasks[task_index]['title'] = task_update.title
@@ -498,6 +509,7 @@ async def update_task(task_id: str, task_update: TaskUpdate):
         if task_update.description is not None:
             tasks[task_index]['description'] = task_update.description
         if task_update.status is not None:
+            print(f"Updating status from '{tasks[task_index].get('status')}' to '{task_update.status}'")
             tasks[task_index]['status'] = task_update.status
         if task_update.priority is not None:
             tasks[task_index]['priority'] = task_update.priority
@@ -514,14 +526,22 @@ async def update_task(task_id: str, task_update: TaskUpdate):
                 # Keep existing value
                 pass
         
+        # Verify no new tasks were created
+        if len(tasks) != initial_task_count:
+            print(f"WARNING: Task count changed! Before: {initial_task_count}, After: {len(tasks)}")
+        
         # Write back to file
         with open(tasks_file, 'w') as f:
             yaml.dump(tasks, f, default_flow_style=False, allow_unicode=True)
+        
+        print(f"Task updated successfully. Total tasks after update: {len(tasks)}")
+        print("=========================\n")
         
         return {"success": True, "task": tasks[task_index]}
     except HTTPException:
         raise
     except Exception as e:
+        print(f"ERROR updating task: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
