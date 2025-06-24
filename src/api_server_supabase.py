@@ -13,7 +13,7 @@ from dotenv import load_dotenv, set_key, find_dotenv
 
 from src.core.config import get_settings
 from src.mcp import get_mcp_manager
-from src.agents.primary import PrimaryAgent
+from src.agents.primary import PrimaryAgent, PrimaryAgentDeps
 from src.agents.brave_search import BraveSearchAgent
 from src.agents.filesystem import FilesystemAgent
 from src.agents.rag import RAGAgent
@@ -588,7 +588,267 @@ async def update_document(doc_index: int, doc_update: DocumentUpdate):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ... (keep remaining endpoints like interviews, chat, config, etc.)
+# Memos endpoints
+@app.get("/memos")
+async def get_memos():
+    """Get all memos from the data/memos directory"""
+    memos_dir = BASE_DIR / "data" / "memos"
+    if not memos_dir.exists():
+        memos_dir.mkdir(parents=True, exist_ok=True)
+        return {"memos": []}
+
+    memos = []
+    # Sort files by name for consistent ordering
+    sorted_files = sorted(memos_dir.glob("*.md"), key=lambda x: x.name)
+    
+    for file_path in sorted_files:
+        name = file_path.stem.replace("_", " ").title()
+        description = f"Memo - {file_path.name}"
+        memos.append({
+            "id": file_path.stem,
+            "name": name,
+            "description": description,
+            "filename": file_path.name,
+            "path": str(file_path.relative_to(BASE_DIR)),
+            "type": "memo",
+            "format": "markdown",
+            "lastModified": file_path.stat().st_mtime
+        })
+    
+    return {"memos": memos}
+
+
+@app.post("/memos")
+async def create_memo(memo_update: DocumentUpdate):
+    """Create a new memo"""
+    try:
+        memos_dir = BASE_DIR / "data" / "memos"
+        memos_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Generate filename from name
+        filename = memo_update.filename or f"{memo_update.name.lower().replace(' ', '_')}.md"
+        if not filename.endswith('.md'):
+            filename += '.md'
+        
+        file_path = memos_dir / filename
+        
+        # Write content to file
+        content = memo_update.content or ""
+        file_path.write_text(content)
+        
+        # Return memo data
+        memo = {
+            "id": file_path.stem,
+            "name": memo_update.name,
+            "description": memo_update.description or f"Memo - {filename}",
+            "filename": filename,
+            "path": str(file_path.relative_to(BASE_DIR)),
+            "type": "memo",
+            "format": "markdown",
+            "content": content,
+            "lastModified": file_path.stat().st_mtime
+        }
+        
+        return {"success": True, "memo": memo}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/memos/{memo_id}")
+async def update_memo(memo_id: str, memo_update: DocumentUpdate):
+    """Update an existing memo"""
+    try:
+        memos_dir = BASE_DIR / "data" / "memos"
+        file_path = memos_dir / f"{memo_id}.md"
+        
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="Memo not found")
+        
+        # Update content
+        if memo_update.content is not None:
+            file_path.write_text(memo_update.content)
+        
+        # Return updated memo data
+        memo = {
+            "id": memo_id,
+            "name": memo_update.name or file_path.stem.replace("_", " ").title(),
+            "description": memo_update.description or f"Memo - {file_path.name}",
+            "filename": file_path.name,
+            "path": str(file_path.relative_to(BASE_DIR)),
+            "type": "memo",
+            "format": "markdown",
+            "content": memo_update.content,
+            "lastModified": file_path.stat().st_mtime
+        }
+        
+        return {"success": True, "memo": memo}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/memos/{memo_id}")
+async def delete_memo(memo_id: str):
+    """Delete a specific memo"""
+    try:
+        memos_dir = BASE_DIR / "data" / "memos"
+        file_path = memos_dir / f"{memo_id}.md"
+        
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="Memo not found")
+        
+        file_path.unlink()
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Interviews endpoints
+@app.get("/interviews")
+async def get_interviews():
+    """Get all interviews from the data/interviews directory"""
+    interviews_dir = INTERVIEWS_DIR
+    if not interviews_dir.exists():
+        interviews_dir.mkdir(parents=True, exist_ok=True)
+        return {"interviews": []}
+
+    interviews = []
+    # Sort files by name for consistent ordering
+    sorted_files = sorted(interviews_dir.glob("*.yaml"), key=lambda x: x.name)
+    
+    for file_path in sorted_files:
+        try:
+            with open(file_path, 'r') as f:
+                interview_data = yaml.safe_load(f) or {}
+            
+            # Use filename stem as ID
+            interview_id = file_path.stem
+            
+            interview = {
+                "id": interview_id,
+                "name": interview_data.get("name", file_path.stem.replace("_", " ").title()),
+                "description": interview_data.get("description", f"Interview - {file_path.name}"),
+                "filename": file_path.name,
+                "path": str(file_path.relative_to(BASE_DIR)),
+                "status": interview_data.get("status", "pending"),
+                "priority": interview_data.get("priority", "medium"),
+                "notes": interview_data.get("notes", ""),
+                "lastModified": file_path.stat().st_mtime
+            }
+            interviews.append(interview)
+        except Exception as e:
+            print(f"Error reading interview file {file_path}: {e}")
+            continue
+    
+    return {"interviews": interviews}
+
+
+@app.post("/interviews")
+async def create_interview(interview_update: InterviewUpdate):
+    """Create a new interview"""
+    try:
+        interviews_dir = INTERVIEWS_DIR
+        interviews_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Generate filename from name
+        filename = interview_update.filename or f"{interview_update.name.lower().replace(' ', '_')}.yaml"
+        if not filename.endswith('.yaml'):
+            filename += '.yaml'
+        
+        file_path = interviews_dir / filename
+        
+        # Create interview data
+        interview_data = {
+            "name": interview_update.name,
+            "description": interview_update.description or f"Interview - {filename}",
+            "status": interview_update.status or "pending",
+            "priority": interview_update.priority or "medium",
+            "notes": interview_update.notes or ""
+        }
+        
+        # Write to file
+        with open(file_path, 'w') as f:
+            yaml.dump(interview_data, f, default_flow_style=False, allow_unicode=True)
+        
+        # Return interview data
+        interview = {
+            "id": file_path.stem,
+            "name": interview_data["name"],
+            "description": interview_data["description"],
+            "filename": filename,
+            "path": str(file_path.relative_to(BASE_DIR)),
+            "status": interview_data["status"],
+            "priority": interview_data["priority"],
+            "notes": interview_data["notes"],
+            "lastModified": file_path.stat().st_mtime
+        }
+        
+        return {"success": True, "interview": interview}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/interviews/{interview_id}")
+async def update_interview(interview_id: str, interview_update: InterviewUpdate):
+    """Update an existing interview"""
+    try:
+        interviews_dir = INTERVIEWS_DIR
+        file_path = interviews_dir / f"{interview_id}.yaml"
+        
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="Interview not found")
+        
+        # Read existing data
+        with open(file_path, 'r') as f:
+            interview_data = yaml.safe_load(f) or {}
+        
+        # Update fields that are provided
+        if interview_update.name is not None:
+            interview_data["name"] = interview_update.name
+        if interview_update.description is not None:
+            interview_data["description"] = interview_update.description
+        if interview_update.status is not None:
+            interview_data["status"] = interview_update.status
+        if interview_update.priority is not None:
+            interview_data["priority"] = interview_update.priority
+        if interview_update.notes is not None:
+            interview_data["notes"] = interview_update.notes
+        
+        # Write back to file
+        with open(file_path, 'w') as f:
+            yaml.dump(interview_data, f, default_flow_style=False, allow_unicode=True)
+        
+        # Return updated interview data
+        interview = {
+            "id": interview_id,
+            "name": interview_data["name"],
+            "description": interview_data["description"],
+            "filename": file_path.name,
+            "path": str(file_path.relative_to(BASE_DIR)),
+            "status": interview_data["status"],
+            "priority": interview_data["priority"],
+            "notes": interview_data["notes"],
+            "lastModified": file_path.stat().st_mtime
+        }
+        
+        return {"success": True, "interview": interview}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/interviews/{interview_id}")
+async def delete_interview(interview_id: str):
+    """Delete a specific interview"""
+    try:
+        interviews_dir = INTERVIEWS_DIR
+        file_path = interviews_dir / f"{interview_id}.yaml"
+        
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="Interview not found")
+        
+        file_path.unlink()
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # WebSocket for real-time chat
 @app.websocket("/ws")
@@ -597,37 +857,65 @@ async def websocket_endpoint(websocket: WebSocket):
     
     # Get instances
     settings = get_settings()
-    mcp_manager = await get_mcp_manager()
+    mcp_manager = get_mcp_manager()
+    if not mcp_manager.is_initialized():
+        await mcp_manager.initialize()
     
-    # Initialize agents
-    primary_agent = PrimaryAgent()
+    # Get model
+    from pydantic_ai.models.openai import OpenAIModel
+    provider = OpenAIProvider(
+        api_key=settings.llm_api_key
+    )
+    model = OpenAIModel(
+        settings.model_choice,
+        provider=provider
+    )
     
-    # Create specialized agents for registration
+    # Create specialized agents
     agents = {
-        "brave_search": BraveSearchAgent(),
-        "filesystem": FilesystemAgent(),
-        "rag": RAGAgent()
+        "brave_search": BraveSearchAgent(model),
+        "filesystem": FilesystemAgent(model),
+        "rag": RAGAgent(model)
     }
     
-    # Register agents
-    for name, agent in agents.items():
-        primary_agent.register_agent(name, agent)
-    
-    # Also register mcp_manager for GitHub tools
-    primary_agent.register_agent("mcp", mcp_manager)
+    # Initialize primary agent with model and agents
+    primary_agent = PrimaryAgent(model, agents)
     
     try:
         while True:
-            data = await websocket.receive_json()
-            message = data.get("message", "")
-            
-            # Use primary agent to handle the request
-            response = await primary_agent.handle_request(message)
-            
-            await websocket.send_json({
-                "type": "response",
-                "message": response
-            })
+            try:
+                # Receive message with better error handling
+                raw_data = await websocket.receive_text()
+                
+                # Skip empty messages
+                if not raw_data or raw_data.strip() == "":
+                    continue
+                    
+                print(f"WebSocket received raw data: {raw_data[:100]}...")  # Debug log
+                
+                # Try to parse as JSON first, fallback to plain text
+                import json
+                try:
+                    data = json.loads(raw_data)
+                    message = data.get("message", raw_data)
+                except json.JSONDecodeError:
+                    # If not JSON, treat as plain text message
+                    message = raw_data
+                
+                print(f"WebSocket processing message: {message}")  # Debug log
+                
+                # Use primary agent to handle the request
+                response_parts = []
+                async for delta in primary_agent.run_stream(message):
+                    response_parts.append(delta)
+                    await websocket.send_text(delta)
+                
+                # Send end marker
+                await websocket.send_text("[END]")
+            except Exception as e:
+                print(f"WebSocket message processing error: {e}")
+                await websocket.send_text(f"Error: {str(e)}")
+                
     except WebSocketDisconnect:
         print("WebSocket disconnected")
     except Exception as e:
