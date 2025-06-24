@@ -56,9 +56,15 @@ if check_port $FRONTEND_PORT; then
     kill_port $FRONTEND_PORT
 fi
 
+if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_KEY" ]; then
+    echo "ERROR: SUPABASE_URL and SUPABASE_KEY must be set in local.env"
+    echo "Please copy local.env.example to local.env and add your Supabase credentials"
+    exit 1
+fi
+
 # Start backend API server in background
 echo "Starting backend API server on port $BACKEND_PORT..."
-uvicorn src.api_server:app --reload --host 0.0.0.0 --port $BACKEND_PORT &
+uvicorn src.api_server_supabase:app --reload --host 0.0.0.0 --port $BACKEND_PORT &
 BACKEND_PID=$!
 
 # Wait a moment for backend to start
