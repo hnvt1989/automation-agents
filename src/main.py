@@ -71,7 +71,17 @@ class AutomationAgentsCLI:
             # Create individual agents
             self.agents["brave_search"] = BraveSearchAgent(model)
             self.agents["filesystem"] = FilesystemAgent(model)
-            self.agents["rag"] = RAGAgent(model)
+            
+            # Use cloud-enabled RAG if configured
+            from src.core.cloud_config import CloudConfig
+            if CloudConfig.use_cloud_storage():
+                from src.agents.rag_cloud import CloudRAGAgent
+                self.agents["rag"] = CloudRAGAgent(model, use_cloud=True)
+                console.print("[cyan]Using cloud storage for RAG (Supabase/Neo4j Aura)[/cyan]")
+            else:
+                from src.agents.rag import RAGAgent
+                self.agents["rag"] = RAGAgent(model)
+                console.print("[cyan]Using local storage for RAG (ChromaDB/Neo4j)[/cyan]")
             
             # Create primary agent with access to other agents
             self.primary_agent = PrimaryAgent(model, self.agents)

@@ -16,7 +16,7 @@ from src.mcp import get_mcp_manager
 from src.agents.primary import PrimaryAgent, PrimaryAgentDeps
 from src.agents.brave_search import BraveSearchAgent
 from src.agents.filesystem import FilesystemAgent
-from src.agents.rag import RAGAgent
+from src.agents.rag_cloud import CloudRAGAgent
 from src.agents.analyzer import AnalyzerAgent
 from src.storage.supabase_ops import SupabaseOperations
 
@@ -875,7 +875,7 @@ async def websocket_endpoint(websocket: WebSocket):
     agents = {
         "brave_search": BraveSearchAgent(model),
         "filesystem": FilesystemAgent(model),
-        "rag": RAGAgent(model)
+        "rag": CloudRAGAgent(model, use_cloud=True)  # Use cloud-enabled RAG
     }
     
     # Initialize primary agent with model and agents

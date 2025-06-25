@@ -97,7 +97,6 @@ Pillow>=10.0.0  # PIL for image handling and validation
 chromadb>=0.4.0  # Vector database for storing embeddings
 
 # For knowledge graph
-graphiti-core>=0.1.0  # Knowledge graph management
 neo4j>=5.0.0  # Graph database driver
 
 # For calendar parsing

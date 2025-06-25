@@ -4,6 +4,7 @@ from pathlib import Path
 import re
 from urllib.parse import urlparse
 import asyncio
+import os
 
 from src.storage.chromadb_client import ChromaDBClient
 from src.storage.contextual_chunker import ContextualChunker, ChunkContext
@@ -14,28 +15,20 @@ from src.core.constants import (
 )
 from src.utils.logging import log_info, log_error, log_warning
 
-# Optional graph integration
-try:
-    from src.storage.graph_knowledge_manager import GraphKnowledgeManager
-    GRAPH_AVAILABLE = True
-except ImportError:
-    GraphKnowledgeManager = None
-    GRAPH_AVAILABLE = False
 
 
 class CollectionManager:
     """Manages multiple ChromaDB collections with type-specific logic."""
     
-    def __init__(self, chromadb_client: ChromaDBClient, graph_manager: Optional[Any] = None, enable_contextual: bool = True):
+    def __init__(self, chromadb_client: ChromaDBClient, enable_contextual: bool = True):
         """Initialize collection manager.
         
         Args:
             chromadb_client: ChromaDB client instance
-            graph_manager: Optional GraphKnowledgeManager instance
             enable_contextual: Whether to enable contextual chunking
         """
         self.client = chromadb_client
-        self.graph_manager = graph_manager
+        self.graph_manager = None  # No graph manager without Graphiti
         self.enable_contextual = enable_contextual
         self._ensure_collections_exist()
         
@@ -46,10 +39,7 @@ class CollectionManager:
         else:
             self.contextual_chunker = None
         
-        if self.graph_manager:
-            log_info("CollectionManager initialized with knowledge graph support")
-        else:
-            log_info("CollectionManager initialized without knowledge graph")
+        log_info("CollectionManager initialized without knowledge graph")
     
     def _ensure_collections_exist(self):
         """Ensure all required collections exist."""
@@ -127,7 +117,7 @@ class CollectionManager:
         log_info(f"Indexed {len(chunks)} chunks from {url}")
         
         # Add to knowledge graph if available
-        if self.graph_manager and GRAPH_AVAILABLE:
+        if self.graph_manager and False:
             try:
                 import asyncio
                 loop = asyncio.get_event_loop()
@@ -218,7 +208,7 @@ class CollectionManager:
         log_info(f"Indexed {len(chunks)} chunks from conversation with {len(messages)} messages")
         
         # Add to knowledge graph if available
-        if self.graph_manager and GRAPH_AVAILABLE:
+        if self.graph_manager and False:
             try:
                 import asyncio
                 loop = asyncio.get_event_loop()
@@ -301,7 +291,7 @@ class CollectionManager:
         log_info(f"Indexed {len(chunks)} chunks from {file_path}")
         
         # Add to knowledge graph if available
-        if self.graph_manager and GRAPH_AVAILABLE:
+        if self.graph_manager and False:
             try:
                 import asyncio
                 loop = asyncio.get_event_loop()
@@ -675,7 +665,7 @@ class CollectionManager:
         log_info(f"Indexed {len(documents)} contextual chunks to {collection_name}")
         
         # Add to knowledge graph if available
-        if self.graph_manager and GRAPH_AVAILABLE:
+        if self.graph_manager and False:
             self._add_to_graph_if_available(content, metadata, collection_name)
         
         return ids
@@ -1075,7 +1065,7 @@ class CollectionManager:
             metadata: Document metadata
             collection_name: Source collection
         """
-        if self.graph_manager and GRAPH_AVAILABLE:
+        if self.graph_manager and False:
             try:
                 import asyncio
                 loop = asyncio.get_event_loop()

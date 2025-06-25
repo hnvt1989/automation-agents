@@ -1,0 +1,365 @@
+"""Supabase vector storage client using pgvector and OpenAI embeddings."""
+
+import os
+import json
+import uuid
+from typing import List, Dict, Any, Optional, Tuple
+from datetime import datetime
+import openai
+from supabase import create_client, Client
+
+from src.utils.logging import log_info, log_error, log_warning
+from src.core.config import get_settings
+from src.core.constants import (
+    DEFAULT_EMBEDDING_MODEL,
+    DEFAULT_CHUNK_SIZE,
+    DEFAULT_CHUNK_OVERLAP
+)
+
+
+class SupabaseVectorClient:
+    """Client for vector operations using Supabase pgvector and OpenAI embeddings."""
+    
+    def __init__(self, collection_name: str = "default"):
+        """Initialize Supabase vector client.
+        
+        Args:
+            collection_name: Name of the collection (used for filtering)
+        """
+        self.settings = get_settings()
+        self.collection_name = collection_name
+        
+        # Initialize Supabase client
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_KEY")
+        
+        if not supabase_url or not supabase_key:
+            raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set")
+        
+        self.client: Client = create_client(supabase_url, supabase_key)
+        
+        # Initialize OpenAI for embeddings
+        openai.api_key = self.settings.openai_api_key or self.settings.llm_api_key
+        self.embedding_model = DEFAULT_EMBEDDING_MODEL
+        
+        log_info(f"SupabaseVectorClient initialized for collection '{collection_name}'")
+    
+    def _get_embeddings(self, texts: List[str]) -> List[List[float]]:
+        """Generate embeddings using OpenAI.
+        
+        Args:
+            texts: List of texts to embed
+            
+        Returns:
+            List of embedding vectors
+        """
+        try:
+            response = openai.embeddings.create(
+                model=self.embedding_model,
+                input=texts
+            )
+            return [item.embedding for item in response.data]
+        except Exception as e:
+            log_error(f"Error generating embeddings: {str(e)}")
+            raise
+    
+    def add_documents(
+        self,
+        documents: List[str],
+        metadatas: Optional[List[Dict[str, Any]]] = None,
+        ids: Optional[List[str]] = None
+    ) -> None:
+        """Add documents to the vector store.
+        
+        Args:
+            documents: List of document texts
+            metadatas: Optional metadata for each document
+            ids: Optional IDs for each document
+        """
+        try:
+            if not documents:
+                log_warning("No documents to add")
+                return
+            
+            # Generate IDs if not provided
+            if ids is None:
+                ids = [str(uuid.uuid4()) for _ in documents]
+            
+            # Ensure metadatas match document count
+            if metadatas is None:
+                metadatas = [{} for _ in documents]
+            
+            # Generate embeddings
+            embeddings = self._get_embeddings(documents)
+            
+            # Prepare data for insertion
+            records = []
+            for i, (doc, embedding, doc_id, metadata) in enumerate(
+                zip(documents, embeddings, ids, metadatas)
+            ):
+                record = {
+                    "collection_name": self.collection_name,
+                    "document_id": doc_id,
+                    "content": doc,
+                    "embedding": embedding,
+                    "metadata": json.dumps(metadata) if metadata else json.dumps({})
+                }
+                records.append(record)
+            
+            # Upsert into Supabase (update if exists, insert if not)
+            result = self.client.table("document_embeddings").upsert(
+                records,
+                on_conflict="collection_name,document_id"
+            ).execute()
+            
+            log_info(f"Added {len(documents)} documents to collection '{self.collection_name}'")
+            
+        except Exception as e:
+            log_error(f"Failed to add documents: {str(e)}")
+            raise
+    
+    def query(
+        self,
+        query_texts: List[str],
+        n_results: int = 5,
+        where: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Query the vector store.
+        
+        Args:
+            query_texts: List of query strings
+            n_results: Number of results to return
+            where: Optional metadata filter
+            
+        Returns:
+            Query results with documents, distances, and metadata
+        """
+        try:
+            # For now, use the first query text (can extend to multiple)
+            query_text = query_texts[0] if query_texts else ""
+            
+            if not query_text:
+                log_warning("Empty query text provided")
+                return {
+                    "ids": [[]],
+                    "documents": [[]],
+                    "distances": [[]],
+                    "metadatas": [[]]
+                }
+            
+            # Generate query embedding
+            query_embeddings = self._get_embeddings([query_text])
+            query_embedding = query_embeddings[0]
+            
+            # Build the query
+            query = self.client.rpc(
+                "match_documents",
+                {
+                    "query_embedding": query_embedding,
+                    "match_count": n_results,
+                    "filter_collection": self.collection_name,
+                    "filter_metadata": json.dumps(where) if where else None
+                }
+            )
+            
+            result = query.execute()
+            
+            # Format results to match ChromaDB interface
+            if result.data:
+                ids = [[item["document_id"] for item in result.data]]
+                documents = [[item["content"] for item in result.data]]
+                distances = [[item["similarity"] for item in result.data]]
+                metadatas = [[json.loads(item["metadata"]) for item in result.data]]
+                
+                formatted_results = {
+                    "ids": ids,
+                    "documents": documents,
+                    "distances": distances,
+                    "metadatas": metadatas
+                }
+            else:
+                formatted_results = {
+                    "ids": [[]],
+                    "documents": [[]],
+                    "distances": [[]],
+                    "metadatas": [[]]
+                }
+            
+            log_info(f"Query returned {len(formatted_results['ids'][0])} results")
+            return formatted_results
+            
+        except Exception as e:
+            log_error(f"Failed to query collection: {str(e)}")
+            raise
+    
+    def update_documents(
+        self,
+        ids: List[str],
+        documents: Optional[List[str]] = None,
+        metadatas: Optional[List[Dict[str, Any]]] = None
+    ) -> None:
+        """Update existing documents.
+        
+        Args:
+            ids: IDs of documents to update
+            documents: New document texts
+            metadatas: New metadata
+        """
+        try:
+            updates = {}
+            
+            if documents:
+                # Generate new embeddings
+                embeddings = self._get_embeddings(documents)
+                updates["embedding"] = embeddings[0]  # Handle one at a time for now
+                updates["content"] = documents[0]
+            
+            if metadatas:
+                updates["metadata"] = json.dumps(metadatas[0])
+            
+            # Update in Supabase
+            result = self.client.table("document_embeddings") \
+                .update(updates) \
+                .eq("document_id", ids[0]) \
+                .eq("collection_name", self.collection_name) \
+                .execute()
+            
+            log_info(f"Updated {len(ids)} documents")
+            
+        except Exception as e:
+            log_error(f"Failed to update documents: {str(e)}")
+            raise
+    
+    def delete_documents(self, ids: List[str]) -> None:
+        """Delete documents by ID.
+        
+        Args:
+            ids: IDs of documents to delete
+        """
+        try:
+            result = self.client.table("document_embeddings") \
+                .delete() \
+                .in_("document_id", ids) \
+                .eq("collection_name", self.collection_name) \
+                .execute()
+            
+            log_info(f"Deleted {len(ids)} documents")
+            
+        except Exception as e:
+            log_error(f"Failed to delete documents: {str(e)}")
+            raise
+    
+    def get_collection_stats(self) -> Dict[str, Any]:
+        """Get statistics about the collection.
+        
+        Returns:
+            Dictionary with collection statistics
+        """
+        try:
+            # Count documents in collection
+            result = self.client.table("document_embeddings") \
+                .select("*", count="exact") \
+                .eq("collection_name", self.collection_name) \
+                .execute()
+            
+            count = result.count if result else 0
+            
+            return {
+                "name": self.collection_name,
+                "count": count,
+                "embedding_model": self.embedding_model,
+                "vector_dimensions": 1536  # OpenAI ada-002
+            }
+            
+        except Exception as e:
+            log_error(f"Failed to get collection stats: {str(e)}")
+            raise
+    
+    def clear_collection(self) -> None:
+        """Clear all documents from the collection."""
+        try:
+            result = self.client.table("document_embeddings") \
+                .delete() \
+                .eq("collection_name", self.collection_name) \
+                .execute()
+            
+            log_info(f"Cleared collection '{self.collection_name}'")
+            
+        except Exception as e:
+            log_error(f"Failed to clear collection: {str(e)}")
+            raise
+    
+    def chunk_text(
+        self,
+        text: str,
+        chunk_size: int = DEFAULT_CHUNK_SIZE,
+        chunk_overlap: int = DEFAULT_CHUNK_OVERLAP
+    ) -> List[str]:
+        """Split text into chunks for indexing.
+        
+        Args:
+            text: Text to split
+            chunk_size: Size of each chunk
+            chunk_overlap: Overlap between chunks
+            
+        Returns:
+            List of text chunks
+        """
+        if not text:
+            return []
+        
+        chunks = []
+        start = 0
+        
+        while start < len(text):
+            end = start + chunk_size
+            chunk = text[start:end]
+            
+            # Try to break at a sentence boundary
+            if end < len(text):
+                last_period = chunk.rfind('.')
+                last_newline = chunk.rfind('\n')
+                break_point = max(last_period, last_newline)
+                
+                if break_point > chunk_size // 2:
+                    chunk = chunk[:break_point + 1]
+                    end = start + break_point + 1
+            
+            chunks.append(chunk.strip())
+            start = end - chunk_overlap
+        
+        return chunks
+
+
+# SQL function to create in Supabase for similarity search
+MATCH_DOCUMENTS_FUNCTION = """
+CREATE OR REPLACE FUNCTION match_documents(
+    query_embedding vector(1536),
+    match_count int,
+    filter_collection text DEFAULT NULL,
+    filter_metadata jsonb DEFAULT NULL
+)
+RETURNS TABLE (
+    document_id text,
+    content text,
+    metadata jsonb,
+    similarity float
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        de.document_id::text,
+        de.content::text,
+        de.metadata::jsonb,
+        (1 - (de.embedding <=> query_embedding))::float AS similarity
+    FROM document_embeddings de
+    WHERE
+        (filter_collection IS NULL OR de.collection_name = filter_collection)
+        AND (filter_metadata IS NULL OR de.metadata @> filter_metadata)
+    ORDER BY de.embedding <=> query_embedding
+    LIMIT match_count;
+END;
+$$;
+"""

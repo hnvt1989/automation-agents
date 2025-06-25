@@ -10,14 +10,6 @@ from src.storage.chromadb_client import get_chromadb_client
 from src.storage.collection_manager import CollectionManager
 from src.utils.logging import log_info, log_error, log_warning
 
-# Optional graph support
-try:
-    from src.storage.graph_knowledge_manager import GraphKnowledgeManager
-    GRAPH_SUPPORT = True
-except ImportError:
-    GraphKnowledgeManager = None
-    GRAPH_SUPPORT = False
-
 
 class RAGAgentDeps(BaseModel):
     """Dependencies for the RAG agent."""
@@ -42,29 +34,12 @@ class RAGAgent(BaseAgent):
         try:
             self.chromadb_client = get_chromadb_client()
             
-            # Initialize graph manager if available and Neo4j is configured
+            # No graph manager needed
             self.graph_manager = None
-            if GRAPH_SUPPORT:
-                try:
-                    from src.core.config import get_settings
-                    settings = get_settings()
-                    if hasattr(settings, 'neo4j_uri') and settings.neo4j_uri:
-                        self.graph_manager = GraphKnowledgeManager(
-                            neo4j_uri=settings.neo4j_uri,
-                            neo4j_user=settings.neo4j_user,
-                            neo4j_password=settings.neo4j_password,
-                            openai_api_key=settings.llm_api_key
-                        )
-                        log_info("RAG agent initialized with knowledge graph support")
-                    else:
-                        log_info("RAG agent initialized without knowledge graph (Neo4j not configured)")
-                except Exception as e:
-                    log_info(f"RAG agent initialized without knowledge graph: {str(e)}")
-            else:
-                log_info("RAG agent initialized without knowledge graph (Graphiti not installed)")
+            log_info("RAG agent initialized without knowledge graph")
             
-            # Now create CollectionManager with graph_manager
-            self.collection_manager = CollectionManager(self.chromadb_client, graph_manager=self.graph_manager)
+            # Create CollectionManager without graph manager
+            self.collection_manager = CollectionManager(self.chromadb_client)
             log_info(f"RAG agent initialized with multi-collection support")
         except Exception as e:
             log_error(f"Failed to initialize ChromaDB client: {str(e)}")
@@ -647,7 +622,7 @@ class RAGAgent(BaseAgent):
             deps = RAGAgentDeps(
                 chromadb_client=self.chromadb_client,
                 collection_manager=self.collection_manager,
-                graph_manager=self.graph_manager
+                graph_manager=None
             )
         
         return await super().run(prompt, deps=deps, **kwargs)
