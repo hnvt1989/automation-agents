@@ -31,8 +31,8 @@ class MCPServerConnectionError(MCPServerError):
     pass
 
 
-class ChromaDBError(AutomationAgentError):
-    """Exception for ChromaDB-related errors."""
+class VectorDBError(AutomationAgentError):
+    """Exception for vector database-related errors."""
     pass
 
 

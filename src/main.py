@@ -20,7 +20,7 @@ from src.utils.logging import log_info, log_error, log_exception, setup_logger, 
 from src.agents.primary import PrimaryAgent
 from src.agents.brave_search import BraveSearchAgent
 from src.agents.filesystem import FilesystemAgent
-from src.agents.rag import RAGAgent
+from src.agents.rag_cloud import CloudRAGAgent
 from src.agents.planner import plan_day
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.models.openai import OpenAIModel
@@ -72,16 +72,9 @@ class AutomationAgentsCLI:
             self.agents["brave_search"] = BraveSearchAgent(model)
             self.agents["filesystem"] = FilesystemAgent(model)
             
-            # Use cloud-enabled RAG if configured
-            from src.core.cloud_config import CloudConfig
-            if CloudConfig.use_cloud_storage():
-                from src.agents.rag_cloud import CloudRAGAgent
-                self.agents["rag"] = CloudRAGAgent(model, use_cloud=True)
-                console.print("[cyan]Using cloud storage for RAG (Supabase/Neo4j Aura)[/cyan]")
-            else:
-                from src.agents.rag import RAGAgent
-                self.agents["rag"] = RAGAgent(model)
-                console.print("[cyan]Using local storage for RAG (ChromaDB/Neo4j)[/cyan]")
+            # Use cloud-enabled RAG (Supabase/Neo4j)
+            self.agents["rag"] = CloudRAGAgent(model, use_cloud=True)
+            console.print("[cyan]Using cloud storage for RAG (Supabase/Neo4j)[/cyan]")
             
             # Create primary agent with access to other agents
             self.primary_agent = PrimaryAgent(model, self.agents)

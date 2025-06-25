@@ -33,28 +33,24 @@ class CloudRAGAgent(BaseAgent):
         self.use_cloud = use_cloud
         
         # Initialize vector client
-        if use_cloud and os.getenv("SUPABASE_URL"):
-            from src.storage.supabase_vector import SupabaseVectorClient
-            self.vector_client = SupabaseVectorClient()
-            log_info("Using Supabase for vector storage")
-        else:
-            from src.storage.chromadb_client import get_chromadb_client
-            self.vector_client = get_chromadb_client()
-            log_info("Using ChromaDB for vector storage")
+        if not os.getenv("SUPABASE_URL"):
+            raise ValueError("Supabase configuration required. Please set SUPABASE_URL and SUPABASE_KEY environment variables.")
+        
+        from src.storage.supabase_vector import SupabaseVectorClient
+        self.vector_client = SupabaseVectorClient()
+        log_info("Using Supabase for vector storage")
         
         # Initialize graph client
         self.graph_client = None
-        if use_cloud and os.getenv("NEO4J_URI"):
+        if os.getenv("NEO4J_URI"):
             try:
                 from src.storage.neo4j_cloud import get_neo4j_cloud_client
                 self.graph_client = get_neo4j_cloud_client()
-                log_info("Using Neo4j Aura for knowledge graph")
+                log_info("Using Neo4j for knowledge graph")
             except Exception as e:
-                log_warning(f"Failed to initialize Neo4j Aura: {str(e)}")
+                log_warning(f"Failed to initialize Neo4j: {str(e)}")
         else:
-            # No local graph support without Graphiti
-            self.graph_client = None
-            log_info("Graph operations disabled (Graphiti removed)")
+            log_info("Graph operations disabled (Neo4j not configured)")
         
         # Create deps
         deps = RAGAgentDeps(

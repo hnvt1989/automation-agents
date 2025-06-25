@@ -94,7 +94,6 @@ supabase>=2.4.0
 
 # For image processing
 Pillow>=10.0.0  # PIL for image handling and validation
-chromadb>=0.4.0  # Vector database for storing embeddings
 
 # For knowledge graph
 neo4j>=5.0.0  # Graph database driver

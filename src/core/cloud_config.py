@@ -45,6 +45,6 @@ class CloudConfig:
             "use_cloud": CloudConfig.use_cloud_storage(),
             "supabase_configured": CloudConfig.is_supabase_configured(),
             "neo4j_cloud_configured": CloudConfig.is_neo4j_cloud_configured(),
-            "vector_storage": "Supabase" if CloudConfig.is_supabase_configured() else "ChromaDB",
+            "vector_storage": "Supabase" if CloudConfig.is_supabase_configured() else "Not configured",
             "graph_storage": "Neo4j Aura" if CloudConfig.is_neo4j_cloud_configured() else "Neo4j Local"
         }
