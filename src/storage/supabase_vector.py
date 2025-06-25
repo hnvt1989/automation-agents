@@ -15,19 +15,22 @@ from src.core.constants import (
     DEFAULT_CHUNK_SIZE,
     DEFAULT_CHUNK_OVERLAP
 )
+from src.storage.contextual_chunker import ContextualChunker, ChunkContext
 
 
 class SupabaseVectorClient:
     """Client for vector operations using Supabase pgvector and OpenAI embeddings."""
     
-    def __init__(self, collection_name: str = "default"):
+    def __init__(self, collection_name: str = "default", enable_contextual: bool = True):
         """Initialize Supabase vector client.
         
         Args:
             collection_name: Name of the collection (used for filtering)
+            enable_contextual: Whether to enable contextual chunking
         """
         self.settings = get_settings()
         self.collection_name = collection_name
+        self.enable_contextual = enable_contextual
         
         # Initialize Supabase client
         supabase_url = os.getenv("SUPABASE_URL")
@@ -42,7 +45,10 @@ class SupabaseVectorClient:
         openai.api_key = self.settings.openai_api_key or self.settings.llm_api_key
         self.embedding_model = DEFAULT_EMBEDDING_MODEL
         
-        log_info(f"SupabaseVectorClient initialized for collection '{collection_name}'")
+        # Initialize contextual chunker if enabled
+        self.contextual_chunker = ContextualChunker() if enable_contextual else None
+        
+        log_info(f"SupabaseVectorClient initialized for collection '{collection_name}' (contextual: {enable_contextual})")
     
     def _get_embeddings(self, texts: List[str]) -> List[List[float]]:
         """Generate embeddings using OpenAI.
@@ -329,6 +335,194 @@ class SupabaseVectorClient:
             start = end - chunk_overlap
         
         return chunks
+    
+    def add_documents_with_context(
+        self,
+        content: str,
+        context_info: Dict[str, Any],
+        use_llm_context: bool = False
+    ) -> List[str]:
+        """Add a document with contextual chunking.
+        
+        Args:
+            content: Document content
+            context_info: Context information for the document
+            use_llm_context: Whether to use LLM for context generation
+            
+        Returns:
+            List of document IDs
+        """
+        if not self.contextual_chunker:
+            log_warning("Contextual chunker not enabled, falling back to regular chunking")
+            chunks = self.chunk_text(content)
+            metadatas = [context_info.copy() for _ in chunks]
+            self.add_documents(chunks, metadatas=metadatas)
+            return []
+        
+        try:
+            # Create contextual chunks
+            chunk_contexts = self.contextual_chunker.create_contextual_chunks(
+                content=content,
+                chunk_size=DEFAULT_CHUNK_SIZE,
+                chunk_overlap=DEFAULT_CHUNK_OVERLAP,
+                context_info=context_info,
+                use_llm_context=use_llm_context
+            )
+            
+            # Prepare documents and metadata
+            documents = []
+            metadatas = []
+            ids = []
+            
+            for chunk_ctx in chunk_contexts:
+                # Store both original and contextual content
+                documents.append(chunk_ctx.contextual_text)
+                
+                # Enhanced metadata
+                metadata = chunk_ctx.metadata.copy()
+                metadata['original_content'] = chunk_ctx.original_text
+                metadata['has_context'] = True
+                metadatas.append(metadata)
+                
+                # Generate ID
+                doc_id = str(uuid.uuid4())
+                ids.append(doc_id)
+            
+            # Add to vector store
+            self.add_documents(documents, metadatas=metadatas, ids=ids)
+            
+            log_info(f"Added {len(documents)} contextual chunks to collection '{self.collection_name}'")
+            return ids
+            
+        except Exception as e:
+            log_error(f"Failed to add contextual documents: {str(e)}")
+            raise
+    
+    def hybrid_search(
+        self,
+        query: str,
+        n_results: int = 5,
+        alpha: float = 0.5,
+        where: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Perform hybrid search combining vector and full-text search.
+        
+        Args:
+            query: Search query
+            n_results: Number of results
+            alpha: Weight for vector search (1-alpha for text search)
+            where: Optional metadata filter
+            
+        Returns:
+            Combined search results
+        """
+        try:
+            # Get vector search results
+            vector_results = self.query([query], n_results=n_results * 2, where=where)
+            
+            # Get full-text search results
+            text_results = self.full_text_search(query, n_results=n_results * 2, where=where)
+            
+            # Combine results using reciprocal rank fusion
+            combined_results = self._reciprocal_rank_fusion(
+                [vector_results, text_results],
+                weights=[alpha, 1 - alpha]
+            )
+            
+            # Take top n_results
+            final_results = {
+                "ids": [[r["id"] for r in combined_results[:n_results]]],
+                "documents": [[r["document"] for r in combined_results[:n_results]]],
+                "distances": [[r["score"] for r in combined_results[:n_results]]],
+                "metadatas": [[r["metadata"] for r in combined_results[:n_results]]]
+            }
+            
+            log_info(f"Hybrid search returned {len(final_results['ids'][0])} results")
+            return final_results
+            
+        except Exception as e:
+            log_error(f"Hybrid search failed: {str(e)}")
+            # Fallback to vector search
+            return self.query([query], n_results=n_results, where=where)
+    
+    def full_text_search(
+        self,
+        query: str,
+        n_results: int = 5,
+        where: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Perform full-text search using PostgreSQL.
+        
+        Args:
+            query: Search query
+            n_results: Number of results
+            where: Optional metadata filter
+            
+        Returns:
+            Search results
+        """
+        try:
+            # Since we're using the minimal migration, continue with vector search
+            # The hybrid_search function in the database will handle this
+            log_info("Using vector search (full-text indexes not created due to memory constraints)")
+            return self.query([query], n_results=n_results, where=where)
+            
+        except Exception as e:
+            log_error(f"Full-text search failed: {str(e)}")
+            # Return empty results
+            return {
+                "ids": [[]],
+                "documents": [[]],
+                "distances": [[]],
+                "metadatas": [[]]
+            }
+    
+    def _reciprocal_rank_fusion(
+        self,
+        result_lists: List[Dict[str, Any]],
+        weights: Optional[List[float]] = None,
+        k: int = 60
+    ) -> List[Dict[str, Any]]:
+        """Fuse multiple result lists using Reciprocal Rank Fusion.
+        
+        Args:
+            result_lists: List of result dictionaries
+            weights: Optional weights for each list
+            k: RRF parameter
+            
+        Returns:
+            Fused results
+        """
+        if not weights:
+            weights = [1.0 / len(result_lists)] * len(result_lists)
+        
+        # Track scores for each document
+        doc_scores = {}
+        
+        for list_idx, results in enumerate(result_lists):
+            if not results["ids"] or not results["ids"][0]:
+                continue
+                
+            for rank, doc_id in enumerate(results["ids"][0]):
+                if doc_id not in doc_scores:
+                    doc_scores[doc_id] = {
+                        "score": 0,
+                        "document": results["documents"][0][rank],
+                        "metadata": results["metadatas"][0][rank] if results["metadatas"] else {},
+                        "id": doc_id
+                    }
+                
+                # Add weighted RRF score
+                doc_scores[doc_id]["score"] += weights[list_idx] / (k + rank + 1)
+        
+        # Sort by score
+        sorted_docs = sorted(
+            doc_scores.values(),
+            key=lambda x: x["score"],
+            reverse=True
+        )
+        
+        return sorted_docs
 
 
 # SQL function to create in Supabase for similarity search

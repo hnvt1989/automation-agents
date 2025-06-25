@@ -9,6 +9,7 @@ from pydantic_ai.models.openai import OpenAIModel
 from src.agents.base import BaseAgent
 from src.core.constants import AgentType, SYSTEM_PROMPTS
 from src.utils.logging import log_info, log_error, log_warning
+from src.storage.reranker import ResultReranker, RerankResult
 
 
 class RAGAgentDeps(BaseModel):
@@ -37,8 +38,10 @@ class CloudRAGAgent(BaseAgent):
             raise ValueError("Supabase configuration required. Please set SUPABASE_URL and SUPABASE_KEY environment variables.")
         
         from src.storage.supabase_vector import SupabaseVectorClient
-        self.vector_client = SupabaseVectorClient()
-        log_info("Using Supabase for vector storage")
+        self.vector_client = SupabaseVectorClient(enable_contextual=True)
+        # Disable cross-encoder by default unless sentence-transformers is installed
+        self.reranker = ResultReranker(use_cross_encoder=False, use_llm_rerank=False)
+        log_info("Using Supabase for vector storage with contextual RAG and reranking")
         
         # Initialize graph client
         self.graph_client = None
@@ -233,6 +236,154 @@ class CloudRAGAgent(BaseAgent):
             except Exception as e:
                 log_error(f"Search error: {str(e)}")
                 return f"Error searching knowledge base: {str(e)}"
+        
+        @self.agent.tool
+        async def hybrid_search(
+            ctx: RunContext[RAGAgentDeps],
+            query: str,
+            collection: Optional[str] = None,
+            n_results: int = 5,
+            alpha: float = 0.7,
+            use_reranking: bool = True
+        ) -> str:
+            """Perform hybrid search combining vector and full-text search.
+            
+            Args:
+                query: Search query
+                collection: Optional collection to search
+                n_results: Number of results to return
+                alpha: Weight for vector search (1-alpha for text search)
+                use_reranking: Whether to apply reranking
+                
+            Returns:
+                Formatted search results
+            """
+            try:
+                log_info(f"Performing hybrid search for: {query}")
+                
+                # Get appropriate vector client
+                if collection and self.use_cloud:
+                    from src.storage.supabase_vector import SupabaseVectorClient
+                    vector_client = SupabaseVectorClient(collection, enable_contextual=True)
+                else:
+                    vector_client = self.vector_client
+                
+                # Perform hybrid search
+                results = vector_client.hybrid_search(
+                    query=query,
+                    n_results=n_results * 2 if use_reranking else n_results,
+                    alpha=alpha
+                )
+                
+                if not results or not results.get('documents') or not results['documents'][0]:
+                    return "No relevant documents found."
+                
+                # Prepare results for reranking
+                search_results = []
+                documents = results['documents'][0]
+                metadatas = results.get('metadatas', [[]])[0]
+                distances = results.get('distances', [[]])[0]
+                
+                for i, doc in enumerate(documents):
+                    search_results.append({
+                        'content': doc,
+                        'metadata': metadatas[i] if i < len(metadatas) else {},
+                        'score': 1 - distances[i] if i < len(distances) else 0.5
+                    })
+                
+                # Apply reranking if enabled
+                if use_reranking and self.reranker:
+                    reranked = await self.reranker.rerank_results(
+                        query=query,
+                        results=search_results,
+                        top_k=n_results
+                    )
+                    
+                    # Format reranked results
+                    formatted_results = []
+                    for i, result in enumerate(reranked):
+                        formatted = f"\n{i+1}. **Combined Score**: {result.combined_score:.3f}"
+                        formatted += f" (Vector: {result.original_score:.2f}, Rerank: {result.rerank_score:.2f})"
+                        
+                        if result.metadata:
+                            if 'source' in result.metadata:
+                                formatted += f"\n   **Source**: {result.metadata['source']}"
+                            if 'has_context' in result.metadata:
+                                formatted += " ✓ Contextual"
+                        
+                        content = result.content[:500] + "..." if len(result.content) > 500 else result.content
+                        formatted += f"\n   **Content**: {content}"
+                        
+                        formatted_results.append(formatted)
+                    
+                    return f"Found {len(formatted_results)} relevant documents (hybrid search + reranking):\n" + "\n".join(formatted_results)
+                else:
+                    # Format without reranking
+                    formatted_results = []
+                    for i, result in enumerate(search_results[:n_results]):
+                        formatted = f"\n{i+1}. **Score**: {result['score']:.2f}"
+                        
+                        metadata = result['metadata']
+                        if metadata:
+                            if 'source' in metadata:
+                                formatted += f"\n   **Source**: {metadata['source']}"
+                            if 'has_context' in metadata:
+                                formatted += " ✓ Contextual"
+                        
+                        content = result['content'][:500] + "..." if len(result['content']) > 500 else result['content']
+                        formatted += f"\n   **Content**: {content}"
+                        
+                        formatted_results.append(formatted)
+                    
+                    return f"Found {len(formatted_results)} relevant documents (hybrid search):\n" + "\n".join(formatted_results)
+                    
+            except Exception as e:
+                log_error(f"Hybrid search error: {str(e)}")
+                # Fallback to regular search
+                return await search_knowledge_base(ctx, query, n_results)
+        
+        @self.agent.tool
+        async def add_document_with_context(
+            ctx: RunContext[RAGAgentDeps],
+            content: str,
+            metadata: Optional[Dict[str, Any]] = None,
+            collection: str = "default",
+            use_llm_context: bool = False
+        ) -> str:
+            """Add a document with contextual chunking.
+            
+            Args:
+                content: Document content
+                metadata: Document metadata
+                collection: Collection to add to
+                use_llm_context: Whether to use LLM for context generation
+                
+            Returns:
+                Success message
+            """
+            try:
+                if self.use_cloud:
+                    from src.storage.supabase_vector import SupabaseVectorClient
+                    vector_client = SupabaseVectorClient(collection, enable_contextual=True)
+                else:
+                    vector_client = self.vector_client
+                
+                # Prepare context info
+                context_info = metadata.copy() if metadata else {}
+                context_info['source_type'] = context_info.get('source_type', 'document')
+                
+                # Add with contextual chunking
+                doc_ids = vector_client.add_documents_with_context(
+                    content=content,
+                    context_info=context_info,
+                    use_llm_context=use_llm_context
+                )
+                
+                return f"Successfully added document with {len(doc_ids)} contextual chunks to collection '{collection}'."
+                
+            except Exception as e:
+                log_error(f"Error adding contextual document: {str(e)}")
+                return f"Error adding document: {str(e)}"
         
         @self.agent.tool
         async def list_collections(ctx: RunContext[RAGAgentDeps]) -> str:
