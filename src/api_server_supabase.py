@@ -138,11 +138,13 @@ async def startup_event():
     app.state.user_settings_storage = UserSettingsStorage()
 
 # Add CORS middleware
+# Production-ready CORS configuration
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # You may want to restrict this to specific origins
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 

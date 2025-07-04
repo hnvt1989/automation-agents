@@ -106,3 +106,6 @@ pytz>=2023.3  # Timezone handling for calendar events
 
 # For authentication
 PyJWT>=2.8.0  # JWT token handling
+
+# Additional dependencies for Vercel deployment
+python-multipart>=0.0.6  # For file uploads
