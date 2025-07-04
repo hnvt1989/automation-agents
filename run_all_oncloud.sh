@@ -15,6 +15,23 @@ fi
 echo "Installing authentication dependencies..."
 pip install PyJWT>=2.8.0
 
+# Check for required Supabase environment variables
+echo "Checking Supabase configuration..."
+if [ -f "local.env" ]; then
+    source local.env
+    if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_KEY" ]; then
+        echo "❌ ERROR: SUPABASE_URL and SUPABASE_KEY must be set in local.env"
+        echo "Please configure your Supabase credentials in local.env file"
+        exit 1
+    else
+        echo "✅ Supabase configuration found"
+    fi
+else
+    echo "❌ ERROR: local.env file not found"
+    echo "Please create local.env with your Supabase credentials"
+    exit 1
+fi
+
 # Function to check if port is in use
 check_port() {
     local port=$1
@@ -60,9 +77,9 @@ if check_port $FRONTEND_PORT; then
     kill_port $FRONTEND_PORT
 fi
 
-# Start backend API server in background
-echo "Starting backend API server with authentication on port $BACKEND_PORT..."
-uvicorn src.api_server:app --reload --host 0.0.0.0 --port $BACKEND_PORT &
+# Start Supabase backend API server in background
+echo "Starting Supabase backend API server with full cloud storage on port $BACKEND_PORT..."
+uvicorn src.api_server_supabase:app --reload --host 0.0.0.0 --port $BACKEND_PORT &
 BACKEND_PID=$!
 
 # Wait a moment for backend to start
@@ -76,9 +93,21 @@ FRONTEND_PID=$!
 cd ..
 
 echo ""
-echo "🚀 Servers are running:"
-echo "   Backend API: http://localhost:$BACKEND_PORT"
-echo "   Frontend:    http://localhost:$FRONTEND_PORT"
+echo "🚀 Servers are running with full Supabase integration:"
+echo "   Backend API (Supabase): http://localhost:$BACKEND_PORT"
+echo "   Frontend:               http://localhost:$FRONTEND_PORT"
+echo ""
+echo "✅ Using Supabase for:"
+echo "   • Documents (with vector search)"
+echo "   • Tasks & Daily Logs"
+echo "   • User Authentication"
+echo "   • All data storage"
+echo ""
+echo "📋 Database Setup:"
+echo "   If this is your first time running, make sure you have:"
+echo "   1. Created tables using: scripts/supabase_schema.sql"
+echo "   2. Added vector functions: scripts/supabase_vector_functions.sql"
+echo "   3. Migrated your files using: scripts/run_migration.py"
 echo ""
 echo "Press Ctrl+C to stop both servers"
 
