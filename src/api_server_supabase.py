@@ -204,7 +204,8 @@ def get_document_manager(current_user = Depends(get_current_user_optional)):
     else:
         # Fallback to default user when no authentication is provided
         # TODO: Remove this fallback when proper authentication is implemented
-        user_id = "34ed3b47-3198-43bd-91df-b2a389ad82aa"
+        default_user_id = os.getenv("DEFAULT_USER_ID", "34ed3b47-3198-43bd-91df-b2a389ad82aa")
+        user_id = default_user_id
     
     return DocumentManager(user_id=user_id)
 
