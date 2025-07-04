@@ -977,10 +977,14 @@
     <script type="text/babel">
 const { useState, useEffect, useRef } = React;
 
-// Configuration - Update these URLs to match your backend server
+// Configuration - Auto-detect environment
 const CONFIG = {
-    API_BASE_URL: 'http://localhost:8000',  // Backend API server URL
-    WS_URL: 'ws://localhost:8000/ws'        // WebSocket URL for real-time chat
+    API_BASE_URL: window.location.hostname === 'localhost' 
+        ? 'http://localhost:8000' 
+        : window.location.origin,  // Use same domain for production
+    WS_URL: window.location.hostname === 'localhost' 
+        ? 'ws://localhost:8000/ws' 
+        : null  // Disable WebSocket on Vercel (serverless doesn't support persistent connections)
 };
 
 // Deadline calculation helper function
@@ -3105,7 +3109,7 @@ function App() {
     }, [authToken]);
 
     useEffect(() => {
-        if (!authToken) return; // Don't connect WebSocket until authenticated
+        if (!authToken || !CONFIG.WS_URL) return; // Don't connect WebSocket until authenticated or if WS disabled
         
         const ws = new WebSocket(`${CONFIG.WS_URL}?token=${authToken}`);
         wsRef.current = ws;
