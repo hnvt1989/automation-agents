@@ -756,7 +756,8 @@ class PrimaryAgent(BaseAgent):
         deps = PrimaryAgentDeps(
             agents=self.agents,
             query=prompt,
-            debug=kwargs.get("debug", False)
+            debug=kwargs.get("debug", False),
+            user_id=kwargs.get("user_id")
         )
 
         async for delta in super().run_stream(prompt, deps=deps, **kwargs):

@@ -1021,8 +1021,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 # Use primary agent to handle the request with user context
                 response_parts = []
-                deps = PrimaryAgentDeps(user_id=user_id)
-                async for delta in primary_agent.run_stream(message, deps=deps):
+                async for delta in primary_agent.run_stream(message, user_id=user_id):
                     response_parts.append(delta)
                     await websocket.send_text(delta)
                 
