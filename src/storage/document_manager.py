@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 
 from src.storage.supabase_vector import SupabaseVectorClient
+from src.storage.document_storage import DocumentStorage
 from src.utils.logging import log_info, log_error, log_warning
 
 
@@ -32,7 +33,11 @@ class DocumentManager:
             user_id: User ID for user-scoped document access
         """
         self.user_id = user_id
-        # Create separate collections for each document type
+        
+        # Initialize document storage for full documents
+        self.document_storage = DocumentStorage(user_id=user_id)
+        
+        # Create separate collections for each document type (for embeddings)
         self.clients = {
             doc_type: SupabaseVectorClient(
                 collection_name=collection_name,
@@ -53,7 +58,7 @@ class DocumentManager:
         filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None
     ) -> str:
-        """Add a document to vector storage.
+        """Add a document to both full document storage and vector storage.
         
         Args:
             content: Document content
@@ -69,7 +74,8 @@ class DocumentManager:
         if doc_type not in self.DOCUMENT_TYPES:
             raise ValueError(f"Invalid document type: {doc_type}")
         
-        client = self.clients[doc_type]
+        # Generate unique document ID
+        doc_id = str(uuid.uuid4())
         
         # Prepare metadata
         doc_metadata = {
@@ -82,27 +88,32 @@ class DocumentManager:
             **(metadata or {})
         }
         
-        # Add document with contextual chunking
+        # 1. Try to store full document in dedicated table
+        storage_result = self.document_storage.create_document(
+            document_id=doc_id,
+            name=name,
+            content=content,
+            doc_type=doc_type,
+            description=description,
+            metadata=doc_metadata
+        )
+        
+        if not storage_result["success"]:
+            log_warning(f"Failed to store full document in dedicated table: {storage_result['error']}")
+            # Continue with embedding storage as fallback
+        
+        # 2. Create embeddings for search
+        client = self.clients[doc_type]
+        
+        # Add document with contextual chunking for vector search
         doc_ids = client.add_documents_with_context(
             content=content,
             context_info=doc_metadata,
             use_llm_context=True
         )
         
-        # Store the main document metadata
-        main_doc_id = str(uuid.uuid4())
-        main_metadata = doc_metadata.copy()
-        main_metadata['is_main_document'] = True
-        main_metadata['chunk_ids'] = doc_ids
-        
-        client.add_documents(
-            documents=[content],
-            metadatas=[main_metadata],
-            ids=[main_doc_id]
-        )
-        
-        log_info(f"Added {doc_type}: {name} with ID: {main_doc_id}")
-        return main_doc_id
+        log_info(f"Added {doc_type}: {name} with ID: {doc_id} and {len(doc_ids)} chunks")
+        return doc_id
     
     def get_documents(self, doc_type: str) -> List[Dict[str, Any]]:
         """Get all documents of a specific type.
@@ -116,90 +127,14 @@ class DocumentManager:
         if doc_type not in self.DOCUMENT_TYPES:
             raise ValueError(f"Invalid document type: {doc_type}")
         
-        client = self.clients[doc_type]
-        
-        # For now, work with the existing chunk-based structure
-        # Get all documents and group by original filename/path to deduplicate
-        try:
-            # Query the table directly to get all documents of this type
-            result = client.client.table('document_embeddings').select('document_id, content, metadata').eq('collection_name', self.DOCUMENT_TYPES[doc_type]).limit(1000).execute()
-            
-            # Group documents by their original file to deduplicate
-            unique_docs = {}
-            for item in result.data:
-                metadata = item.get('metadata', {})
-                if isinstance(metadata, str):
-                    import json
-                    metadata = json.loads(metadata)
-                
-                # Use original_path or filename as the unique key
-                unique_key = metadata.get('original_path') or metadata.get('filename') or metadata.get('name', 'unknown')
-                
-                # Skip "Untitled" documents that don't have proper metadata
-                if metadata.get('name') == 'Untitled' and not metadata.get('description'):
-                    continue
-                
-                # Only keep the first chunk (chunk_index 0) or if no chunk_index, keep it
-                chunk_index = metadata.get('chunk_index', 0)
-                # Prefer documents with proper metadata (non-null last_modified)
-                has_good_metadata = metadata.get('last_modified') is not None
-                
-                if (unique_key not in unique_docs or 
-                    chunk_index == 0 or 
-                    (has_good_metadata and not unique_docs[unique_key].get('last_modified'))):
-                    unique_docs[unique_key] = {
-                        "id": item['document_id'],
-                        "name": metadata.get("name", "Untitled"),
-                        "description": metadata.get("description", ""),
-                        "filename": metadata.get("filename", ""),
-                        "doc_type": metadata.get("doc_type", doc_type),
-                        "created_at": metadata.get("created_at"),
-                        "last_modified": metadata.get("last_modified"),
-                        "path": f"supabase://{self.DOCUMENT_TYPES[doc_type]}/{item['document_id']}",
-                        **{k: v for k, v in metadata.items() 
-                           if k not in ['name', 'description', 'filename', 'doc_type', 'created_at', 'last_modified', 'chunk_index', 'total_chunks', 'has_context', 'indexed_at', 'original_content']}
-                    }
-            
-            documents = list(unique_docs.values())
-            
-        except Exception as e:
-            log_error(f"Failed to get documents from table: {str(e)}")
-            # Fallback to vector search
-            results = client.query(
-                query_texts=["document content"],
-                n_results=1000,
-                where=None
-            )
-            
-            documents = []
-            if results["metadatas"] and results["metadatas"][0]:
-                seen_names = set()
-                for i, metadata in enumerate(results["metadatas"][0]):
-                    doc_id = results["ids"][0][i]
-                    name = metadata.get("name", "Untitled")
-                    
-                    # Deduplicate by name
-                    if name not in seen_names:
-                        seen_names.add(name)
-                        documents.append({
-                            "id": doc_id,
-                            "name": name,
-                            "description": metadata.get("description", ""),
-                            "filename": metadata.get("filename", ""),
-                            "doc_type": metadata.get("doc_type", doc_type),
-                            "created_at": metadata.get("created_at"),
-                            "last_modified": metadata.get("last_modified"),
-                            "path": f"supabase://{self.DOCUMENT_TYPES[doc_type]}/{doc_id}"
-                        })
-        
-        # Sort by last_modified descending (handle None values)
-        documents.sort(key=lambda x: x.get("last_modified") or "1970-01-01", reverse=True)
+        # Get documents from the dedicated storage
+        documents = self.document_storage.get_documents(doc_type)
         
         log_info(f"Retrieved {len(documents)} {doc_type}s")
         return documents
     
     def get_document_content(self, doc_id: str, doc_type: str) -> Optional[str]:
-        """Get document content by ID.
+        """Get full document content by ID.
         
         Args:
             doc_id: Document ID
@@ -211,9 +146,14 @@ class DocumentManager:
         if doc_type not in self.DOCUMENT_TYPES:
             raise ValueError(f"Invalid document type: {doc_type}")
         
-        client = self.clients[doc_type]
+        # Try to get full document from dedicated storage first
+        if self.document_storage.tables_available:
+            document = self.document_storage.get_document(doc_id, doc_type)
+            if document:
+                return document["content"]
         
-        # Use the new direct method to get document by ID
+        # Fallback to getting content from embeddings (chunked)
+        client = self.clients[doc_type]
         content = client.get_document_by_id(doc_id)
         
         if content is None:
@@ -246,52 +186,64 @@ class DocumentManager:
         if doc_type not in self.DOCUMENT_TYPES:
             raise ValueError(f"Invalid document type: {doc_type}")
         
-        client = self.clients[doc_type]
-        
         try:
-            # Get current metadata
-            current_results = client.query(
-                query_texts=[""],
-                n_results=1000,
-                where={"is_main_document": True}
+            # Update in document storage
+            result = self.document_storage.update_document(
+                document_id=doc_id,
+                doc_type=doc_type,
+                name=name,
+                content=content,
+                description=description,
+                metadata=metadata
             )
             
-            current_metadata = None
-            doc_index = None
-            
-            if current_results["ids"] and current_results["ids"][0]:
-                for i, result_id in enumerate(current_results["ids"][0]):
-                    if result_id == doc_id:
-                        current_metadata = current_results["metadatas"][0][i]
-                        doc_index = i
-                        break
-            
-            if current_metadata is None:
-                log_error(f"Document not found for update: {doc_id}")
+            if result["success"]:
+                # If content was updated, re-index for search
+                if content is not None:
+                    client = self.clients[doc_type]
+                    
+                    # Delete old embeddings
+                    try:
+                        # Get all chunks for this document
+                        old_results = client.query(
+                            query_texts=[""],
+                            n_results=1000
+                        )
+                        
+                        # Find chunks that belong to this document
+                        chunks_to_delete = []
+                        if old_results["ids"] and old_results["ids"][0]:
+                            for i, metadata in enumerate(old_results["metadatas"][0]):
+                                if metadata and metadata.get("name") == name:
+                                    chunks_to_delete.append(old_results["ids"][0][i])
+                        
+                        if chunks_to_delete:
+                            client.delete_documents(chunks_to_delete)
+                        
+                        # Re-index with new content
+                        doc_metadata = {
+                            'name': name or doc_id,
+                            'description': description or f"Updated {doc_type}",
+                            'doc_type': doc_type,
+                            'created_at': datetime.now().isoformat(),
+                            'last_modified': datetime.now().isoformat(),
+                            **(metadata or {})
+                        }
+                        
+                        client.add_documents_with_context(
+                            content=content,
+                            context_info=doc_metadata,
+                            use_llm_context=True
+                        )
+                        
+                    except Exception as e:
+                        log_warning(f"Failed to re-index document {doc_id}: {str(e)}")
+                
+                log_info(f"Updated {doc_type}: {doc_id}")
+                return True
+            else:
+                log_error(f"Failed to update document {doc_id}: {result['error']}")
                 return False
-            
-            # Update metadata
-            updated_metadata = current_metadata.copy()
-            updated_metadata['last_modified'] = datetime.now().isoformat()
-            
-            if name is not None:
-                updated_metadata['name'] = name
-            if description is not None:
-                updated_metadata['description'] = description
-            if metadata:
-                updated_metadata.update(metadata)
-            
-            # Update document
-            update_content = content if content is not None else current_results["documents"][0][doc_index]
-            
-            client.update_documents(
-                ids=[doc_id],
-                documents=[update_content],
-                metadatas=[updated_metadata]
-            )
-            
-            log_info(f"Updated {doc_type}: {doc_id}")
-            return True
             
         except Exception as e:
             log_error(f"Failed to update document {doc_id}: {str(e)}")
@@ -310,30 +262,46 @@ class DocumentManager:
         if doc_type not in self.DOCUMENT_TYPES:
             raise ValueError(f"Invalid document type: {doc_type}")
         
-        client = self.clients[doc_type]
-        
         try:
-            # Get document metadata to find associated chunks
-            results = client.query(
-                query_texts=[""],
-                n_results=1000,
-                where={"is_main_document": True}
-            )
+            # Delete from document storage
+            result = self.document_storage.delete_document(doc_id, doc_type)
             
-            chunk_ids = []
-            if results["ids"] and results["ids"][0]:
-                for i, result_id in enumerate(results["ids"][0]):
-                    if result_id == doc_id:
-                        metadata = results["metadatas"][0][i]
-                        chunk_ids = metadata.get("chunk_ids", [])
-                        break
-            
-            # Delete main document and associated chunks
-            all_ids = [doc_id] + chunk_ids
-            client.delete_documents(all_ids)
-            
-            log_info(f"Deleted {doc_type}: {doc_id} and {len(chunk_ids)} chunks")
-            return True
+            if result["success"]:
+                # Also delete embeddings
+                client = self.clients[doc_type]
+                
+                try:
+                    # Get all chunks for this document by searching for it
+                    results = client.query(
+                        query_texts=[""],
+                        n_results=1000
+                    )
+                    
+                    chunks_to_delete = []
+                    if results["ids"] and results["ids"][0]:
+                        # Get document name to match chunks
+                        doc = self.document_storage.get_document(doc_id, doc_type)
+                        doc_name = doc["name"] if doc else None
+                        
+                        for i, metadata in enumerate(results["metadatas"][0]):
+                            if metadata and (
+                                metadata.get("name") == doc_name or 
+                                results["ids"][0][i] == doc_id
+                            ):
+                                chunks_to_delete.append(results["ids"][0][i])
+                    
+                    if chunks_to_delete:
+                        client.delete_documents(chunks_to_delete)
+                        log_info(f"Deleted {len(chunks_to_delete)} embedding chunks for {doc_id}")
+                
+                except Exception as e:
+                    log_warning(f"Failed to delete embeddings for {doc_id}: {str(e)}")
+                
+                log_info(f"Deleted {doc_type}: {doc_id}")
+                return True
+            else:
+                log_error(f"Failed to delete document {doc_id}: {result['error']}")
+                return False
             
         except Exception as e:
             log_error(f"Failed to delete document {doc_id}: {str(e)}")

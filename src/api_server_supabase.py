@@ -199,7 +199,13 @@ def get_current_user_optional(authorization: Optional[str] = Header(None)):
 # Document manager will be initialized per request with user context
 def get_document_manager(current_user = Depends(get_current_user_optional)):
     """Get document manager for current user."""
-    user_id = current_user["user_id"] if current_user else None
+    if current_user:
+        user_id = current_user["user_id"]
+    else:
+        # Fallback to default user when no authentication is provided
+        # TODO: Remove this fallback when proper authentication is implemented
+        user_id = "34ed3b47-3198-43bd-91df-b2a389ad82aa"
+    
     return DocumentManager(user_id=user_id)
 
 
@@ -459,12 +465,12 @@ async def get_documents(doc_manager: DocumentManager = Depends(get_document_mana
         for i, doc in enumerate(documents):
             formatted_docs.append({
                 "name": doc["name"],
-                "description": doc["description"],
-                "filename": doc["filename"],
-                "path": doc["path"],
+                "description": doc["description"] or "",
+                "filename": doc.get("metadata", {}).get("filename", doc["name"]),
+                "path": f"supabase://documents/{doc['id']}",
                 "id": doc["id"],
                 "index": i,  # For compatibility with existing frontend
-                "lastModified": doc.get("last_modified")
+                "lastModified": doc.get("updated_at") or doc.get("created_at")
             })
         
         return {"documents": formatted_docs}
@@ -473,21 +479,36 @@ async def get_documents(doc_manager: DocumentManager = Depends(get_document_mana
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/documents/{doc_index}/content")
-async def get_document_content(doc_index: int, doc_manager: DocumentManager = Depends(get_document_manager)):
-    """Get the content of a specific document"""
+@app.get("/documents/{doc_identifier}/content")
+async def get_document_content(doc_identifier: str, doc_manager: DocumentManager = Depends(get_document_manager)):
+    """Get the content of a specific document by ID or index (for backward compatibility)"""
     try:
-        documents = doc_manager.get_documents("document")
-        
-        if 0 <= doc_index < len(documents):
-            doc = documents[doc_index]
-            content = doc_manager.get_document_content(doc["id"], "document")
-            if content is not None:
-                return {"content": content}
+        # Check if doc_identifier is a number (index) or UUID (ID)
+        if doc_identifier.isdigit():
+            # It's an index - convert to ID
+            documents = doc_manager.get_documents("document")
+            doc_index = int(doc_identifier)
+            
+            if 0 <= doc_index < len(documents):
+                doc_id = documents[doc_index]["id"]
             else:
-                raise HTTPException(status_code=404, detail="Document content not found")
+                raise HTTPException(status_code=404, detail="Document index out of range")
         else:
-            raise HTTPException(status_code=404, detail="Document not found")
+            # It's already a document ID
+            doc_id = doc_identifier
+        
+        content = doc_manager.get_document_content(doc_id, "document")
+        if content is not None:
+            return {"content": content}
+        else:
+            raise HTTPException(status_code=404, detail="Document content not found")
+    except ValueError:
+        # doc_identifier is not a number, treat as ID
+        content = doc_manager.get_document_content(doc_identifier, "document")
+        if content is not None:
+            return {"content": content}
+        else:
+            raise HTTPException(status_code=404, detail="Document content not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -503,12 +524,12 @@ async def get_notes(doc_manager: DocumentManager = Depends(get_document_manager)
         for i, note in enumerate(notes):
             formatted_notes.append({
                 "name": note["name"],
-                "description": note["description"],
-                "filename": note["filename"],
-                "path": note["path"],
+                "description": note["description"] or "",
+                "filename": note.get("metadata", {}).get("filename", note["name"]),
+                "path": f"supabase://notes/{note['id']}",
                 "id": note["id"],
                 "index": i,  # For compatibility with existing frontend
-                "lastModified": note.get("last_modified")
+                "lastModified": note.get("updated_at") or note.get("created_at")
             })
         
         return {"notes": formatted_notes}
@@ -517,21 +538,29 @@ async def get_notes(doc_manager: DocumentManager = Depends(get_document_manager)
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/notes/{note_index}/content")
-async def get_note_content(note_index: int, doc_manager: DocumentManager = Depends(get_document_manager)):
-    """Get the content of a specific note"""
+@app.get("/notes/{note_identifier}/content")
+async def get_note_content(note_identifier: str, doc_manager: DocumentManager = Depends(get_document_manager)):
+    """Get the content of a specific note by ID or index (for backward compatibility)"""
     try:
-        notes = doc_manager.get_documents("note")
-        
-        if 0 <= note_index < len(notes):
-            note = notes[note_index]
-            content = doc_manager.get_document_content(note["id"], "note")
-            if content is not None:
-                return {"content": content}
+        # Check if note_identifier is a number (index) or UUID (ID)
+        if note_identifier.isdigit():
+            # It's an index - convert to ID
+            notes = doc_manager.get_documents("note")
+            note_index = int(note_identifier)
+            
+            if 0 <= note_index < len(notes):
+                note_id = notes[note_index]["id"]
             else:
-                raise HTTPException(status_code=404, detail="Note content not found")
+                raise HTTPException(status_code=404, detail="Note index out of range")
         else:
-            raise HTTPException(status_code=404, detail="Note not found")
+            # It's already a note ID
+            note_id = note_identifier
+        
+        content = doc_manager.get_document_content(note_id, "note")
+        if content is not None:
+            return {"content": content}
+        else:
+            raise HTTPException(status_code=404, detail="Note content not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -612,30 +641,50 @@ async def create_document(doc_update: DocumentUpdate, doc_manager: DocumentManag
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.put("/documents/{doc_index}")
-async def update_document(doc_index: int, doc_update: DocumentUpdate, doc_manager: DocumentManager = Depends(get_document_manager)):
-    """Update a specific document by index"""
+@app.put("/documents/{doc_identifier}")
+async def update_document(doc_identifier: str, doc_update: DocumentUpdate, doc_manager: DocumentManager = Depends(get_document_manager)):
+    """Update a specific document by ID or index (for backward compatibility)"""
     try:
-        documents = doc_manager.get_documents("document")
-        
-        if 0 <= doc_index < len(documents):
-            document = documents[doc_index]
-            doc_id = document["id"]
+        # Check if doc_identifier is a number (index) or UUID (ID)
+        if doc_identifier.isdigit():
+            # It's an index - convert to ID
+            documents = doc_manager.get_documents("document")
+            doc_index = int(doc_identifier)
             
-            success = doc_manager.update_document(
-                doc_id=doc_id,
-                doc_type="document",
-                content=doc_update.content,
-                name=doc_update.name,
-                description=doc_update.description
-            )
-            
-            if success:
-                return {"success": True, "message": "Document updated"}
+            if 0 <= doc_index < len(documents):
+                doc_id = documents[doc_index]["id"]
             else:
-                raise HTTPException(status_code=500, detail="Failed to update document")
+                raise HTTPException(status_code=404, detail="Document index out of range")
         else:
-            raise HTTPException(status_code=404, detail="Document not found")
+            # It's already a document ID
+            doc_id = doc_identifier
+        
+        success = doc_manager.update_document(
+            doc_id=doc_id,
+            doc_type="document",
+            content=doc_update.content,
+            name=doc_update.name,
+            description=doc_update.description
+        )
+        
+        if success:
+            return {"success": True, "message": "Document updated"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to update document")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/documents/{doc_id}")
+async def delete_document(doc_id: str, doc_manager: DocumentManager = Depends(get_document_manager)):
+    """Delete a specific document by ID"""
+    try:
+        success = doc_manager.delete_document(doc_id, "document")
+        
+        if success:
+            return {"success": True, "message": "Document deleted"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to delete document")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -653,12 +702,12 @@ async def get_memos(doc_manager: DocumentManager = Depends(get_document_manager)
             formatted_memos.append({
                 "id": memo["id"],
                 "name": memo["name"],
-                "description": memo["description"],
-                "filename": memo["filename"],
-                "path": memo["path"],
+                "description": memo["description"] or "",
+                "filename": memo.get("metadata", {}).get("filename", memo["name"]),
+                "path": f"supabase://memos/{memo['id']}",
                 "type": "memo",
                 "format": "markdown",
-                "lastModified": memo.get("last_modified")
+                "lastModified": memo.get("updated_at") or memo.get("created_at")
             })
         
         return {"memos": formatted_memos}
@@ -761,17 +810,17 @@ async def get_interviews(doc_manager: DocumentManager = Depends(get_document_man
         formatted_interviews = []
         for interview in interviews:
             # Extract metadata fields
-            metadata = interview
+            metadata = interview.get("metadata", {})
             formatted_interviews.append({
                 "id": interview["id"],
                 "name": interview["name"],
-                "description": interview["description"],
-                "filename": interview["filename"],
-                "path": interview["path"],
+                "description": interview["description"] or "",
+                "filename": metadata.get("filename", interview["name"]),
+                "path": f"supabase://interviews/{interview['id']}",
                 "status": metadata.get("status", "pending"),
                 "priority": metadata.get("priority", "medium"),
                 "notes": metadata.get("original_notes", ""),
-                "lastModified": interview.get("last_modified")
+                "lastModified": interview.get("updated_at") or interview.get("created_at")
             })
         
         return {"interviews": formatted_interviews}
