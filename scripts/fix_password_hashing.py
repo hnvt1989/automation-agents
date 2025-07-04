@@ -52,7 +52,7 @@ def main():
             
             # For the default user, we know the original password
             if email == "huynguyenvt1989@gmail.com":
-                original_password = "Vungtau1989"
+                original_password = "something"
                 
                 # Create the new double-hashed password
                 client_hash = hash_password_client_side(original_password)
