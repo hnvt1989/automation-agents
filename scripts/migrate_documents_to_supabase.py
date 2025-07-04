@@ -14,12 +14,13 @@ import yaml
 from pathlib import Path
 from typing import Dict, Any
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+# Add project root to path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
-from storage.document_manager import DocumentManager
-from storage.auth_storage import AuthStorage
-from utils.logging import log_info, log_error, log_warning
+from src.storage.document_manager import DocumentManager
+from src.storage.auth_storage import AuthStorage
+from src.utils.logging import log_info, log_error, log_warning
 
 
 def load_markdown_file(file_path: Path) -> str:

@@ -299,6 +299,31 @@ class SupabaseVectorClient:
             log_error(f"Failed to clear collection: {str(e)}")
             raise
     
+    def get_document_by_id(self, document_id: str) -> Optional[str]:
+        """Get document content by ID.
+        
+        Args:
+            document_id: ID of the document to retrieve
+            
+        Returns:
+            Document content or None if not found
+        """
+        try:
+            result = self.client.table("document_embeddings") \
+                .select("content") \
+                .eq("document_id", document_id) \
+                .eq("collection_name", self.collection_name) \
+                .execute()
+            
+            if result.data and len(result.data) > 0:
+                return result.data[0]["content"]
+            
+            return None
+            
+        except Exception as e:
+            log_error(f"Failed to get document by ID {document_id}: {str(e)}")
+            return None
+    
     def chunk_text(
         self,
         text: str,

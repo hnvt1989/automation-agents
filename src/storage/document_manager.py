@@ -118,33 +118,82 @@ class DocumentManager:
         
         client = self.clients[doc_type]
         
-        # Query for main documents only
-        results = client.query(
-            query_texts=[""],
-            n_results=1000,  # Large number to get all
-            where={"is_main_document": True}
-        )
-        
-        documents = []
-        if results["metadatas"] and results["metadatas"][0]:
-            for i, metadata in enumerate(results["metadatas"][0]):
-                doc_id = results["ids"][0][i]
+        # For now, work with the existing chunk-based structure
+        # Get all documents and group by original filename/path to deduplicate
+        try:
+            # Query the table directly to get all documents of this type
+            result = client.client.table('document_embeddings').select('document_id, content, metadata').eq('collection_name', self.DOCUMENT_TYPES[doc_type]).limit(1000).execute()
+            
+            # Group documents by their original file to deduplicate
+            unique_docs = {}
+            for item in result.data:
+                metadata = item.get('metadata', {})
+                if isinstance(metadata, str):
+                    import json
+                    metadata = json.loads(metadata)
                 
-                documents.append({
-                    "id": doc_id,
-                    "name": metadata.get("name", "Untitled"),
-                    "description": metadata.get("description", ""),
-                    "filename": metadata.get("filename", ""),
-                    "doc_type": metadata.get("doc_type", doc_type),
-                    "created_at": metadata.get("created_at"),
-                    "last_modified": metadata.get("last_modified"),
-                    "path": f"supabase://{self.DOCUMENT_TYPES[doc_type]}/{doc_id}",
-                    **{k: v for k, v in metadata.items() 
-                       if k not in ['name', 'description', 'filename', 'doc_type', 'created_at', 'last_modified', 'is_main_document', 'chunk_ids']}
-                })
+                # Use original_path or filename as the unique key
+                unique_key = metadata.get('original_path') or metadata.get('filename') or metadata.get('name', 'unknown')
+                
+                # Skip "Untitled" documents that don't have proper metadata
+                if metadata.get('name') == 'Untitled' and not metadata.get('description'):
+                    continue
+                
+                # Only keep the first chunk (chunk_index 0) or if no chunk_index, keep it
+                chunk_index = metadata.get('chunk_index', 0)
+                # Prefer documents with proper metadata (non-null last_modified)
+                has_good_metadata = metadata.get('last_modified') is not None
+                
+                if (unique_key not in unique_docs or 
+                    chunk_index == 0 or 
+                    (has_good_metadata and not unique_docs[unique_key].get('last_modified'))):
+                    unique_docs[unique_key] = {
+                        "id": item['document_id'],
+                        "name": metadata.get("name", "Untitled"),
+                        "description": metadata.get("description", ""),
+                        "filename": metadata.get("filename", ""),
+                        "doc_type": metadata.get("doc_type", doc_type),
+                        "created_at": metadata.get("created_at"),
+                        "last_modified": metadata.get("last_modified"),
+                        "path": f"supabase://{self.DOCUMENT_TYPES[doc_type]}/{item['document_id']}",
+                        **{k: v for k, v in metadata.items() 
+                           if k not in ['name', 'description', 'filename', 'doc_type', 'created_at', 'last_modified', 'chunk_index', 'total_chunks', 'has_context', 'indexed_at', 'original_content']}
+                    }
+            
+            documents = list(unique_docs.values())
+            
+        except Exception as e:
+            log_error(f"Failed to get documents from table: {str(e)}")
+            # Fallback to vector search
+            results = client.query(
+                query_texts=["document content"],
+                n_results=1000,
+                where=None
+            )
+            
+            documents = []
+            if results["metadatas"] and results["metadatas"][0]:
+                seen_names = set()
+                for i, metadata in enumerate(results["metadatas"][0]):
+                    doc_id = results["ids"][0][i]
+                    name = metadata.get("name", "Untitled")
+                    
+                    # Deduplicate by name
+                    if name not in seen_names:
+                        seen_names.add(name)
+                        documents.append({
+                            "id": doc_id,
+                            "name": name,
+                            "description": metadata.get("description", ""),
+                            "filename": metadata.get("filename", ""),
+                            "doc_type": metadata.get("doc_type", doc_type),
+                            "created_at": metadata.get("created_at"),
+                            "last_modified": metadata.get("last_modified"),
+                            "path": f"supabase://{self.DOCUMENT_TYPES[doc_type]}/{doc_id}"
+                        })
         
-        # Sort by last_modified descending
-        documents.sort(key=lambda x: x.get("last_modified", ""), reverse=True)
+        # Sort by last_modified descending (handle None values)
+        documents.sort(key=lambda x: x.get("last_modified") or "1970-01-01", reverse=True)
         
         log_info(f"Retrieved {len(documents)} {doc_type}s")
         return documents
@@ -164,20 +213,13 @@ class DocumentManager:
         
         client = self.clients[doc_type]
         
-        # Query for the specific document
-        results = client.query(
-            query_texts=[""],
-            n_results=1,
-            where={"is_main_document": True}
-        )
+        # Use the new direct method to get document by ID
+        content = client.get_document_by_id(doc_id)
         
-        if results["ids"] and results["ids"][0]:
-            for i, result_id in enumerate(results["ids"][0]):
-                if result_id == doc_id:
-                    return results["documents"][0][i]
+        if content is None:
+            log_warning(f"Document not found: {doc_id}")
         
-        log_warning(f"Document not found: {doc_id}")
-        return None
+        return content
     
     def update_document(
         self,

@@ -121,12 +121,6 @@ load_dotenv("local.env")
 # Initialize Supabase operations
 db_ops = SupabaseOperations()
 
-# Document manager will be initialized per request with user context
-def get_document_manager(current_user = Depends(get_current_user_optional)):
-    """Get document manager for current user."""
-    user_id = current_user["id"] if current_user else None
-    return DocumentManager(user_id=user_id)
-
 # Initialize FastAPI app
 app = FastAPI()
 
@@ -200,6 +194,13 @@ def get_current_user_optional(authorization: Optional[str] = Header(None)):
         return auth_storage.verify_session(token)
     except Exception:
         return None
+
+
+# Document manager will be initialized per request with user context
+def get_document_manager(current_user = Depends(get_current_user_optional)):
+    """Get document manager for current user."""
+    user_id = current_user["user_id"] if current_user else None
+    return DocumentManager(user_id=user_id)
 
 
 # Root endpoint
@@ -670,29 +671,29 @@ async def get_memos(doc_manager: DocumentManager = Depends(get_document_manager)
 async def create_memo(memo_update: DocumentUpdate, doc_manager: DocumentManager = Depends(get_document_manager)):
     """Create a new memo"""
     try:
-        
-        # Generate filename from name
+        content = memo_update.content or ""
         filename = memo_update.filename or f"{memo_update.name.lower().replace(' ', '_')}.md"
         if not filename.endswith('.md'):
             filename += '.md'
         
-        file_path = memos_dir / filename
-        
-        # Write content to file
-        content = memo_update.content or ""
-        file_path.write_text(content)
+        doc_id = doc_manager.add_document(
+            content=content,
+            name=memo_update.name,
+            doc_type="memo",
+            description=memo_update.description,
+            filename=filename
+        )
         
         # Return memo data
         memo = {
-            "id": file_path.stem,
+            "id": doc_id,
             "name": memo_update.name,
             "description": memo_update.description or f"Memo - {filename}",
             "filename": filename,
-            "path": str(file_path.relative_to(BASE_DIR)),
+            "path": f"supabase://memos/{doc_id}",
             "type": "memo",
             "format": "markdown",
-            "content": content,
-            "lastModified": file_path.stat().st_mtime
+            "content": content
         }
         
         return {"success": True, "memo": memo}
@@ -701,30 +702,33 @@ async def create_memo(memo_update: DocumentUpdate, doc_manager: DocumentManager 
 
 
 @app.put("/memos/{memo_id}")
-async def update_memo(memo_id: str, memo_update: DocumentUpdate):
+async def update_memo(memo_id: str, memo_update: DocumentUpdate, doc_manager: DocumentManager = Depends(get_document_manager)):
     """Update an existing memo"""
     try:
-        memos_dir = BASE_DIR / "data" / "memos"
-        file_path = memos_dir / f"{memo_id}.md"
+        success = doc_manager.update_document(
+            doc_id=memo_id,
+            doc_type="memo",
+            content=memo_update.content,
+            name=memo_update.name,
+            description=memo_update.description
+        )
         
-        if not file_path.exists():
+        if not success:
             raise HTTPException(status_code=404, detail="Memo not found")
         
-        # Update content
-        if memo_update.content is not None:
-            file_path.write_text(memo_update.content)
+        # Get updated content for response
+        content = doc_manager.get_document_content(memo_id, "memo")
         
         # Return updated memo data
         memo = {
             "id": memo_id,
-            "name": memo_update.name or file_path.stem.replace("_", " ").title(),
-            "description": memo_update.description or f"Memo - {file_path.name}",
-            "filename": file_path.name,
-            "path": str(file_path.relative_to(BASE_DIR)),
+            "name": memo_update.name,
+            "description": memo_update.description,
+            "filename": f"{memo_update.name.lower().replace(' ', '_')}.md" if memo_update.name else None,
+            "path": f"supabase://memos/{memo_id}",
             "type": "memo",
             "format": "markdown",
-            "content": memo_update.content,
-            "lastModified": file_path.stat().st_mtime
+            "content": content
         }
         
         return {"success": True, "memo": memo}
@@ -733,99 +737,89 @@ async def update_memo(memo_id: str, memo_update: DocumentUpdate):
 
 
 @app.delete("/memos/{memo_id}")
-async def delete_memo(memo_id: str):
+async def delete_memo(memo_id: str, doc_manager: DocumentManager = Depends(get_document_manager)):
     """Delete a specific memo"""
     try:
-        memos_dir = BASE_DIR / "data" / "memos"
-        file_path = memos_dir / f"{memo_id}.md"
+        success = doc_manager.delete_document(memo_id, "memo")
         
-        if not file_path.exists():
+        if not success:
             raise HTTPException(status_code=404, detail="Memo not found")
         
-        file_path.unlink()
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Interviews endpoints
+# Interviews endpoints using Supabase vector storage
 @app.get("/interviews")
-async def get_interviews():
-    """Get all interviews from the data/interviews directory"""
-    interviews_dir = INTERVIEWS_DIR
-    if not interviews_dir.exists():
-        interviews_dir.mkdir(parents=True, exist_ok=True)
-        return {"interviews": []}
-
-    interviews = []
-    # Sort files by name for consistent ordering
-    sorted_files = sorted(interviews_dir.glob("*.yaml"), key=lambda x: x.name)
-    
-    for file_path in sorted_files:
-        try:
-            with open(file_path, 'r') as f:
-                interview_data = yaml.safe_load(f) or {}
-            
-            # Use filename stem as ID
-            interview_id = file_path.stem
-            
-            interview = {
-                "id": interview_id,
-                "name": interview_data.get("name", file_path.stem.replace("_", " ").title()),
-                "description": interview_data.get("description", f"Interview - {file_path.name}"),
-                "filename": file_path.name,
-                "path": str(file_path.relative_to(BASE_DIR)),
-                "status": interview_data.get("status", "pending"),
-                "priority": interview_data.get("priority", "medium"),
-                "notes": interview_data.get("notes", ""),
-                "lastModified": file_path.stat().st_mtime
-            }
-            interviews.append(interview)
-        except Exception as e:
-            print(f"Error reading interview file {file_path}: {e}")
-            continue
-    
-    return {"interviews": interviews}
+async def get_interviews(doc_manager: DocumentManager = Depends(get_document_manager)):
+    """Get all interviews from Supabase vector storage"""
+    try:
+        interviews = doc_manager.get_documents("interview")
+        
+        # Format for frontend compatibility
+        formatted_interviews = []
+        for interview in interviews:
+            # Extract metadata fields
+            metadata = interview
+            formatted_interviews.append({
+                "id": interview["id"],
+                "name": interview["name"],
+                "description": interview["description"],
+                "filename": interview["filename"],
+                "path": interview["path"],
+                "status": metadata.get("status", "pending"),
+                "priority": metadata.get("priority", "medium"),
+                "notes": metadata.get("original_notes", ""),
+                "lastModified": interview.get("last_modified")
+            })
+        
+        return {"interviews": formatted_interviews}
+    except Exception as e:
+        log_error(f"Error getting interviews: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/interviews")
-async def create_interview(interview_update: InterviewUpdate):
+async def create_interview(interview_update: InterviewUpdate, doc_manager: DocumentManager = Depends(get_document_manager)):
     """Create a new interview"""
     try:
-        interviews_dir = INTERVIEWS_DIR
-        interviews_dir.mkdir(parents=True, exist_ok=True)
+        # Create content from interview data
+        content = f"# {interview_update.name}\n\n"
+        if interview_update.description:
+            content += f"**Description:** {interview_update.description}\n\n"
+        content += f"**Status:** {interview_update.status or 'pending'}\n"
+        content += f"**Priority:** {interview_update.priority or 'medium'}\n\n"
+        if interview_update.notes:
+            content += f"## Notes\n\n{interview_update.notes}\n"
         
-        # Generate filename from name
         filename = interview_update.filename or f"{interview_update.name.lower().replace(' ', '_')}.yaml"
         if not filename.endswith('.yaml'):
             filename += '.yaml'
         
-        file_path = interviews_dir / filename
-        
-        # Create interview data
-        interview_data = {
-            "name": interview_update.name,
-            "description": interview_update.description or f"Interview - {filename}",
-            "status": interview_update.status or "pending",
-            "priority": interview_update.priority or "medium",
-            "notes": interview_update.notes or ""
-        }
-        
-        # Write to file
-        with open(file_path, 'w') as f:
-            yaml.dump(interview_data, f, default_flow_style=False, allow_unicode=True)
+        doc_id = doc_manager.add_document(
+            content=content,
+            name=interview_update.name,
+            doc_type="interview",
+            description=interview_update.description or f"Interview - {filename}",
+            filename=filename,
+            metadata={
+                "status": interview_update.status or "pending",
+                "priority": interview_update.priority or "medium",
+                "original_notes": interview_update.notes or ""
+            }
+        )
         
         # Return interview data
         interview = {
-            "id": file_path.stem,
-            "name": interview_data["name"],
-            "description": interview_data["description"],
+            "id": doc_id,
+            "name": interview_update.name,
+            "description": interview_update.description or f"Interview - {filename}",
             "filename": filename,
-            "path": str(file_path.relative_to(BASE_DIR)),
-            "status": interview_data["status"],
-            "priority": interview_data["priority"],
-            "notes": interview_data["notes"],
-            "lastModified": file_path.stat().st_mtime
+            "path": f"supabase://interviews/{doc_id}",
+            "status": interview_update.status or "pending",
+            "priority": interview_update.priority or "medium",
+            "notes": interview_update.notes or ""
         }
         
         return {"success": True, "interview": interview}
@@ -834,46 +828,49 @@ async def create_interview(interview_update: InterviewUpdate):
 
 
 @app.put("/interviews/{interview_id}")
-async def update_interview(interview_id: str, interview_update: InterviewUpdate):
+async def update_interview(interview_id: str, interview_update: InterviewUpdate, doc_manager: DocumentManager = Depends(get_document_manager)):
     """Update an existing interview"""
     try:
-        interviews_dir = INTERVIEWS_DIR
-        file_path = interviews_dir / f"{interview_id}.yaml"
+        # Create updated content
+        content = f"# {interview_update.name or 'Interview'}\n\n"
+        if interview_update.description:
+            content += f"**Description:** {interview_update.description}\n\n"
+        content += f"**Status:** {interview_update.status or 'pending'}\n"
+        content += f"**Priority:** {interview_update.priority or 'medium'}\n\n"
+        if interview_update.notes:
+            content += f"## Notes\n\n{interview_update.notes}\n"
         
-        if not file_path.exists():
+        # Update metadata
+        metadata = {}
+        if interview_update.status:
+            metadata["status"] = interview_update.status
+        if interview_update.priority:
+            metadata["priority"] = interview_update.priority
+        if interview_update.notes:
+            metadata["original_notes"] = interview_update.notes
+        
+        success = doc_manager.update_document(
+            doc_id=interview_id,
+            doc_type="interview",
+            content=content,
+            name=interview_update.name,
+            description=interview_update.description,
+            metadata=metadata
+        )
+        
+        if not success:
             raise HTTPException(status_code=404, detail="Interview not found")
-        
-        # Read existing data
-        with open(file_path, 'r') as f:
-            interview_data = yaml.safe_load(f) or {}
-        
-        # Update fields that are provided
-        if interview_update.name is not None:
-            interview_data["name"] = interview_update.name
-        if interview_update.description is not None:
-            interview_data["description"] = interview_update.description
-        if interview_update.status is not None:
-            interview_data["status"] = interview_update.status
-        if interview_update.priority is not None:
-            interview_data["priority"] = interview_update.priority
-        if interview_update.notes is not None:
-            interview_data["notes"] = interview_update.notes
-        
-        # Write back to file
-        with open(file_path, 'w') as f:
-            yaml.dump(interview_data, f, default_flow_style=False, allow_unicode=True)
         
         # Return updated interview data
         interview = {
             "id": interview_id,
-            "name": interview_data["name"],
-            "description": interview_data["description"],
-            "filename": file_path.name,
-            "path": str(file_path.relative_to(BASE_DIR)),
-            "status": interview_data["status"],
-            "priority": interview_data["priority"],
-            "notes": interview_data["notes"],
-            "lastModified": file_path.stat().st_mtime
+            "name": interview_update.name,
+            "description": interview_update.description,
+            "filename": f"{interview_update.name.lower().replace(' ', '_')}.yaml" if interview_update.name else None,
+            "path": f"supabase://interviews/{interview_id}",
+            "status": interview_update.status,
+            "priority": interview_update.priority,
+            "notes": interview_update.notes
         }
         
         return {"success": True, "interview": interview}
@@ -882,16 +879,14 @@ async def update_interview(interview_id: str, interview_update: InterviewUpdate)
 
 
 @app.delete("/interviews/{interview_id}")
-async def delete_interview(interview_id: str):
+async def delete_interview(interview_id: str, doc_manager: DocumentManager = Depends(get_document_manager)):
     """Delete a specific interview"""
     try:
-        interviews_dir = INTERVIEWS_DIR
-        file_path = interviews_dir / f"{interview_id}.yaml"
+        success = doc_manager.delete_document(interview_id, "interview")
         
-        if not file_path.exists():
+        if not success:
             raise HTTPException(status_code=404, detail="Interview not found")
         
-        file_path.unlink()
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
