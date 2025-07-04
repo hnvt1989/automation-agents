@@ -4,8 +4,15 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pathlib import Path
-from pydantic_ai.providers.openai import OpenAIProvider
-from pydantic_ai.models.openai import OpenAIModel
+# Optional pydantic-ai imports
+try:
+    from pydantic_ai.providers.openai import OpenAIProvider
+    from pydantic_ai.models.openai import OpenAIModel
+    PYDANTIC_AI_AVAILABLE = True
+except ImportError:
+    PYDANTIC_AI_AVAILABLE = False
+    OpenAIProvider = None
+    OpenAIModel = None
 import yaml
 from datetime import datetime
 import os
@@ -13,12 +20,25 @@ from dotenv import load_dotenv, set_key, find_dotenv
 from typing import Optional
 
 from src.core.config import get_settings
-from src.mcp import get_mcp_manager
-from src.agents.primary import PrimaryAgent, PrimaryAgentDeps
-from src.agents.brave_search import BraveSearchAgent
-from src.agents.filesystem import FilesystemAgent
-from src.agents.rag_cloud import CloudRAGAgent
-from src.agents.analyzer import AnalyzerAgent
+
+# Optional imports for Vercel compatibility
+try:
+    from src.mcp import get_mcp_manager
+    MCP_AVAILABLE = True
+except ImportError:
+    MCP_AVAILABLE = False
+    get_mcp_manager = None
+
+try:
+    from src.agents.primary import PrimaryAgent, PrimaryAgentDeps
+    from src.agents.brave_search import BraveSearchAgent
+    from src.agents.filesystem import FilesystemAgent
+    from src.agents.rag_cloud import CloudRAGAgent
+    from src.agents.analyzer import AnalyzerAgent
+    AGENTS_AVAILABLE = True
+except ImportError:
+    AGENTS_AVAILABLE = False
+    PrimaryAgent = None
 from src.storage.supabase_ops import SupabaseOperations
 from src.storage.auth_storage import AuthStorage
 from src.storage.document_manager import DocumentManager
