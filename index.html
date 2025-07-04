@@ -1,0 +1,3244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GALACTIC COMMAND CENTER</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;900&family=Roboto+Mono:wght@300;400;500;600&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body { 
+            font-family: 'Roboto Mono', 'Orbitron', monospace;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
+            color: #00ff88;
+            height: 100vh;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: 
+                radial-gradient(circle at 20% 80%, rgba(0, 123, 255, 0.05) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(255, 215, 0, 0.03) 0%, transparent 50%),
+                radial-gradient(circle at 40% 40%, rgba(255, 0, 0, 0.02) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: -1;
+        }
+        
+        .container { 
+            display: flex; 
+            height: 100vh; 
+            background: rgba(10, 10, 10, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(0, 255, 136, 0.2);
+        }
+        
+        .assistant-panel { 
+            width: 40%; 
+            background: linear-gradient(180deg, rgba(22, 33, 62, 0.8) 0%, rgba(10, 10, 10, 0.9) 100%);
+            display: flex; 
+            flex-direction: column;
+            border-right: 2px solid rgba(0, 255, 136, 0.3);
+            box-shadow: inset 0 0 20px rgba(0, 255, 136, 0.1);
+        }
+        
+        .assistant-header {
+            padding: 24px;
+            border-bottom: 2px solid rgba(0, 255, 136, 0.3);
+            background: linear-gradient(90deg, rgba(0, 255, 136, 0.1) 0%, rgba(255, 215, 0, 0.1) 100%);
+            position: relative;
+        }
+        
+        .assistant-header::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent 0%, #00ff88 50%, transparent 100%);
+            animation: pulse-line 2s infinite;
+        }
+        
+        @keyframes pulse-line {
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 1; }
+        }
+        
+        .assistant-title {
+            font-size: 24px;
+            font-weight: 700;
+            font-family: 'Orbitron', monospace;
+            color: #00ff88;
+            text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        
+        .messages { 
+            flex: 1; 
+            overflow-y: auto; 
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            background: linear-gradient(180deg, rgba(10, 10, 10, 0.3) 0%, rgba(22, 33, 62, 0.2) 100%);
+        }
+        
+        .message {
+            max-width: 80%;
+            padding: 16px 20px;
+            border-radius: 16px;
+            line-height: 1.6;
+            font-size: 14px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            border: 1px solid rgba(0, 255, 136, 0.2);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(5px);
+        }
+        
+        .message.assistant {
+            background: linear-gradient(135deg, rgba(0, 255, 136, 0.1) 0%, rgba(22, 33, 62, 0.3) 100%);
+            color: #e0e0e0;
+            align-self: flex-start;
+            border-left: 3px solid #00ff88;
+        }
+        
+        .message.user {
+            background: linear-gradient(135deg, rgba(255, 215, 0, 0.2) 0%, rgba(255, 69, 0, 0.1) 100%);
+            color: #ffffff;
+            align-self: flex-end;
+            border-right: 3px solid #ffd700;
+        }
+        
+        .message h1, .message h2, .message h3 {
+            margin: 16px 0 8px 0;
+            font-weight: 600;
+        }
+        
+        .message h1 { font-size: 18px; }
+        .message h2 { font-size: 16px; }
+        .message h3 { font-size: 15px; }
+        
+        .message ul, .message ol {
+            margin: 8px 0;
+            padding-left: 20px;
+        }
+        
+        .message li {
+            margin: 4px 0;
+            line-height: 1.5;
+        }
+        
+        .message p {
+            margin: 8px 0;
+            line-height: 1.6;
+        }
+        
+        .message strong {
+            font-weight: 600;
+        }
+        
+        .message code {
+            background: rgba(0, 0, 0, 0.1);
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 13px;
+        }
+        
+        .message pre {
+            background: rgba(0, 0, 0, 0.05);
+            padding: 12px;
+            border-radius: 6px;
+            margin: 12px 0;
+            overflow-x: auto;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 13px;
+        }
+        
+        .input-area { 
+            padding: 24px;
+            background: linear-gradient(90deg, rgba(0, 255, 136, 0.1) 0%, rgba(255, 215, 0, 0.1) 100%);
+            border-top: 2px solid rgba(0, 255, 136, 0.3);
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            position: relative;
+        }
+        
+        .input-area::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent 0%, #00ff88 50%, transparent 100%);
+            animation: pulse-line 2s infinite;
+        }
+        
+        .input-area input { 
+            flex: 1;
+            padding: 12px 16px;
+            border: 2px solid rgba(0, 255, 136, 0.3);
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: 'Roboto Mono', monospace;
+            outline: none;
+            background: rgba(10, 10, 10, 0.5);
+            color: #00ff88;
+            backdrop-filter: blur(5px);
+        }
+        
+        .input-area input:focus {
+            border-color: #00ff88;
+            box-shadow: 0 0 15px rgba(0, 255, 136, 0.3);
+            background: rgba(10, 10, 10, 0.7);
+        }
+        
+        .input-area input::placeholder {
+            color: rgba(0, 255, 136, 0.6);
+        }
+        
+        .send-button {
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #00ff88 0%, #ffd700 100%);
+            color: #000;
+            border: 2px solid #00ff88;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            font-family: 'Orbitron', monospace;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .send-button:hover {
+            background: linear-gradient(135deg, #ffd700 0%, #00ff88 100%);
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
+            transform: translateY(-2px);
+        }
+        
+        .top-header {
+            padding: 16px 24px;
+            background: linear-gradient(90deg, rgba(0, 255, 136, 0.05) 0%, rgba(255, 215, 0, 0.05) 100%);
+            border-bottom: 1px solid rgba(0, 255, 136, 0.15);
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            position: relative;
+            gap: 16px;
+        }
+        
+        .top-header::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent 0%, rgba(0, 255, 136, 0.3) 50%, transparent 100%);
+            animation: pulse-line 3s infinite;
+        }
+        
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .username {
+            color: #00ff88;
+            font-size: 14px;
+            font-family: 'Roboto Mono', monospace;
+            text-shadow: 0 0 5px rgba(0, 255, 136, 0.3);
+            font-weight: 500;
+        }
+        
+        .logout-button {
+            background: rgba(255, 68, 68, 0.8);
+            border: 1px solid rgba(255, 68, 68, 0.5);
+            border-radius: 4px;
+            color: #fff;
+            padding: 6px 12px;
+            font-size: 12px;
+            font-family: 'Roboto Mono', monospace;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 500;
+        }
+        
+        .logout-button:hover {
+            background: rgba(255, 68, 68, 1);
+            border-color: rgba(255, 68, 68, 0.8);
+            box-shadow: 0 0 10px rgba(255, 68, 68, 0.4);
+            transform: translateY(-1px);
+        }
+
+        .workspace-panel { 
+            width: 60%; 
+            display: flex; 
+            flex-direction: column;
+            background: linear-gradient(180deg, rgba(22, 33, 62, 0.8) 0%, rgba(10, 10, 10, 0.9) 100%);
+            border-left: 2px solid rgba(0, 255, 136, 0.3);
+            box-shadow: inset 0 0 20px rgba(0, 255, 136, 0.1);
+        }
+        
+        .workspace-header {
+            padding: 32px 32px 0 32px;
+            border-bottom: none;
+            background: linear-gradient(90deg, rgba(255, 215, 0, 0.1) 0%, rgba(0, 255, 136, 0.1) 100%);
+            position: relative;
+        }
+        
+        .workspace-title {
+            font-size: 24px;
+            font-weight: 700;
+            font-family: 'Orbitron', monospace;
+            color: #ffd700;
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 32px;
+        }
+        
+        .tabs { 
+            display: flex;
+            gap: 0;
+            background: linear-gradient(135deg, rgba(0, 255, 136, 0.1) 0%, rgba(255, 215, 0, 0.1) 100%);
+            border: 2px solid rgba(0, 255, 136, 0.3);
+            border-radius: 12px;
+            padding: 4px;
+            margin-bottom: 32px;
+            backdrop-filter: blur(5px);
+        }
+        
+        .tab-button {
+            flex: 1;
+            padding: 12px 20px;
+            background: none;
+            border: none;
+            font-size: 14px;
+            font-weight: 500;
+            font-family: 'Roboto Mono', monospace;
+            color: rgba(0, 255, 136, 0.7);
+            cursor: pointer;
+            border-radius: 8px;
+            transition: all 0.3s;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .tab-button.active {
+            background: linear-gradient(135deg, rgba(0, 255, 136, 0.2) 0%, rgba(255, 215, 0, 0.2) 100%);
+            color: #00ff88;
+            box-shadow: 0 0 15px rgba(0, 255, 136, 0.3);
+            border: 1px solid rgba(0, 255, 136, 0.5);
+            text-shadow: 0 0 5px rgba(0, 255, 136, 0.5);
+        }
+        
+        .tab-button:hover:not(.active) {
+            color: #00ff88;
+            background: rgba(0, 255, 136, 0.1);
+        }
+        
+        .workspace-content { 
+            flex: 1; 
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            padding: 0;
+        }
+        
+        .items-list { 
+            flex: 1;
+            width: 100%;
+            overflow-y: auto; 
+            padding: 0 32px 24px 32px;
+        }
+        
+        .workspace-item {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 16px 20px;
+            border-radius: 12px;
+            margin-bottom: 12px;
+            cursor: pointer;
+            transition: all 0.3s;
+            border: 2px solid rgba(0, 255, 136, 0.2);
+            background: linear-gradient(135deg, rgba(10, 10, 10, 0.5) 0%, rgba(22, 33, 62, 0.3) 100%);
+            backdrop-filter: blur(5px);
+            color: #e0e0e0;
+        }
+        
+        .workspace-item:hover {
+            background: linear-gradient(135deg, rgba(0, 255, 136, 0.1) 0%, rgba(22, 33, 62, 0.5) 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0, 255, 136, 0.2);
+            border-color: rgba(0, 255, 136, 0.5);
+        }
+        
+        .workspace-item.selected {
+            background: linear-gradient(135deg, rgba(255, 215, 0, 0.2) 0%, rgba(0, 255, 136, 0.2) 100%);
+            border-color: #ffd700;
+            box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+            color: #ffffff;
+        }
+        
+        .item-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            font-size: 18px;
+            background: #f8f9fa;
+        }
+        
+        .item-content {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .item-title {
+            font-size: 16px;
+            font-weight: 600;
+            font-family: 'Orbitron', monospace;
+            color: #00ff88;
+            margin-bottom: 4px;
+            line-height: 1.4;
+            text-shadow: 0 0 5px rgba(0, 255, 136, 0.3);
+        }
+        
+        .item-description {
+            font-size: 14px;
+            font-family: 'Roboto Mono', monospace;
+            color: rgba(224, 224, 224, 0.8);
+            line-height: 1.4;
+        }
+        
+        .item-meta {
+            font-size: 12px;
+            font-family: 'Roboto Mono', monospace;
+            color: rgba(255, 215, 0, 0.7);
+            margin-top: 8px;
+        }
+        
+        .action-buttons {
+            display: flex;
+            gap: 12px;
+            padding: 24px 32px 32px 32px;
+            border-top: 2px solid rgba(0, 255, 136, 0.3);
+            background: linear-gradient(90deg, rgba(0, 255, 136, 0.1) 0%, rgba(255, 215, 0, 0.1) 100%);
+            margin-top: auto;
+            position: relative;
+        }
+        
+        .action-buttons::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent 0%, #00ff88 50%, transparent 100%);
+            animation: pulse-line 2s infinite;
+        }
+        
+        .action-button {
+            padding: 12px 24px;
+            border: 2px solid rgba(0, 255, 136, 0.5);
+            background: linear-gradient(135deg, rgba(10, 10, 10, 0.7) 0%, rgba(22, 33, 62, 0.5) 100%);
+            color: #00ff88;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            font-family: 'Orbitron', monospace;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            backdrop-filter: blur(5px);
+        }
+        
+        .action-button:hover {
+            background: linear-gradient(135deg, rgba(0, 255, 136, 0.2) 0%, rgba(22, 33, 62, 0.7) 100%);
+            border-color: #00ff88;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0, 255, 136, 0.3);
+        }
+        
+        .action-button.primary {
+            background: linear-gradient(135deg, #00ff88 0%, #ffd700 100%);
+            color: #000;
+            border-color: #ffd700;
+        }
+        
+        .action-button.primary:hover {
+            background: linear-gradient(135deg, #ffd700 0%, #00ff88 100%);
+            border-color: #00ff88;
+            box-shadow: 0 8px 20px rgba(255, 215, 0, 0.4);
+        }
+        
+        .status-completed .item-icon {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status-completed .item-icon::before {
+            content: '✓';
+            font-weight: bold;
+        }
+        
+        .status-document .item-icon {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .status-document .item-icon::before {
+            content: '📄';
+        }
+        
+        .status-note .item-icon {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .status-note .item-icon::before {
+            content: '✏️';
+        }
+        
+        .status-task .item-icon {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+        
+        .status-task .item-icon::before {
+            content: '📋';
+        }
+        
+        .status-logs .item-icon {
+            background: #e2e3e5;
+            color: #383d41;
+        }
+        
+        .status-logs .item-icon::before {
+            content: '📊';
+        }
+        
+        .status-memos .item-icon {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .status-memos .item-icon::before {
+            content: '📝';
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 80px 24px;
+            color: #6c757d;
+        }
+        
+        .empty-state-title {
+            font-size: 20px;
+            font-weight: 500;
+            margin-bottom: 12px;
+            color: #495057;
+        }
+        
+        .empty-state-description {
+            font-size: 14px;
+            color: #6c757d;
+        }
+        
+        .editor-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(10px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        
+        .editor-container {
+            background: linear-gradient(135deg, rgba(10, 10, 10, 0.95) 0%, rgba(22, 33, 62, 0.9) 100%);
+            border: 2px solid rgba(0, 255, 136, 0.5);
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 255, 136, 0.3);
+            width: 90%;
+            max-width: 800px;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+            backdrop-filter: blur(20px);
+        }
+        
+        .editor-header {
+            padding: 24px;
+            border-bottom: 2px solid rgba(0, 255, 136, 0.3);
+            background: linear-gradient(90deg, rgba(0, 255, 136, 0.1) 0%, rgba(255, 215, 0, 0.1) 100%);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: relative;
+        }
+        
+        .editor-header::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent 0%, #00ff88 50%, transparent 100%);
+            animation: pulse-line 2s infinite;
+        }
+        
+        .editor-title {
+            font-size: 20px;
+            font-weight: 700;
+            font-family: 'Orbitron', monospace;
+            color: #00ff88;
+            text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .editor-close {
+            width: 32px;
+            height: 32px;
+            border: 2px solid rgba(255, 69, 0, 0.5);
+            background: linear-gradient(135deg, rgba(255, 69, 0, 0.2) 0%, rgba(139, 0, 0, 0.3) 100%);
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-family: 'Orbitron', monospace;
+            color: #ff4500;
+            transition: all 0.3s;
+            backdrop-filter: blur(5px);
+        }
+        
+        .editor-close:hover {
+            background: linear-gradient(135deg, rgba(255, 69, 0, 0.4) 0%, rgba(139, 0, 0, 0.5) 100%);
+            border-color: #ff4500;
+            color: #ffffff;
+            box-shadow: 0 0 15px rgba(255, 69, 0, 0.5);
+            transform: scale(1.1);
+        }
+        
+        .editor-content {
+            flex: 1;
+            padding: 24px;
+            overflow-y: auto;
+            background: linear-gradient(180deg, rgba(10, 10, 10, 0.3) 0%, rgba(22, 33, 62, 0.2) 100%);
+        }
+        
+        .editor-field {
+            margin-bottom: 20px;
+        }
+        
+        .editor-label {
+            display: block;
+            font-size: 14px;
+            font-weight: 600;
+            font-family: 'Orbitron', monospace;
+            color: #00ff88;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            text-shadow: 0 0 5px rgba(0, 255, 136, 0.3);
+        }
+        
+        .editor-input,
+        .editor-textarea {
+            width: 100%;
+            padding: 16px 20px;
+            border: 2px solid rgba(0, 255, 136, 0.4);
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: 'Roboto Mono', monospace;
+            background: rgba(10, 10, 10, 0.8);
+            color: #e0e0e0;
+            outline: none;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            backdrop-filter: blur(5px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+            line-height: 1.6;
+            word-wrap: break-word;
+        }
+        
+        .editor-input:focus,
+        .editor-textarea:focus {
+            border-color: #00ff88;
+            box-shadow: 0 0 15px rgba(0, 255, 136, 0.3);
+            background: rgba(10, 10, 10, 0.9);
+            color: #ffffff;
+        }
+        
+        .editor-input:hover,
+        .editor-textarea:hover {
+            border-color: rgba(0, 255, 136, 0.6);
+            background: rgba(10, 10, 10, 0.85);
+        }
+        
+        .editor-input::placeholder,
+        .editor-textarea::placeholder {
+            color: rgba(0, 255, 136, 0.5);
+        }
+        
+        .editor-textarea {
+            min-height: 200px;
+            resize: vertical;
+        }
+        
+        .memo-content {
+            min-height: 400px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 14px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            tab-size: 4;
+            -moz-tab-size: 4;
+        }
+        
+        .memo-content::placeholder {
+            font-family: inherit;
+            color: #6c757d;
+            font-style: italic;
+        }
+        
+        .editor-footer {
+            padding: 24px;
+            border-top: 2px solid rgba(0, 255, 136, 0.3);
+            background: linear-gradient(90deg, rgba(0, 255, 136, 0.1) 0%, rgba(255, 215, 0, 0.1) 100%);
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            position: relative;
+        }
+        
+        .editor-footer::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent 0%, #00ff88 50%, transparent 100%);
+            animation: pulse-line 2s infinite;
+        }
+        
+        .editor-button {
+            padding: 12px 24px;
+            border: 2px solid rgba(0, 255, 136, 0.5);
+            background: linear-gradient(135deg, rgba(10, 10, 10, 0.7) 0%, rgba(22, 33, 62, 0.5) 100%);
+            color: #00ff88;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            font-family: 'Orbitron', monospace;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            backdrop-filter: blur(5px);
+        }
+        
+        .editor-button:hover {
+            background: linear-gradient(135deg, rgba(0, 255, 136, 0.2) 0%, rgba(22, 33, 62, 0.7) 100%);
+            border-color: #00ff88;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0, 255, 136, 0.3);
+        }
+        
+        .editor-button.primary {
+            background: linear-gradient(135deg, #00ff88 0%, #ffd700 100%);
+            color: #000;
+            border-color: #ffd700;
+        }
+        
+        .editor-button.primary:hover {
+            background: linear-gradient(135deg, #ffd700 0%, #00ff88 100%);
+            border-color: #00ff88;
+            box-shadow: 0 8px 20px rgba(255, 215, 0, 0.4);
+        }
+        
+        .editor-button.secondary {
+            background: linear-gradient(135deg, rgba(169, 169, 169, 0.3) 0%, rgba(105, 105, 105, 0.5) 100%);
+            color: #a9a9a9;
+            border-color: rgba(169, 169, 169, 0.5);
+        }
+        
+        .editor-button.secondary:hover {
+            background: linear-gradient(135deg, rgba(169, 169, 169, 0.5) 0%, rgba(105, 105, 105, 0.7) 100%);
+            border-color: #a9a9a9;
+            color: #ffffff;
+        }
+        
+        .editor-button.danger {
+            background: linear-gradient(135deg, rgba(255, 69, 0, 0.3) 0%, rgba(139, 0, 0, 0.5) 100%);
+            color: #ff4500;
+            border-color: rgba(255, 69, 0, 0.5);
+        }
+        
+        .editor-button.danger:hover {
+            background: linear-gradient(135deg, rgba(255, 69, 0, 0.5) 0%, rgba(139, 0, 0, 0.7) 100%);
+            border-color: #ff4500;
+            color: #ffffff;
+            box-shadow: 0 8px 20px rgba(255, 69, 0, 0.4);
+        }
+        
+        .editor-footer {
+            justify-content: space-between;
+        }
+        
+        .editor-footer-left {
+            display: flex;
+            gap: 12px;
+        }
+        
+        .editor-footer-right {
+            display: flex;
+            gap: 12px;
+        }
+        
+        /* Deadline Warning Styles */
+        .workspace-item.overdue {
+            background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+            border: 2px solid #ef4444;
+            animation: pulse-danger 2s infinite;
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+        }
+        
+        .workspace-item.due-soon {
+            background: linear-gradient(135deg, rgba(255, 215, 0, 0.4) 0%, rgba(255, 193, 7, 0.6) 100%);
+            border: 2px solid #ffd700;
+            animation: pulse-warning 3s infinite;
+            box-shadow: 0 4px 12px rgba(255, 215, 0, 0.4);
+        }
+        
+        @keyframes pulse-danger {
+            0%, 100% { 
+                transform: scale(1);
+                box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+            }
+            50% { 
+                transform: scale(1.02);
+                box-shadow: 0 6px 16px rgba(239, 68, 68, 0.5);
+            }
+        }
+        
+        @keyframes pulse-warning {
+            0%, 100% { 
+                transform: scale(1);
+                box-shadow: 0 4px 12px rgba(245, 158, 11, 0.2);
+            }
+            50% { 
+                transform: scale(1.01);
+                box-shadow: 0 6px 16px rgba(245, 158, 11, 0.4);
+            }
+        }
+        
+        .deadline-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-left: 8px;
+        }
+        
+        .deadline-badge.overdue {
+            background: #ef4444;
+            color: white;
+            animation: blink-danger 1s infinite;
+        }
+        
+        .deadline-badge.due-soon {
+            background: #f59e0b;
+            color: white;
+            animation: pulse-text 2s infinite;
+        }
+        
+        @keyframes blink-danger {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0.6; }
+        }
+        
+        @keyframes pulse-text {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.8; }
+        }
+        
+        .workspace-item.overdue .item-title {
+            color: #991b1b;
+            font-weight: 700;
+        }
+        
+        .workspace-item.due-soon .item-title {
+            color: #1a1a1a;
+            font-weight: 700;
+            text-shadow: 0 0 3px rgba(255, 255, 255, 0.8);
+        }
+        
+        .workspace-item.overdue .item-icon {
+            background: #fee2e2;
+            color: #ef4444;
+            border: 2px solid #ef4444;
+        }
+        
+        .workspace-item.due-soon .item-icon {
+            background: rgba(255, 215, 0, 0.3);
+            color: #1a1a1a;
+            border: 2px solid #ffd700;
+        }
+        
+        .workspace-item.due-soon .item-description {
+            color: #2d2d2d;
+            font-weight: 500;
+        }
+        
+        .workspace-item.due-soon .item-meta {
+            color: #1a1a1a;
+            font-weight: 600;
+        }
+        
+        .deadline-alert {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #ef4444;
+            color: white;
+            padding: 12px 16px;
+            border-radius: 8px;
+            box-shadow: 0 8px 24px rgba(239, 68, 68, 0.4);
+            z-index: 1000;
+            animation: slide-in 0.5s ease-out;
+            max-width: 300px;
+        }
+        
+        .deadline-alert.warning {
+            background: #f59e0b;
+            box-shadow: 0 8px 24px rgba(245, 158, 11, 0.4);
+        }
+        
+        @keyframes slide-in {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+// Configuration - Update these URLs to match your backend server
+const CONFIG = {
+    API_BASE_URL: 'http://localhost:8000',  // Backend API server URL
+    WS_URL: 'ws://localhost:8000/ws'        // WebSocket URL for real-time chat
+};
+
+// Deadline calculation helper function
+function getDeadlineStatus(dueDate) {
+    if (!dueDate) return 'normal';
+    
+    const now = new Date();
+    const due = new Date(dueDate);
+    const diffTime = due.getTime() - now.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays < 0) return 'overdue';
+    if (diffDays <= 1) return 'due-soon';
+    return 'normal';
+}
+
+// Function to get deadline badge text and class
+function getDeadlineBadge(dueDate) {
+    const status = getDeadlineStatus(dueDate);
+    if (status === 'overdue') {
+        const days = Math.abs(Math.ceil((new Date(dueDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)));
+        return { text: `${days} day${days === 1 ? '' : 's'} overdue`, class: 'overdue' };
+    }
+    if (status === 'due-soon') {
+        const hours = Math.ceil((new Date(dueDate).getTime() - new Date().getTime()) / (1000 * 60 * 60));
+        if (hours <= 24) {
+            return { text: hours <= 0 ? 'Due now!' : `Due in ${hours}h`, class: 'due-soon' };
+        }
+        return { text: 'Due tomorrow', class: 'due-soon' };
+    }
+    return null;
+}
+
+function Tabs({ current, onSelect }) {
+    const tabs = [
+        { id: 'tasks', label: 'Missions' },
+        { id: 'documents', label: 'Intel Files' },
+        { id: 'notes', label: 'Briefings' },
+        { id: 'logs', label: 'Operations Log' },
+        { id: 'memos', label: 'Transmissions' },
+        { id: 'interviews', label: 'Interrogations' },
+        { id: 'settings', label: 'Config' }
+    ];
+    
+    return (
+        <div className="tabs">
+            {tabs.map(tab => (
+                <button 
+                    key={tab.id} 
+                    className={`tab-button ${current === tab.id ? 'active' : ''}`}
+                    onClick={() => onSelect(tab.id)}
+                >
+                    {tab.label}
+                </button>
+            ))}
+        </div>
+    );
+}
+
+function WorkspaceItem({ item, type, isSelected, onClick }) {
+    const getStatusClass = () => {
+        if (type === 'tasks' && item.completed) return 'status-completed';
+        if (type === 'documents') return 'status-document';
+        if (type === 'notes') return 'status-note';
+        if (type === 'logs') return 'status-logs';
+        if (type === 'memos') return 'status-memos';
+        return 'status-task';
+    };
+    
+    // Get deadline status for tasks (but not for completed tasks)
+    const isCompleted = item.status === 'completed' || item.completed;
+    const deadlineStatus = (type === 'tasks' && item.dueDate && !isCompleted) ? getDeadlineStatus(item.dueDate) : 'normal';
+    const deadlineBadge = (type === 'tasks' && item.dueDate && !isCompleted) ? getDeadlineBadge(item.dueDate) : null;
+    
+    return (
+        <div 
+            className={`workspace-item ${isSelected ? 'selected' : ''} ${getStatusClass()} ${deadlineStatus !== 'normal' ? deadlineStatus : ''}`}
+            onClick={onClick}
+        >
+            <div className="item-icon"></div>
+            <div className="item-content">
+                <div className="item-title">
+                    {item.title || item.name}
+                    {deadlineBadge && (
+                        <span className={`deadline-badge ${deadlineBadge.class}`}>
+                            {deadlineBadge.text}
+                        </span>
+                    )}
+                </div>
+                {item.description && (
+                    <div className="item-description">{item.description}</div>
+                )}
+                {item.dueDate && (
+                    <div className="item-meta">Due: {item.dueDate}</div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+function LoggingModal({ isOpen, onClose, onSave, taskItem, errors, isSubmitting }) {
+    const [loggingData, setLoggingData] = useState({
+        hours: '',
+        description: '',
+        date: new Date().toISOString().split('T')[0], // Default to current date
+    });
+
+    const handleInputChange = (field, value) => {
+        setLoggingData(prev => ({ ...prev, [field]: value }));
+    };
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        onSave(loggingData);
+    };
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="editor-overlay">
+            <div className="editor-container" onClick={e => e.stopPropagation()}>
+                <div className="editor-header">
+                    <div className="editor-title">Log Task Completion</div>
+                    <button className="editor-close" onClick={onClose}>×</button>
+                </div>
+                
+                <form onSubmit={handleSubmit} className="editor-content">
+                    {errors.submit && (
+                        <div style={{ color: '#dc3545', marginBottom: '1rem', fontSize: '14px' }}>
+                            {errors.submit}
+                        </div>
+                    )}
+
+                    <div className="editor-field">
+                        <label className="editor-label">Date *</label>
+                        <input
+                            type="date"
+                            className="editor-input"
+                            value={loggingData.date}
+                            onChange={e => handleInputChange('date', e.target.value)}
+                            required
+                            style={errors.date ? { borderColor: '#dc3545' } : {}}
+                        />
+                        {errors.date && (
+                            <div style={{ color: '#dc3545', fontSize: '12px', marginTop: '4px' }}>
+                                {errors.date}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="editor-field">
+                        <label className="editor-label">Logging Hours *</label>
+                        <input
+                            type="number"
+                            className="editor-input"
+                            value={loggingData.hours}
+                            onChange={e => handleInputChange('hours', e.target.value)}
+                            placeholder="Enter hours worked"
+                            step="0.1"
+                            min="0"
+                            required
+                            style={errors.hours ? { borderColor: '#dc3545' } : {}}
+                        />
+                        {errors.hours && (
+                            <div style={{ color: '#dc3545', fontSize: '12px', marginTop: '4px' }}>
+                                {errors.hours}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="editor-field">
+                        <label className="editor-label">Description</label>
+                        <textarea
+                            className="editor-textarea"
+                            value={loggingData.description}
+                            onChange={e => handleInputChange('description', e.target.value)}
+                            placeholder="Optional: Add details about the work completed"
+                            rows={4}
+                        />
+                    </div>
+
+                    <div className="editor-footer">
+                        <div className="editor-footer-left"></div>
+                        <div className="editor-footer-right">
+                            <button 
+                                type="button" 
+                                className="editor-button" 
+                                onClick={onClose}
+                                disabled={isSubmitting}
+                            >
+                                Cancel
+                            </button>
+                            <button 
+                                type="submit" 
+                                className="editor-button primary"
+                                disabled={isSubmitting}
+                            >
+                                {isSubmitting ? 'Saving...' : 'Save Log'}
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+}
+
+function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 'edit', authenticatedFetch }) {
+    const isAddMode = mode === 'add';
+    const [formData, setFormData] = useState({
+        name: (item && (item.title || item.name)) || '',
+        description: (item && item.description) || '',
+        content: (item && item.content) || '',
+        ...(item || {})
+    });
+
+    // Logging modal state
+    const [showLoggingModal, setShowLoggingModal] = useState(false);
+    const [loggingData, setLoggingData] = useState({
+        hours: '',
+        description: '',
+    });
+    const [loggingErrors, setLoggingErrors] = useState({});
+    const [isLoggingSubmitting, setIsLoggingSubmitting] = useState(false);
+
+    const handleChange = (field, value) => {
+        setFormData(prev => ({ ...prev, [field]: value }));
+    };
+
+    const handleSave = () => {
+        onSave(formData);
+        // Don't call onClose() here - let the parent handle it after save is complete
+    };
+
+    const handleIndex = () => {
+        onIndex(formData);
+    };
+    
+    const handleDelete = () => {
+        if (window.confirm('Are you sure you want to delete this item?')) {
+            onDelete();
+        }
+    };
+
+    // Logging modal functions
+    const handleLogButtonClick = () => {
+        setShowLoggingModal(true);
+    };
+
+    const handleAnalyze = async () => {
+        if (!item || !item.meetingData) {
+            alert('No meeting data available for analysis');
+            return;
+        }
+
+        try {
+            const meetingData = item.meetingData;
+            const response = await authenticatedFetch(`${CONFIG.API_BASE_URL}/analyze-meeting`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    meeting_content: meetingData.content || formData.content,
+                    meeting_date: meetingData.date,
+                    meeting_title: meetingData.event || meetingData.name
+                })
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                
+                // Show the analysis results in a simple alert for now
+                // In a real implementation, this would open a modal with task suggestions
+                const analysis = result.analysis;
+                const tasksList = analysis.suggested_tasks
+                    .map((task, i) => `${i + 1}. ${task.name}: ${task.description}`)
+                    .join('\n');
+                
+                const message = `Meeting Analysis Complete!\n\nSuggested Tasks (${analysis.suggested_tasks.length}):\n${tasksList}\n\nWould you like to create these tasks?`;
+                
+                if (confirm(message)) {
+                    // Create tasks from suggestions
+                    for (const suggestedTask of analysis.suggested_tasks) {
+                        try {
+                            await authenticatedFetch(`${CONFIG.API_BASE_URL}/create-task-from-suggestion`, {
+                                method: 'POST',
+                                body: JSON.stringify(suggestedTask)
+                            });
+                        } catch (error) {
+                            console.error('Error creating task:', error);
+                        }
+                    }
+                    alert('Tasks created successfully!');
+                }
+            } else {
+                throw new Error('Failed to analyze meeting');
+            }
+        } catch (error) {
+            console.error('Analysis error:', error);
+            alert('Failed to analyze meeting. Please try again.');
+        }
+    };
+
+    const handleLoggingInputChange = (field, value) => {
+        setLoggingData(prev => ({ ...prev, [field]: value }));
+        
+        // Clear error when user starts typing
+        if (loggingErrors[field]) {
+            setLoggingErrors(prev => ({ ...prev, [field]: '' }));
+        }
+    };
+
+    const validateLoggingForm = () => {
+        const newErrors = {};
+        
+        if (!loggingData.date || !loggingData.date.trim()) {
+            newErrors.date = 'Date is required';
+        } else {
+            const dateObj = new Date(loggingData.date);
+            if (isNaN(dateObj.getTime())) {
+                newErrors.date = 'Invalid date format';
+            }
+        }
+        
+        if (!loggingData.hours.trim()) {
+            newErrors.hours = 'Logging hours is required';
+        } else {
+            const hours = parseFloat(loggingData.hours);
+            if (isNaN(hours) || hours <= 0) {
+                newErrors.hours = 'Logging hours must be positive';
+            }
+        }
+        
+        setLoggingErrors(newErrors);
+        return Object.keys(newErrors).length === 0;
+    };
+
+    const handleLoggingSubmit = async (e) => {
+        e.preventDefault();
+        
+        if (!validateLoggingForm()) {
+            return;
+        }
+
+        setIsLoggingSubmitting(true);
+        
+        try {
+            const hours = parseFloat(loggingData.hours);
+            
+            const logEntry = {
+                name: `Task Log: ${formData.name}`,
+                description: loggingData.description || `Logged work on task: ${formData.name}`,
+                date: loggingData.date,
+                actual_hours: hours,
+                log_id: item.id || `TASK-${Date.now()}`
+            };
+            
+            // Save the log entry
+            const response = await authenticatedFetch(`${CONFIG.API_BASE_URL}/logs`, {
+                method: 'POST',
+                body: JSON.stringify(logEntry)
+            });
+            
+            if (response.ok) {
+                // Close logging modal
+                setShowLoggingModal(false);
+                setLoggingData({ hours: '', description: '', date: new Date().toISOString().split('T')[0] });
+                setLoggingErrors({});
+                
+                // Optionally show success message
+                alert('Log entry saved successfully!');
+            } else {
+                throw new Error('Failed to save log');
+            }
+        } catch (error) {
+            console.error('Failed to save log entry:', error);
+            setLoggingErrors({ submit: 'Failed to save log entry. Please try again.' });
+        } finally {
+            setIsLoggingSubmitting(false);
+        }
+    };
+
+    const handleLoggingCancel = () => {
+        setShowLoggingModal(false);
+        setLoggingData({ hours: '', description: '', date: new Date().toISOString().split('T')[0] });
+        setLoggingErrors({});
+    };
+
+    if (!item) return null;
+
+    return (
+        <div className="editor-overlay">
+            <div className="editor-container" onClick={e => e.stopPropagation()}>
+                <div className="editor-header">
+                    <div className="editor-title">{isAddMode ? 'Add' : 'Edit'} {type.slice(0, -1)}</div>
+                    <button className="editor-close" onClick={onClose}>×</button>
+                </div>
+                
+                <div className="editor-content">
+                    {type !== 'logs' && (
+                        <div className="editor-field">
+                            <label className="editor-label">Name</label>
+                            <input
+                                className="editor-input"
+                                value={formData.name}
+                                onChange={e => handleChange('name', e.target.value)}
+                                placeholder="Enter name..."
+                                readOnly={!isAddMode && (type === 'notes' || type === 'documents' || type === 'interviews')}
+                                style={!isAddMode && (type === 'notes' || type === 'documents' || type === 'interviews') ? {backgroundColor: '#f8f9fa', cursor: 'not-allowed'} : {}}
+                            />
+                        </div>
+                    )}
+                    
+                    <div className="editor-field">
+                        <label className="editor-label">Description</label>
+                        <input
+                            className="editor-input"
+                            value={type === 'logs' ? formData.name : formData.description}
+                            onChange={e => handleChange(type === 'logs' ? 'name' : 'description', e.target.value)}
+                            placeholder={type === 'logs' ? "Enter log description..." : "Enter description..."}
+                            readOnly={!isAddMode && (type === 'notes' || type === 'documents' || type === 'interviews')}
+                            style={!isAddMode && (type === 'notes' || type === 'documents' || type === 'interviews') ? {backgroundColor: '#f8f9fa', cursor: 'not-allowed'} : {}}
+                        />
+                    </div>
+                    
+                    {type === 'notes' && (
+                        <React.Fragment>
+                            <div className="editor-field">
+                                <label className="editor-label">Content</label>
+                                <textarea
+                                    className="editor-textarea"
+                                    value={formData.content}
+                                    onChange={e => handleChange('content', e.target.value)}
+                                    placeholder="Enter content..."
+                                />
+                            </div>
+                            {!isAddMode && (
+                                <div style={{fontSize: '12px', color: '#6c757d', marginTop: '-10px'}}>
+                                    Note: Name and Description are read-only for notes. Only content can be edited.
+                                </div>
+                            )}
+                        </React.Fragment>
+                    )}
+                    
+                    {type === 'documents' && (
+                        <React.Fragment>
+                            <div className="editor-field">
+                                <label className="editor-label">Content</label>
+                                <textarea
+                                    className="editor-textarea"
+                                    value={formData.content}
+                                    onChange={e => handleChange('content', e.target.value)}
+                                    placeholder="Enter document content..."
+                                />
+                            </div>
+                            {!isAddMode && (
+                                <div style={{fontSize: '12px', color: '#6c757d', marginTop: '-10px'}}>
+                                    Note: Name and Description are read-only for documents. Only content can be edited.
+                                </div>
+                            )}
+                        </React.Fragment>
+                    )}
+                    
+                    {type === 'tasks' && (
+                        <React.Fragment>
+                            <div className="editor-field">
+                                <label className="editor-label">Status</label>
+                                <select
+                                    className="editor-input"
+                                    value={formData.status || 'pending'}
+                                    onChange={e => handleChange('status', e.target.value)}
+                                >
+                                    <option value="pending">Pending</option>
+                                    <option value="in_progress">In Progress</option>
+                                    <option value="completed">Completed</option>
+                                </select>
+                            </div>
+                            
+                            <div className="editor-field">
+                                <label className="editor-label">Priority</label>
+                                <select
+                                    className="editor-input"
+                                    value={formData.priority || 'medium'}
+                                    onChange={e => handleChange('priority', e.target.value)}
+                                >
+                                    <option value="low">Low</option>
+                                    <option value="medium">Medium</option>
+                                    <option value="high">High</option>
+                                </select>
+                            </div>
+                            
+                            <div className="editor-field">
+                                <label className="editor-label">Due Date</label>
+                                <input
+                                    type="date"
+                                    className="editor-input"
+                                    value={formData.dueDate || ''}
+                                    onChange={e => handleChange('dueDate', e.target.value)}
+                                />
+                            </div>
+                            
+                            <div className="editor-field">
+                                <label className="editor-label">TODO Items</label>
+                                <textarea
+                                    className="editor-textarea"
+                                    value={formData.todo || ''}
+                                    onChange={e => handleChange('todo', e.target.value)}
+                                    placeholder="Enter TODO items, subtasks, or detailed action items"
+                                    rows={6}
+                                />
+                            </div>
+                        </React.Fragment>
+                    )}
+                    
+                    {type === 'logs' && (
+                        <React.Fragment>
+                            <div className="editor-field">
+                                <label className="editor-label">Date</label>
+                                <input
+                                    type="date"
+                                    className="editor-input"
+                                    value={formData.date || ''}
+                                    onChange={e => handleChange('date', e.target.value)}
+                                />
+                            </div>
+                            
+                            <div className="editor-field">
+                                <label className="editor-label">Hours</label>
+                                <input
+                                    type="number"
+                                    className="editor-input"
+                                    value={formData.actual_hours || ''}
+                                    onChange={e => handleChange('actual_hours', e.target.value)}
+                                    placeholder="Hours worked..."
+                                />
+                            </div>
+                        </React.Fragment>
+                    )}
+                    
+                    {type === 'memos' && (
+                        <React.Fragment>
+                            <div className="editor-field">
+                                <label className="editor-label">Content</label>
+                                <textarea
+                                    className="editor-textarea memo-content"
+                                    value={formData.content}
+                                    onChange={e => handleChange('content', e.target.value)}
+                                    placeholder="Enter memo content... (supports rich text formatting, lists, code blocks, etc.)"
+                                    rows={20}
+                                    onKeyDown={(e) => {
+                                        // Handle Tab key for indentation
+                                        if (e.key === 'Tab') {
+                                            e.preventDefault();
+                                            const textarea = e.target;
+                                            const start = textarea.selectionStart;
+                                            const end = textarea.selectionEnd;
+                                            const value = textarea.value;
+                                            
+                                            // Insert tab character
+                                            const newValue = value.substring(0, start) + '\t' + value.substring(end);
+                                            handleChange('content', newValue);
+                                            
+                                            // Move cursor position
+                                            setTimeout(() => {
+                                                textarea.selectionStart = textarea.selectionEnd = start + 1;
+                                            }, 0);
+                                        }
+                                    }}
+                                />
+                                <div style={{fontSize: '12px', color: '#6c757d', marginTop: '8px'}}>
+                                    💡 Tip: This field preserves formatting including indentation, line breaks, and spacing. 
+                                    Use Tab for indentation, supports Markdown syntax.
+                                </div>
+                            </div>
+                        </React.Fragment>
+                    )}
+                    
+                    {type === 'interviews' && (
+                        <React.Fragment>
+                            <div className="editor-field">
+                                <label className="editor-label">Status</label>
+                                <select
+                                    className="editor-input"
+                                    value={formData.status || 'pending'}
+                                    onChange={e => handleChange('status', e.target.value)}
+                                >
+                                    <option value="pending">Pending</option>
+                                    <option value="scheduled">Scheduled</option>
+                                    <option value="in_progress">In Progress</option>
+                                    <option value="completed">Completed</option>
+                                    <option value="cancelled">Cancelled</option>
+                                </select>
+                            </div>
+                            
+                            <div className="editor-field">
+                                <label className="editor-label">Priority</label>
+                                <select
+                                    className="editor-input"
+                                    value={formData.priority || 'medium'}
+                                    onChange={e => handleChange('priority', e.target.value)}
+                                >
+                                    <option value="low">Low</option>
+                                    <option value="medium">Medium</option>
+                                    <option value="high">High</option>
+                                </select>
+                            </div>
+                            
+                            <div className="editor-field">
+                                <label className="editor-label">Notes</label>
+                                <textarea
+                                    className="editor-textarea memo-content"
+                                    value={formData.notes || ''}
+                                    onChange={e => handleChange('notes', e.target.value)}
+                                    placeholder="Enter interview notes..."
+                                    rows={20}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Tab') {
+                                            e.preventDefault();
+                                            const textarea = e.target;
+                                            const start = textarea.selectionStart;
+                                            const end = textarea.selectionEnd;
+                                            const value = textarea.value;
+                                            
+                                            const newValue = value.substring(0, start) + '\t' + value.substring(end);
+                                            handleChange('notes', newValue);
+                                            
+                                            setTimeout(() => {
+                                                textarea.selectionStart = textarea.selectionEnd = start + 1;
+                                            }, 0);
+                                        }
+                                    }}
+                                />
+                            </div>
+                            {!isAddMode && (
+                                <div style={{fontSize: '12px', color: '#6c757d', marginTop: '-10px'}}>
+                                    Note: Name and Description are read-only for interviews. Only status, priority, and notes can be edited.
+                                </div>
+                            )}
+                        </React.Fragment>
+                    )}
+                </div>
+                
+                <div className="editor-footer">
+                    <div className="editor-footer-left">
+                        {!isAddMode && (type === 'tasks' || type === 'logs' || type === 'memos' || type === 'interviews') && (
+                            <button className="editor-button danger" onClick={handleDelete}>Delete</button>
+                        )}
+                    </div>
+                    <div className="editor-footer-right">
+                        <button className="editor-button" onClick={onClose}>Cancel</button>
+                        {!isAddMode && (type === 'documents' || type === 'notes') && (
+                            <button className="editor-button secondary" onClick={handleIndex}>Index</button>
+                        )}
+                        {!isAddMode && type === 'notes' && item.type === 'meeting' && (
+                            <button className="editor-button secondary" onClick={handleAnalyze}>Analyze</button>
+                        )}
+                        {!isAddMode && type === 'tasks' && (
+                            <button className="editor-button secondary" onClick={onLog}>Log</button>
+                        )}
+                        <button className="editor-button primary" onClick={handleSave}>{isAddMode ? 'Add' : 'Save'}</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+    );
+}
+
+
+function SettingsPanel({ authenticatedFetch }) {
+    const [settings, setSettings] = useState({
+        google_drive_calendar_secret_link: ''
+    });
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [message, setMessage] = useState('');
+    const [error, setError] = useState('');
+
+    // Load settings on component mount
+    useEffect(() => {
+        loadSettings();
+    }, []);
+
+    const loadSettings = async () => {
+        try {
+            setLoading(true);
+            const response = await authenticatedFetch(`${CONFIG.API_BASE_URL}/user/settings`);
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success) {
+                    setSettings(data.settings);
+                }
+            } else {
+                setError('Failed to load settings');
+            }
+        } catch (err) {
+            setError('Error loading settings: ' + err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const saveSettings = async () => {
+        try {
+            setSaving(true);
+            setError('');
+            setMessage('');
+
+            const response = await authenticatedFetch(`${CONFIG.API_BASE_URL}/user/settings`, {
+                method: 'PUT',
+                body: JSON.stringify(settings)
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success) {
+                    setMessage('Settings saved successfully!');
+                    setTimeout(() => setMessage(''), 3000);
+                } else {
+                    setError('Failed to save settings');
+                }
+            } else {
+                setError('Failed to save settings');
+            }
+        } catch (err) {
+            setError('Error saving settings: ' + err.message);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleInputChange = (key, value) => {
+        setSettings(prev => ({
+            ...prev,
+            [key]: value
+        }));
+    };
+
+    if (loading) {
+        return (
+            <div style={{ 
+                padding: '40px 0', 
+                textAlign: 'center',
+                color: '#00ff88',
+                fontFamily: 'Roboto Mono, monospace'
+            }}>
+                Loading settings...
+            </div>
+        );
+    }
+
+    return (
+        <div style={{ 
+            padding: '32px',
+            maxWidth: '600px',
+            margin: '0 auto'
+        }}>
+            <div style={{
+                background: 'linear-gradient(135deg, rgba(0, 255, 136, 0.1) 0%, rgba(22, 33, 62, 0.3) 100%)',
+                border: '2px solid rgba(0, 255, 136, 0.3)',
+                borderRadius: '12px',
+                padding: '32px',
+                boxShadow: '0 4px 15px rgba(0, 0, 0, 0.3)',
+                backdropFilter: 'blur(5px)'
+            }}>
+                <h2 style={{
+                    fontFamily: 'Orbitron, monospace',
+                    color: '#00ff88',
+                    fontSize: '24px',
+                    fontWeight: '700',
+                    marginBottom: '24px',
+                    textShadow: '0 0 10px rgba(0, 255, 136, 0.5)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '2px'
+                }}>
+                    Configuration Settings
+                </h2>
+
+                <div style={{ marginBottom: '24px' }}>
+                    <label style={{
+                        display: 'block',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        fontFamily: 'Orbitron, monospace',
+                        color: '#00ff88',
+                        marginBottom: '8px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '1px',
+                        textShadow: '0 0 5px rgba(0, 255, 136, 0.3)'
+                    }}>
+                        Google Drive Calendar Secret Link
+                    </label>
+                    <input
+                        type="url"
+                        value={settings.google_drive_calendar_secret_link}
+                        onChange={(e) => handleInputChange('google_drive_calendar_secret_link', e.target.value)}
+                        placeholder="Enter your Google Drive Calendar secret link..."
+                        style={{
+                            width: '100%',
+                            padding: '16px 20px',
+                            border: '2px solid rgba(0, 255, 136, 0.4)',
+                            borderRadius: '8px',
+                            fontSize: '14px',
+                            fontFamily: 'Roboto Mono, monospace',
+                            background: 'rgba(10, 10, 10, 0.8)',
+                            color: '#e0e0e0',
+                            outline: 'none',
+                            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                            backdropFilter: 'blur(5px)',
+                            boxShadow: '0 4px 15px rgba(0, 0, 0, 0.3)',
+                            lineHeight: '1.6',
+                            wordWrap: 'break-word'
+                        }}
+                        onFocus={(e) => {
+                            e.target.style.borderColor = '#00ff88';
+                            e.target.style.boxShadow = '0 0 15px rgba(0, 255, 136, 0.3)';
+                            e.target.style.background = 'rgba(10, 10, 10, 0.9)';
+                            e.target.style.color = '#ffffff';
+                        }}
+                        onBlur={(e) => {
+                            e.target.style.borderColor = 'rgba(0, 255, 136, 0.4)';
+                            e.target.style.boxShadow = '0 4px 15px rgba(0, 0, 0, 0.3)';
+                            e.target.style.background = 'rgba(10, 10, 10, 0.8)';
+                            e.target.style.color = '#e0e0e0';
+                        }}
+                    />
+                    <div style={{
+                        fontSize: '12px',
+                        color: 'rgba(0, 255, 136, 0.7)',
+                        marginTop: '8px',
+                        fontFamily: 'Roboto Mono, monospace'
+                    }}>
+                        This link will be used to access your Google Drive calendar for meeting processing.
+                    </div>
+                </div>
+
+                {error && (
+                    <div style={{
+                        background: 'rgba(255, 69, 0, 0.2)',
+                        border: '1px solid rgba(255, 69, 0, 0.5)',
+                        borderRadius: '6px',
+                        padding: '12px',
+                        marginBottom: '16px',
+                        color: '#ff4500',
+                        fontSize: '14px',
+                        fontFamily: 'Roboto Mono, monospace'
+                    }}>
+                        {error}
+                    </div>
+                )}
+
+                {message && (
+                    <div style={{
+                        background: 'rgba(0, 255, 136, 0.2)',
+                        border: '1px solid rgba(0, 255, 136, 0.5)',
+                        borderRadius: '6px',
+                        padding: '12px',
+                        marginBottom: '16px',
+                        color: '#00ff88',
+                        fontSize: '14px',
+                        fontFamily: 'Roboto Mono, monospace'
+                    }}>
+                        {message}
+                    </div>
+                )}
+
+                <button
+                    onClick={saveSettings}
+                    disabled={saving}
+                    style={{
+                        padding: '12px 24px',
+                        background: saving ? 'rgba(169, 169, 169, 0.3)' : 'linear-gradient(135deg, #00ff88 0%, #ffd700 100%)',
+                        color: saving ? '#a9a9a9' : '#000',
+                        border: saving ? '2px solid rgba(169, 169, 169, 0.5)' : '2px solid #ffd700',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        fontFamily: 'Orbitron, monospace',
+                        cursor: saving ? 'not-allowed' : 'pointer',
+                        transition: 'all 0.3s',
+                        textTransform: 'uppercase',
+                        letterSpacing: '1px',
+                        backdropFilter: 'blur(5px)',
+                        width: '100%'
+                    }}
+                    onMouseEnter={(e) => {
+                        if (!saving) {
+                            e.target.style.background = 'linear-gradient(135deg, #ffd700 0%, #00ff88 100%)';
+                            e.target.style.borderColor = '#00ff88';
+                            e.target.style.boxShadow = '0 8px 20px rgba(255, 215, 0, 0.4)';
+                            e.target.style.transform = 'translateY(-2px)';
+                        }
+                    }}
+                    onMouseLeave={(e) => {
+                        if (!saving) {
+                            e.target.style.background = 'linear-gradient(135deg, #00ff88 0%, #ffd700 100%)';
+                            e.target.style.borderColor = '#ffd700';
+                            e.target.style.boxShadow = 'none';
+                            e.target.style.transform = 'translateY(0)';
+                        }
+                    }}
+                >
+                    {saving ? 'Saving...' : 'Save Configuration'}
+                </button>
+            </div>
+        </div>
+    );
+}
+
+function Panel({ tab, send, authenticatedFetch }) {
+    const [allItems, setAllItems] = useState({
+        tasks: [],
+        documents: [],
+        notes: [],
+        logs: [],
+        memos: [],
+        interviews: []
+    });
+    
+    const [selected, setSelected] = useState(null);
+    const [loaded, setLoaded] = useState(false);
+    const [editingItem, setEditingItem] = useState(null);
+    const [editingItemIndex, setEditingItemIndex] = useState(null);
+    const [addMode, setAddMode] = useState(false);
+    
+    // Logging modal states
+    const [showLoggingModal, setShowLoggingModal] = useState(false);
+    const [loggingErrors, setLoggingErrors] = useState({});
+    const [isLoggingSubmitting, setIsLoggingSubmitting] = useState(false);
+    
+    // Filter states
+    const [searchQuery, setSearchQuery] = useState('');
+    const [typeFilter, setTypeFilter] = useState('all');
+    const [statusFilter, setStatusFilter] = useState(['todo', 'in_progress', 'pending']);
+    const [sortBy, setSortBy] = useState('name');
+    const [tagFilter, setTagFilter] = useState('all');
+    const [dateFilter, setDateFilter] = useState('');
+
+    useEffect(() => {
+        setSelected(null);
+    }, [tab]);
+
+    // Close dropdowns when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            // Close all status filter dropdowns
+            const dropdowns = document.querySelectorAll('[data-dropdown="status-filter"]');
+            dropdowns.forEach(dropdown => {
+                if (!dropdown.contains(event.target)) {
+                    const dropdownMenu = dropdown.querySelector('[data-dropdown-menu]');
+                    if (dropdownMenu) {
+                        dropdownMenu.style.display = 'none';
+                    }
+                }
+            });
+        };
+
+        document.addEventListener('click', handleClickOutside);
+        return () => document.removeEventListener('click', handleClickOutside);
+    }, []);
+
+    useEffect(() => {
+        if (!authenticatedFetch || loaded) {
+            return;
+        }
+        
+        // Fetch tasks
+        authenticatedFetch(`${CONFIG.API_BASE_URL}/tasks`)
+            .then(r => r.json())
+            .then(data => { 
+                if (data.tasks) {
+                    // Map backend field names to frontend field names
+                    const mappedTasks = data.tasks.map(task => ({
+                        ...task,
+                        dueDate: task.due_date,
+                        name: task.title || task.name // For backward compatibility
+                    }));
+                    setAllItems(prev => ({ ...prev, tasks: mappedTasks }));
+                }
+            })
+            .catch(() => {});
+        
+        // Fetch documents
+        authenticatedFetch(`${CONFIG.API_BASE_URL}/documents`)
+            .then(r => r.json())
+            .then(data => { 
+                if (data.documents) {
+                    setAllItems(prev => ({ ...prev, documents: data.documents }));
+                }
+            })
+            .catch(() => {});
+        
+        // Fetch notes (meeting notes from files)
+        authenticatedFetch(`${CONFIG.API_BASE_URL}/notes`)
+            .then(r => r.json())
+            .then(data => { 
+                console.log('🔍 Notes API Response:', data);
+                if (data.notes) {
+                    setAllItems(prev => ({ ...prev, notes: data.notes }));
+                }
+            })
+            .catch(error => {
+                console.error('❌ Error fetching notes:', error);
+            });
+        
+        // Fetch logs
+        authenticatedFetch(`${CONFIG.API_BASE_URL}/logs`)
+                .then(r => r.json())
+                .then(data => { 
+                    if (data.logs) {
+                        setAllItems(prev => ({ ...prev, logs: data.logs }));
+                    }
+                })
+                .catch(() => {});
+            
+        // Fetch memos
+        authenticatedFetch(`${CONFIG.API_BASE_URL}/memos`)
+            .then(r => r.json())
+            .then(data => { 
+                if (data.memos) {
+                    setAllItems(prev => ({ ...prev, memos: data.memos }));
+                }
+            })
+            .catch(() => {});
+        
+        // Fetch interviews
+        authenticatedFetch(`${CONFIG.API_BASE_URL}/interviews`)
+            .then(r => r.json())
+            .then(data => { 
+                if (data.interviews) {
+                    setAllItems(prev => ({ ...prev, interviews: data.interviews }));
+                }
+            })
+            .catch(() => {});
+            
+        setLoaded(true);
+    }, [loaded, authenticatedFetch]);
+
+
+    const getCurrentItems = () => {
+        let items = allItems[tab] || [];
+        
+        // Apply search filter
+        if (searchQuery) {
+            items = items.filter(item => 
+                ((item.title || item.name) && (item.title || item.name).toLowerCase().includes(searchQuery.toLowerCase())) ||
+                (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()))
+            );
+        }
+        
+        // Apply type/tag filters
+        if (tab === 'tasks' && typeFilter !== 'all') {
+            items = items.filter(item => item.tags && item.tags.includes(typeFilter));
+        }
+        
+        // Apply status filter for tasks
+        if (tab === 'tasks' && Array.isArray(statusFilter) && statusFilter.length > 0) {
+            items = items.filter(item => statusFilter.includes(item.status));
+        }
+        if (tab === 'logs' && tagFilter !== 'all') {
+            // For logs, filter by log_id pattern since they don't have tags
+            // Personal tasks usually have TASK-* IDs, work tasks have other patterns
+            items = items.filter(item => {
+                const logId = item.log_id || '';
+                if (tagFilter === 'personal') {
+                    return typeof logId === 'string' && logId.startsWith('TASK-');
+                } else if (tagFilter === 'work') {
+                    return typeof logId === 'string' && !logId.startsWith('TASK-');
+                }
+                return true;
+            });
+        }
+        
+        // Apply date filter for logs
+        if (tab === 'logs' && dateFilter) {
+            items = items.filter(item => {
+                if (!item.date) return false;
+                // Compare dates without time components
+                const itemDate = new Date(item.date).toISOString().split('T')[0];
+                return itemDate === dateFilter;
+            });
+        }
+        
+        // Apply sorting for tasks
+        if (tab === 'tasks') {
+            items = items.slice().sort((a, b) => {
+                switch (sortBy) {
+                    case 'priority-desc':
+                        const priorityOrder = { high: 3, medium: 2, low: 1 };
+                        return (priorityOrder[b.priority] || 0) - (priorityOrder[a.priority] || 0);
+                    case 'priority-asc':
+                        const priorityOrderAsc = { high: 3, medium: 2, low: 1 };
+                        return (priorityOrderAsc[a.priority] || 0) - (priorityOrderAsc[b.priority] || 0);
+                    case 'due-date-asc':
+                        // Sort by due date (earliest first), tasks without due dates go to end
+                        if (!a.dueDate && !b.dueDate) return 0;
+                        if (!a.dueDate) return 1;
+                        if (!b.dueDate) return -1;
+                        return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+                    case 'due-date-desc':
+                        // Sort by due date (latest first), tasks without due dates go to end
+                        if (!a.dueDate && !b.dueDate) return 0;
+                        if (!a.dueDate) return 1;
+                        if (!b.dueDate) return -1;
+                        return new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime();
+                    case 'due-date-urgent':
+                        // Sort by urgency: overdue first, then due soon, then by date
+                        const aStatus = a.dueDate ? getDeadlineStatus(a.dueDate) : 'normal';
+                        const bStatus = b.dueDate ? getDeadlineStatus(b.dueDate) : 'normal';
+                        
+                        // Priority order: overdue > due-soon > normal
+                        const statusOrder = { overdue: 3, 'due-soon': 2, normal: 1 };
+                        const statusDiff = (statusOrder[aStatus] || 0) - (statusOrder[bStatus] || 0);
+                        
+                        if (statusDiff !== 0) return -statusDiff; // Reverse for urgent first
+                        
+                        // If same status, sort by due date
+                        if (!a.dueDate && !b.dueDate) return 0;
+                        if (!a.dueDate) return 1;
+                        if (!b.dueDate) return -1;
+                        return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+                    case 'name':
+                        return (a.name || '').localeCompare(b.name || '');
+                    default:
+                        return 0;
+                }
+            });
+        }
+        
+        return items;
+    };
+
+    const items = React.useMemo(() => getCurrentItems(), [allItems, tab, searchQuery, typeFilter, statusFilter, sortBy, tagFilter, dateFilter]);
+
+    const addItem = () => {
+            console.log('🆕 ADD MODE: Creating new item');
+            // Open the editor in add mode with empty item
+            const newItem = {
+                name: '',
+                description: '',
+                content: '',
+                // Add default values based on type
+                ...(tab === 'tasks' && { status: 'pending', priority: 'medium' }),
+                ...(tab === 'logs' && { date: new Date().toISOString().split('T')[0], actual_hours: 0 })
+            };
+            setEditingItem(newItem);
+            setEditingItemIndex(null); // Explicitly set to null for new items
+            setAddMode(true);
+    };
+
+    const saveTasks = () => {
+        if (tab !== 'tasks' || !authenticatedFetch) return;
+        authenticatedFetch(`${CONFIG.API_BASE_URL}/tasks`, {
+            method: 'PUT',
+            body: JSON.stringify({ tasks: allItems.tasks }),
+        });
+    };
+
+    const handleOpenLoggingModal = () => {
+        setLoggingErrors({});
+        setShowLoggingModal(true);
+    };
+
+    const handleCloseLoggingModal = () => {
+        setShowLoggingModal(false);
+        setLoggingErrors({});
+        setIsLoggingSubmitting(false);
+    };
+
+    const handleSaveLog = async (loggingData) => {
+        setLoggingErrors({});
+        
+        // Validation
+        if (!loggingData.date || !loggingData.date.trim()) {
+            setLoggingErrors({ date: 'Date is required' });
+            return;
+        }
+        
+        if (!loggingData.hours || parseFloat(loggingData.hours) <= 0) {
+            setLoggingErrors({ hours: 'Please enter a valid number of hours' });
+            return;
+        }
+
+        setIsLoggingSubmitting(true);
+
+        try {
+            // Create log entry based on the current editing task
+            const taskName = (editingItem && editingItem.name) || 'Task';
+            const taskId = (editingItem && editingItem.id) || Date.now();
+            const logEntry = {
+                name: `Worked on: ${taskName}`,
+                description: loggingData.description || `Completed work on task: ${taskName}`,
+                date: loggingData.date,
+                log_id: `TASK-${taskId}`,
+                actual_hours: parseFloat(loggingData.hours),
+                planned_hours: parseFloat(loggingData.hours),
+                status: 'completed'
+            };
+
+            const response = await authenticatedFetch(`${CONFIG.API_BASE_URL}/logs`, {
+                method: 'POST',
+                body: JSON.stringify(logEntry),
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                // Update logs in state
+                setAllItems(prev => ({
+                    ...prev,
+                    logs: [...prev.logs, result.log || logEntry]
+                }));
+                handleCloseLoggingModal();
+                alert('Log entry saved successfully!');
+            } else {
+                throw new Error('Failed to save log entry');
+            }
+        } catch (error) {
+            console.error('Error saving log:', error);
+            setLoggingErrors({ submit: 'Failed to save log entry. Please try again.' });
+        } finally {
+            setIsLoggingSubmitting(false);
+        }
+    };
+    
+    const handleSave = async (updatedItem) => {
+            try {
+                // Map frontend field names to backend field names
+                let requestData = { ...updatedItem };
+                if (tab === 'tasks' && updatedItem.dueDate !== undefined) {
+                    requestData.due_date = updatedItem.dueDate;
+                    delete requestData.dueDate;
+                }
+                
+                // For logs, the backend expects specific field names
+                if (tab === 'logs') {
+                    // The 'name' field in the frontend is actually the description in the YAML
+                    requestData = {
+                        name: updatedItem.name,  // This will be mapped to 'description' in backend
+                        description: updatedItem.name,  // Send as both for compatibility
+                        date: updatedItem.date,
+                        log_id: updatedItem.log_id,
+                        actual_hours: parseFloat(updatedItem.actual_hours) || 0
+                    };
+                }
+                
+                console.log('💾 SAVE: addMode =', addMode, 'editingItemIndex =', editingItemIndex, 'selected =', selected);
+                
+                let response;
+                if (addMode) {
+                    console.log('📤 POST: Creating new item');
+                    // For add mode, POST to create new item
+                    response = await authenticatedFetch(`${CONFIG.API_BASE_URL}/${tab}`, {
+                        method: 'POST',
+                        body: JSON.stringify(requestData)
+                    });
+                } else {
+                    // For edit mode, PUT to update existing item
+                    // IMPORTANT: Need to find the correct index in the ORIGINAL allItems array, 
+                    // not the filtered/sorted items array that's displayed
+                    let originalIndex = -1;
+                    let itemId = null;
+                    
+                    if (editingItem) {
+                        // Find the item in the original unfiltered array
+                        originalIndex = allItems[tab].findIndex(item => {
+                            // For items with IDs, compare by ID (most reliable)
+                            if (item.id && editingItem.id) {
+                                return item.id === editingItem.id;
+                            }
+                            // Fallback: compare by name and description
+                            return (item.title || item.name) === (editingItem.title || editingItem.name) && 
+                                   item.description === editingItem.description;
+                        });
+                        
+                        // Use the actual item ID if available, fallback to index for backward compatibility
+                        if (originalIndex >= 0) {
+                            const originalItem = allItems[tab][originalIndex];
+                            itemId = originalItem.id || originalIndex;
+                        }
+                    }
+                    
+                    console.log('📝 PUT: Original editingItemIndex =', editingItemIndex, 'but finding correct index in original array =', originalIndex, 'using itemId =', itemId);
+                    
+                    if (originalIndex >= 0 && itemId !== null) {
+                        console.log('🌐 API Request: PUT /' + tab + '/' + itemId, requestData);
+                        response = await authenticatedFetch(`${CONFIG.API_BASE_URL}/${tab}/${itemId}`, {
+                            method: 'PUT',
+                            body: JSON.stringify(requestData)
+                        });
+                        console.log('📡 API Response status:', response.status, response.statusText);
+                    } else {
+                        console.error('❌ Could not find item in original array - editingItem:', editingItem);
+                        throw new Error('Could not find item to update in original array');
+                    }
+                }
+                
+                if (response.ok) {
+                    if (addMode) {
+                        const responseData = await response.json();
+                        
+                        // For documents and notes, we need to refresh the list from server
+                        // to get the correct indices after adding
+                        if (tab === 'documents' || tab === 'notes') {
+                            try {
+                                const listResponse = await authenticatedFetch(`${CONFIG.API_BASE_URL}/${tab}`);
+                                if (listResponse.ok) {
+                                    const data = await listResponse.json();
+                                    setAllItems(prev => ({
+                                        ...prev,
+                                        [tab]: data[tab] || []
+                                    }));
+                                    
+                                    // Select the newly created item if we have its index
+                                    if (responseData.index !== undefined && responseData.index >= 0) {
+                                        setSelected(responseData.index);
+                                    }
+                                }
+                            } catch (error) {
+                                console.error(`Error refreshing ${tab} list:`, error);
+                            }
+                        } else {
+                            // For tasks and logs, we can add locally
+                            setAllItems(prev => ({
+                                ...prev,
+                                [tab]: [...prev[tab], updatedItem]
+                            }));
+                            // Select the newly added item
+                            setSelected(allItems[tab].length);
+                        }
+                    } else {
+                        // Update existing item in the original array (not the filtered/sorted one)
+                        let originalIndex = -1;
+                        
+                        if (editingItem) {
+                            // Find the item in the original unfiltered array
+                            originalIndex = allItems[tab].findIndex(item => {
+                                // For items with IDs, compare by ID (most reliable)
+                                if (item.id && editingItem.id) {
+                                    return item.id === editingItem.id;
+                                }
+                                // Fallback: compare by name and description
+                                return (item.title || item.name) === (editingItem.title || editingItem.name) && 
+                                       item.description === editingItem.description;
+                            });
+                        }
+                        
+                        if (originalIndex >= 0) {
+                            console.log('🔄 Local State Update: Replacing item at original index', originalIndex);
+                            console.log('📋 Old item:', allItems[tab][originalIndex]);
+                            console.log('📝 New item:', updatedItem);
+                            
+                            const newItems = [...allItems[tab]];
+                            newItems[originalIndex] = updatedItem;
+                            
+                            console.log('📊 Updated original array length:', newItems.length, 'vs original:', allItems[tab].length);
+                            
+                            setAllItems(prev => ({
+                                ...prev,
+                                [tab]: newItems
+                            }));
+                        }
+                    }
+                    
+                    // Close the editor and reset add mode
+                    setEditingItem(null);
+                    setEditingItemIndex(null);
+                    setAddMode(false);
+                } else {
+                    // Show error in console instead of chat
+                    console.error(`Error ${addMode ? 'adding' : 'saving'} item: ${response.statusText}`);
+                    alert(`Error ${addMode ? 'adding' : 'saving'} item: ${response.statusText}`);
+                }
+            } catch (error) {
+                console.error(`Error saving item: ${error.message}`);
+                alert(`Error saving item: ${error.message}`);
+            }
+    };
+    
+    const handleIndex = (item) => {
+        // Send message to index the file at its path
+        if (item && item.path) {
+            send(`Index the file at this directory ${item.path}`);
+        } else if (item && (item.title || item.name)) {
+            // Fallback if path is not available
+            send(`Index the file: ${item.title || item.name}`);
+        }
+        setEditingItem(null);
+        setEditingItemIndex(null);
+    };
+    
+    const handleDelete = async () => {
+        // Use the stored editingItemIndex if available, otherwise use selected
+        let itemIndex = editingItemIndex !== null ? editingItemIndex : selected;
+        
+        if (itemIndex !== null && itemIndex >= 0) {
+            try {
+                // Get the actual item to extract its ID
+                const item = items[itemIndex];
+                const itemId = item.id || itemIndex; // Use ID if available, fallback to index for backward compatibility
+                
+                console.log('🗑️ DELETE: Using ID:', itemId, 'for item at index:', itemIndex, 'item:', item);
+                
+                const response = await authenticatedFetch(`${CONFIG.API_BASE_URL}/${tab}/${itemId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    // Remove the item from the list
+                    const newItems = items.filter((_, index) => index !== itemIndex);
+                    
+                    // Update the allItems state
+                    setAllItems(prev => ({
+                        ...prev,
+                        [tab]: newItems
+                    }));
+                    
+                    // Clear selection and close editor
+                    setSelected(null);
+                    setEditingItem(null);
+                    setEditingItemIndex(null);
+                    setAddMode(false);
+                } else {
+                    console.error(`Error deleting item: ${response.statusText}`);
+                    alert(`Error deleting item: ${response.statusText}`);
+                }
+            } catch (error) {
+                console.error(`Error deleting item: ${error.message}`);
+                alert(`Error deleting item: ${error.message}`);
+            }
+        } else {
+            alert('No item selected for deletion');
+        }
+    };
+
+    return (
+        <React.Fragment>
+            {/* Search and Filter Controls */}
+            <div style={{ 
+                padding: '0 32px 16px 32px', 
+                borderBottom: '2px solid rgba(0, 255, 136, 0.3)',
+                background: 'linear-gradient(90deg, rgba(0, 255, 136, 0.05) 0%, rgba(255, 215, 0, 0.05) 100%)'
+            }}>
+                <input
+                    type="text"
+                    placeholder={`Search ${tab}...`}
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    style={{
+                        width: '100%',
+                        padding: '12px 16px',
+                        border: '2px solid rgba(0, 255, 136, 0.3)',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        fontFamily: 'Roboto Mono, monospace',
+                        background: 'rgba(10, 10, 10, 0.5)',
+                        color: '#00ff88',
+                        marginBottom: '12px',
+                        backdropFilter: 'blur(5px)',
+                        outline: 'none'
+                    }}
+                />
+                
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                    {tab === 'tasks' && (
+                        <React.Fragment>
+                            <select
+                                value={typeFilter}
+                                onChange={(e) => setTypeFilter(e.target.value)}
+                                style={{
+                                    padding: '8px 12px',
+                                    border: '2px solid rgba(0, 255, 136, 0.3)',
+                                    borderRadius: '6px',
+                                    fontSize: '14px',
+                                    fontFamily: 'Roboto Mono, monospace',
+                                    background: 'rgba(10, 10, 10, 0.5)',
+                                    color: '#00ff88',
+                                    backdropFilter: 'blur(5px)'
+                                }}
+                            >
+                                <option value="all">All Types</option>
+                                <option value="personal">Personal</option>
+                                <option value="work">Work</option>
+                            </select>
+                            
+                            <div style={{ position: 'relative', display: 'inline-block' }} data-dropdown="status-filter">
+                                <div 
+                                    style={{
+                                        padding: '8px 12px',
+                                        border: '2px solid rgba(0, 255, 136, 0.3)',
+                                        borderRadius: '6px',
+                                        fontSize: '14px',
+                                        fontFamily: 'Roboto Mono, monospace',
+                                        minWidth: '150px',
+                                        cursor: 'pointer',
+                                        background: 'rgba(10, 10, 10, 0.5)',
+                                        color: '#00ff88',
+                                        backdropFilter: 'blur(5px)',
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center'
+                                    }}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        const dropdown = e.currentTarget.nextElementSibling;
+                                        dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+                                    }}
+                                >
+                                    <span>
+                                        {statusFilter.length === 0 ? 'No status selected' : 
+                                         statusFilter.length === 1 ? statusFilter[0].replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) :
+                                         `${statusFilter.length} statuses selected`}
+                                    </span>
+                                    <span>▼</span>
+                                </div>
+                                <div 
+                                    style={{
+                                        position: 'absolute',
+                                        top: '100%',
+                                        left: 0,
+                                        right: 0,
+                                        background: 'linear-gradient(135deg, rgba(10, 10, 10, 0.95) 0%, rgba(22, 33, 62, 0.9) 100%)',
+                                        border: '2px solid rgba(0, 255, 136, 0.5)',
+                                        borderRadius: '6px',
+                                        marginTop: '2px',
+                                        zIndex: 1000,
+                                        display: 'none',
+                                        boxShadow: '0 8px 20px rgba(0, 255, 136, 0.3)',
+                                        backdropFilter: 'blur(10px)'
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                    data-dropdown-menu
+                                >
+                                    {['todo', 'in_progress', 'pending', 'completed', 'cancelled'].map(status => (
+                                        <label 
+                                            key={status}
+                                            style={{
+                                                display: 'block',
+                                                padding: '8px 12px',
+                                                cursor: 'pointer',
+                                                fontSize: '14px',
+                                                fontFamily: 'Roboto Mono, monospace',
+                                                color: '#e0e0e0',
+                                                borderBottom: '1px solid rgba(0, 255, 136, 0.2)'
+                                            }}
+                                            onMouseEnter={(e) => {
+                                                e.target.style.backgroundColor = 'rgba(0, 255, 136, 0.2)';
+                                                e.target.style.color = '#00ff88';
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                e.target.style.backgroundColor = 'transparent';
+                                                e.target.style.color = '#e0e0e0';
+                                            }}
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={statusFilter.includes(status)}
+                                                onChange={(e) => {
+                                                    if (e.target.checked) {
+                                                        setStatusFilter(prev => [...prev, status]);
+                                                    } else {
+                                                        setStatusFilter(prev => prev.filter(s => s !== status));
+                                                    }
+                                                }}
+                                                style={{ marginRight: '8px' }}
+                                            />
+                                            {status.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+                            
+                            <select
+                                value={sortBy}
+                                onChange={(e) => setSortBy(e.target.value)}
+                                style={{
+                                    padding: '8px 12px',
+                                    border: '2px solid rgba(0, 255, 136, 0.3)',
+                                    borderRadius: '6px',
+                                    fontSize: '14px',
+                                    fontFamily: 'Roboto Mono, monospace',
+                                    background: 'rgba(10, 10, 10, 0.5)',
+                                    color: '#00ff88',
+                                    backdropFilter: 'blur(5px)'
+                                }}
+                            >
+                                <option value="name">Sort by Name</option>
+                                <option value="priority-desc">Priority (High to Low)</option>
+                                <option value="priority-asc">Priority (Low to High)</option>
+                                <option value="due-date-urgent">🚨 Most Urgent First</option>
+                                <option value="due-date-asc">Due Date (Earliest First)</option>
+                                <option value="due-date-desc">Due Date (Latest First)</option>
+                            </select>
+                        </React.Fragment>
+                    )}
+                    
+                    {tab === 'logs' && (
+                        <React.Fragment>
+                            <input
+                                type="date"
+                                value={dateFilter || ''}
+                                onChange={(e) => setDateFilter(e.target.value)}
+                                style={{
+                                    padding: '8px 12px',
+                                    border: '1px solid #dee2e6',
+                                    borderRadius: '6px',
+                                    fontSize: '14px',
+                                    minWidth: '150px'
+                                }}
+                                title="Filter by date"
+                            />
+                            <select
+                                value={tagFilter}
+                                onChange={(e) => setTagFilter(e.target.value)}
+                                style={{
+                                    padding: '8px 12px',
+                                    border: '2px solid rgba(0, 255, 136, 0.3)',
+                                    borderRadius: '6px',
+                                    fontSize: '14px',
+                                    fontFamily: 'Roboto Mono, monospace',
+                                    background: 'rgba(10, 10, 10, 0.5)',
+                                    color: '#00ff88',
+                                    backdropFilter: 'blur(5px)'
+                                }}
+                            >
+                                <option value="all">All Tags</option>
+                                <option value="personal">Personal</option>
+                                <option value="work">Work</option>
+                            </select>
+                        </React.Fragment>
+                    )}
+                </div>
+            </div>
+
+            <div className="items-list">
+                {tab === 'settings' ? (
+                    <SettingsPanel authenticatedFetch={authenticatedFetch} />
+                ) : items.length === 0 ? (
+                    <div className="empty-state">
+                        <div className="empty-state-title">
+                            {tab === 'logs' && dateFilter ? 'No daily logs for this date' : 'No items yet'}
+                        </div>
+                        <div className="empty-state-description">
+                            {tab === 'logs' && dateFilter 
+                                ? `No logs found for ${new Date(dateFilter + 'T00:00:00').toLocaleDateString()}. Try selecting a different date or create a new log for this date.`
+                                : `Add your first ${tab.slice(0, -1)} to get started`
+                            }
+                        </div>
+                    </div>
+                ) : (
+                    items.map((item, i) => (
+                        <WorkspaceItem
+                            key={i}
+                            item={item}
+                            type={item.type || tab}
+                            isSelected={selected === i}
+                            onClick={() => setSelected(i)}
+                        />
+                    ))
+                )}
+            </div>
+            
+            {tab !== 'settings' && (
+                <div className="action-buttons">
+                    <button className="action-button" onClick={addItem}>
+                        Add {tab === 'tasks' ? 'task' : 
+                             tab === 'documents' ? 'document' : 
+                             tab === 'notes' ? 'note' : 
+                             tab === 'logs' ? 'log' : 
+                             tab === 'memos' ? 'memo' :
+                             tab.slice(0, -1)}
+                    </button>
+                    {selected !== null && (
+                        <button className="action-button primary" onClick={async () => {
+                            const item = items[selected];
+                            console.log('✏️ EDIT MODE: Editing item at index', selected, 'item:', item);
+                            // Store the original index of the item being edited
+                            setEditingItemIndex(selected);
+                            // For documents, notes, memos, and interviews, fetch the content first
+                            if (tab === 'documents' || tab === 'notes' || tab === 'memos' || tab === 'interviews') {
+                                try {
+                                    let endpoint;
+                                    if (tab === 'memos' || tab === 'interviews') {
+                                        // Memos and interviews use ID-based endpoints
+                                        endpoint = `${CONFIG.API_BASE_URL}/${tab}/${item.id}/content`;
+                                    } else {
+                                        // Documents and notes use index-based endpoints
+                                        endpoint = `${CONFIG.API_BASE_URL}/${tab}/${selected}/content`;
+                                    }
+                                    
+                                    const response = await authenticatedFetch(endpoint);
+                                    if (response.ok) {
+                                        const data = await response.json();
+                                        if (tab === 'interviews') {
+                                            // For interviews, populate all the structured fields
+                                            setEditingItem({ 
+                                                ...item, 
+                                                content: data.content,
+                                                notes: data.notes,
+                                                priority: data.priority,
+                                                status: data.status,
+                                                title: data.title
+                                            });
+                                        } else {
+                                            setEditingItem({ ...item, content: data.content });
+                                        }
+                                    } else {
+                                        setEditingItem(item);
+                                    }
+                                } catch (error) {
+                                    console.error(`Error fetching ${tab} content:`, error);
+                                    setEditingItem(item);
+                                }
+                            } else {
+                                setEditingItem(item);
+                            }
+                            setAddMode(false);
+                        }}>
+                            Edit
+                        </button>
+                    )}
+                </div>
+            )}
+            
+            {editingItem && (
+                <Editor
+                    item={editingItem}
+                    type={tab}
+                    onClose={() => {
+                        setEditingItem(null);
+                        setEditingItemIndex(null);
+                        setAddMode(false);
+                    }}
+                    onSave={handleSave}
+                    onIndex={handleIndex}
+                    onDelete={handleDelete}
+                    onLog={handleOpenLoggingModal}
+                    mode={addMode ? 'add' : 'edit'}
+                    authenticatedFetch={authenticatedFetch}
+                />
+            )}
+            
+            <LoggingModal
+                isOpen={showLoggingModal}
+                onClose={handleCloseLoggingModal}
+                onSave={handleSaveLog}
+                taskItem={editingItem}
+                errors={loggingErrors}
+                isSubmitting={isLoggingSubmitting}
+            />
+        </React.Fragment>
+    );
+}
+
+function Chat({ messages, send }) {
+    const [input, setInput] = useState('');
+
+    const formatMessage = (content) => {
+        if (!content) return '';
+        
+        // Convert basic markdown-like formatting
+        let formatted = content
+            // Convert **bold** to <strong>
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            // Convert numbered lists (1. 2. 3. etc.)
+            .replace(/^(\d+)\.\s+(.+)$/gm, '<li>$2</li>')
+            // Convert bullet points (- or * at start of line)
+            .replace(/^[-\*]\s+(.+)$/gm, '<li>$1</li>')
+            // Convert ### to h3
+            .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+            // Convert ## to h2  
+            .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+            // Convert # to h1
+            .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+            // Convert `code` to <code>
+            .replace(/`([^`]+)`/g, '<code>$1</code>');
+
+        // Wrap consecutive <li> elements in <ul>
+        formatted = formatted.replace(/(<li>.*?<\/li>)(?:\s*<li>.*?<\/li>)*/g, (match) => {
+            return '<ul>' + match + '</ul>';
+        });
+
+        // Add paragraphs for better spacing
+        const lines = formatted.split('\n');
+        const paragraphs = [];
+        let currentParagraph = '';
+        
+        for (let line of lines) {
+            const trimmedLine = line.trim();
+            if (trimmedLine === '') {
+                if (currentParagraph.trim()) {
+                    paragraphs.push(currentParagraph.trim());
+                    currentParagraph = '';
+                }
+            } else if (trimmedLine.startsWith('<h') || trimmedLine.startsWith('<ul') || trimmedLine.startsWith('</ul')) {
+                if (currentParagraph.trim()) {
+                    paragraphs.push('<p>' + currentParagraph.trim() + '</p>');
+                    currentParagraph = '';
+                }
+                paragraphs.push(trimmedLine);
+            } else {
+                currentParagraph += (currentParagraph ? ' ' : '') + trimmedLine;
+            }
+        }
+        
+        if (currentParagraph.trim()) {
+            paragraphs.push('<p>' + currentParagraph.trim() + '</p>');
+        }
+
+        return paragraphs.join('\n');
+    };
+
+    return (
+        <div className="assistant-panel">
+            <div className="assistant-header">
+                <div className="assistant-title">Imperial Command</div>
+            </div>
+            <div className="messages">
+                {messages.length === 0 && (
+                    <div className="message assistant">
+                        Greetings, Commander. Your orders await execution.
+                    </div>
+                )}
+                {messages.map((m, i) => (
+                    <div key={i} className={`message ${m.role}`}>
+                        {m.role === 'assistant' ? (
+                            <div dangerouslySetInnerHTML={{ __html: formatMessage(m.content) }} />
+                        ) : (
+                            m.content
+                        )}
+                    </div>
+                ))}
+            </div>
+            <div className="input-area">
+                <input 
+                    value={input} 
+                    onChange={e => setInput(e.target.value)} 
+                    onKeyDown={e => { 
+                        if (e.key === 'Enter' && input.trim()) { 
+                            send(input); 
+                            setInput(''); 
+                        } 
+                    }}
+                    placeholder="Type your message..."
+                />
+                <button 
+                    className="send-button"
+                    onClick={() => { 
+                        if (input.trim()) {
+                            send(input); 
+                            setInput(''); 
+                        }
+                    }}
+                >
+                    Send
+                </button>
+            </div>
+        </div>
+    );
+}
+
+// Authentication Modal Component
+function AuthModal({ onLogin }) {
+    const [isLogin, setIsLogin] = useState(true);
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
+
+    // Client-side password hashing function
+    const hashPassword = async (password) => {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(password);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    };
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        setError('');
+
+        try {
+            // Hash the password before sending to server
+            const hashedPassword = await hashPassword(password);
+            
+            const endpoint = isLogin ? '/auth/login' : '/auth/register';
+            const response = await fetch(`${CONFIG.API_BASE_URL}${endpoint}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ email, password: hashedPassword }),
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                localStorage.setItem('authToken', data.token);
+                localStorage.setItem('user', JSON.stringify(data.user));
+                onLogin(data.user, data.token);
+            } else {
+                setError(data.detail || 'Authentication failed');
+            }
+        } catch (err) {
+            setError('Connection error. Please try again.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.9)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000
+        }}>
+            <div style={{
+                background: 'linear-gradient(180deg, rgba(22, 33, 62, 0.95) 0%, rgba(10, 10, 10, 0.95) 100%)',
+                border: '2px solid rgba(0, 255, 136, 0.3)',
+                borderRadius: '12px',
+                padding: '32px',
+                minWidth: '400px',
+                boxShadow: '0 0 30px rgba(0, 255, 136, 0.2)',
+                backdropFilter: 'blur(10px)'
+            }}>
+                <h2 style={{
+                    fontFamily: 'Orbitron, monospace',
+                    color: '#00ff88',
+                    textAlign: 'center',
+                    marginBottom: '24px',
+                    fontSize: '24px',
+                    fontWeight: '700',
+                    textShadow: '0 0 10px rgba(0, 255, 136, 0.5)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '2px'
+                }}>
+                    {isLogin ? 'Access Terminal' : 'Create Account'}
+                </h2>
+                
+                <form onSubmit={handleSubmit}>
+                    <div style={{ marginBottom: '20px' }}>
+                        <label style={{
+                            display: 'block',
+                            marginBottom: '8px',
+                            color: '#00ff88',
+                            fontFamily: 'Roboto Mono, monospace',
+                            fontSize: '14px'
+                        }}>
+                            Email Address
+                        </label>
+                        <input
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            required
+                            style={{
+                                width: '100%',
+                                padding: '12px',
+                                background: 'rgba(0, 0, 0, 0.5)',
+                                border: '1px solid rgba(0, 255, 136, 0.3)',
+                                borderRadius: '6px',
+                                color: '#00ff88',
+                                fontFamily: 'Roboto Mono, monospace',
+                                fontSize: '14px'
+                            }}
+                            placeholder="Enter your email"
+                        />
+                    </div>
+                    
+                    <div style={{ marginBottom: '24px' }}>
+                        <label style={{
+                            display: 'block',
+                            marginBottom: '8px',
+                            color: '#00ff88',
+                            fontFamily: 'Roboto Mono, monospace',
+                            fontSize: '14px'
+                        }}>
+                            Password
+                        </label>
+                        <input
+                            type="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
+                            style={{
+                                width: '100%',
+                                padding: '12px',
+                                background: 'rgba(0, 0, 0, 0.5)',
+                                border: '1px solid rgba(0, 255, 136, 0.3)',
+                                borderRadius: '6px',
+                                color: '#00ff88',
+                                fontFamily: 'Roboto Mono, monospace',
+                                fontSize: '14px'
+                            }}
+                            placeholder="Enter your password"
+                        />
+                    </div>
+                    
+                    {error && (
+                        <div style={{
+                            color: '#ff4444',
+                            marginBottom: '16px',
+                            textAlign: 'center',
+                            fontFamily: 'Roboto Mono, monospace',
+                            fontSize: '14px'
+                        }}>
+                            {error}
+                        </div>
+                    )}
+                    
+                    <button
+                        type="submit"
+                        disabled={loading}
+                        style={{
+                            width: '100%',
+                            padding: '14px',
+                            background: loading ? 'rgba(0, 255, 136, 0.3)' : 'linear-gradient(90deg, #00ff88 0%, #00cc6a 100%)',
+                            border: 'none',
+                            borderRadius: '6px',
+                            color: loading ? '#666' : '#000',
+                            fontFamily: 'Orbitron, monospace',
+                            fontSize: '16px',
+                            fontWeight: '600',
+                            cursor: loading ? 'not-allowed' : 'pointer',
+                            textTransform: 'uppercase',
+                            letterSpacing: '1px',
+                            marginBottom: '16px'
+                        }}
+                    >
+                        {loading ? 'Processing...' : (isLogin ? 'Access System' : 'Create Account')}
+                    </button>
+                    
+                    <div style={{ textAlign: 'center' }}>
+                        <button
+                            type="button"
+                            onClick={() => setIsLogin(!isLogin)}
+                            style={{
+                                background: 'none',
+                                border: 'none',
+                                color: '#00ff88',
+                                fontFamily: 'Roboto Mono, monospace',
+                                fontSize: '14px',
+                                cursor: 'pointer',
+                                textDecoration: 'underline'
+                            }}
+                        >
+                            {isLogin ? 'Need an account? Register here' : 'Already have an account? Login here'}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+}
+
+function App() {
+    const [tab, setTab] = useState('tasks');
+    const [messages, setMessages] = useState([]);
+    const [tasks, setTasks] = useState([]);
+    const [showDeadlineAlert, setShowDeadlineAlert] = useState(false);
+    const [deadlineAlertType, setDeadlineAlertType] = useState('danger');
+    const [deadlineAlertMessage, setDeadlineAlertMessage] = useState('');
+    const [user, setUser] = useState(null);
+    const [authToken, setAuthToken] = useState(null);
+    const [showAuth, setShowAuth] = useState(true);
+    const wsRef = useRef(null);
+
+    // Check for existing authentication on component mount
+    useEffect(() => {
+        const token = localStorage.getItem('authToken');
+        const savedUser = localStorage.getItem('user');
+        
+        if (token && savedUser) {
+            try {
+                const userData = JSON.parse(savedUser);
+                setAuthToken(token);
+                setUser(userData);
+                setShowAuth(false);
+            } catch (error) {
+                // Invalid stored data, clear it
+                localStorage.removeItem('authToken');
+                localStorage.removeItem('user');
+            }
+        }
+    }, []);
+
+    const handleLogin = (userData, token) => {
+        setUser(userData);
+        setAuthToken(token);
+        setShowAuth(false);
+    };
+
+    const handleLogout = () => {
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('user');
+        setUser(null);
+        setAuthToken(null);
+        setShowAuth(true);
+    };
+
+    // Update fetch requests to include auth token
+    const authenticatedFetch = React.useCallback((url, options = {}) => {
+        const headers = {
+            'Content-Type': 'application/json',
+            ...options.headers,
+        };
+        
+        if (authToken) {
+            headers['Authorization'] = `Bearer ${authToken}`;
+        }
+        
+        return fetch(url, {
+            ...options,
+            headers
+        });
+    }, [authToken]);
+
+    useEffect(() => {
+        if (!authToken) return; // Don't connect WebSocket until authenticated
+        
+        const ws = new WebSocket(`${CONFIG.WS_URL}?token=${authToken}`);
+        wsRef.current = ws;
+        ws.onmessage = (e) => {
+            const text = e.data;
+            if (text === '[END]') return;
+            setMessages(prev => {
+                const msgs = [...prev];
+                const last = msgs[msgs.length - 1];
+                if (last && last.role === 'assistant') {
+                    last.content += text;
+                } else {
+                    msgs.push({role: 'assistant', content: text});
+                }
+                return msgs;
+            });
+        };
+        return () => ws.close();
+    }, [authToken]);
+
+    // Fetch tasks and check for deadline alerts
+    useEffect(() => {
+        if (!authToken) return; // Don't fetch data until authenticated
+        
+        authenticatedFetch(`${CONFIG.API_BASE_URL}/tasks`)
+            .then(r => r.json())
+            .then(data => {
+                if (data.tasks) {
+                    // Map backend field names to frontend field names
+                    const mappedTasks = data.tasks.map(task => ({
+                        ...task,
+                        dueDate: task.due_date,
+                        name: task.title || task.name // For backward compatibility
+                    }));
+                    setTasks(mappedTasks);
+                    
+                    // Check for deadline alerts (exclude completed tasks)
+                    const overdueTasks = mappedTasks.filter(task => 
+                        task.dueDate && 
+                        getDeadlineStatus(task.dueDate) === 'overdue' &&
+                        task.status !== 'completed' && 
+                        !task.completed
+                    );
+                    const dueSoonTasks = mappedTasks.filter(task => 
+                        task.dueDate && 
+                        getDeadlineStatus(task.dueDate) === 'due-soon' &&
+                        task.status !== 'completed' && 
+                        !task.completed
+                    );
+                    
+                    if (overdueTasks.length > 0) {
+                        setDeadlineAlertType('danger');
+                        setDeadlineAlertMessage(
+                            `🚨 ${overdueTasks.length} task${overdueTasks.length === 1 ? ' is' : 's are'} overdue!`
+                        );
+                        setShowDeadlineAlert(true);
+                        
+                        // Auto-hide after 10 seconds
+                        setTimeout(() => setShowDeadlineAlert(false), 10000);
+                    } else if (dueSoonTasks.length > 0) {
+                        setDeadlineAlertType('warning');
+                        setDeadlineAlertMessage(
+                            `⚠️ ${dueSoonTasks.length} task${dueSoonTasks.length === 1 ? ' is' : 's are'} due soon!`
+                        );
+                        setShowDeadlineAlert(true);
+                        
+                        // Auto-hide after 8 seconds
+                        setTimeout(() => setShowDeadlineAlert(false), 8000);
+                    }
+                }
+            })
+            .catch(() => {});
+    }, [authToken]);
+
+    const send = (text) => {
+        if (!text.trim() || !wsRef.current) return;
+        wsRef.current.send(text);
+        setMessages(prev => [...prev, {role: 'user', content: text}, {role: 'assistant', content: ''}]);
+    };
+
+    return (
+        <div className="container">
+            {showAuth && <AuthModal onLogin={handleLogin} />}
+            
+            {!showAuth && (
+                <React.Fragment>
+                    <Chat messages={messages} send={send} />
+                    <div className="workspace-panel">
+                        <div className="top-header">
+                            <div className="user-info">
+                                <div className="username">
+                                    {user && user.email}
+                                </div>
+                                <button
+                                    className="logout-button"
+                                    onClick={handleLogout}
+                                >
+                                    Logout
+                                </button>
+                            </div>
+                        </div>
+                        <div className="workspace-header">
+                            <div className="workspace-title">Mission Control</div>
+                            <Tabs current={tab} onSelect={setTab} />
+                        </div>
+                        <div className="workspace-content">
+                            <Panel tab={tab} send={send} authenticatedFetch={authenticatedFetch} />
+                        </div>
+                    </div>
+                    
+                    {/* Deadline Alert */}
+                    {showDeadlineAlert && (
+                        <div 
+                            className={`deadline-alert ${deadlineAlertType === 'warning' ? 'warning' : ''}`}
+                            onClick={() => setShowDeadlineAlert(false)}
+                            style={{ cursor: 'pointer' }}
+                        >
+                            <div style={{ fontWeight: '600', marginBottom: '4px' }}>
+                                Deadline Alert
+                            </div>
+                            <div>{deadlineAlertMessage}</div>
+                            <div style={{ fontSize: '12px', marginTop: '4px', opacity: 0.9 }}>
+                                Click to dismiss
+                            </div>
+                        </div>
+                    )}
+                </React.Fragment>
+            )}
+        </div>
+    );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
