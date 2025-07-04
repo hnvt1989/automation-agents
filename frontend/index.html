@@ -238,6 +238,64 @@
             transform: translateY(-2px);
         }
         
+        .top-header {
+            padding: 16px 24px;
+            background: linear-gradient(90deg, rgba(0, 255, 136, 0.05) 0%, rgba(255, 215, 0, 0.05) 100%);
+            border-bottom: 1px solid rgba(0, 255, 136, 0.15);
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            position: relative;
+            gap: 16px;
+        }
+        
+        .top-header::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent 0%, rgba(0, 255, 136, 0.3) 50%, transparent 100%);
+            animation: pulse-line 3s infinite;
+        }
+        
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .username {
+            color: #00ff88;
+            font-size: 14px;
+            font-family: 'Roboto Mono', monospace;
+            text-shadow: 0 0 5px rgba(0, 255, 136, 0.3);
+            font-weight: 500;
+        }
+        
+        .logout-button {
+            background: rgba(255, 68, 68, 0.8);
+            border: 1px solid rgba(255, 68, 68, 0.5);
+            border-radius: 4px;
+            color: #fff;
+            padding: 6px 12px;
+            font-size: 12px;
+            font-family: 'Roboto Mono', monospace;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 500;
+        }
+        
+        .logout-button:hover {
+            background: rgba(255, 68, 68, 1);
+            border-color: rgba(255, 68, 68, 0.8);
+            box-shadow: 0 0 10px rgba(255, 68, 68, 0.4);
+            transform: translateY(-1px);
+        }
+
         .workspace-panel { 
             width: 60%; 
             display: flex; 
@@ -2875,33 +2933,22 @@ function App() {
                 <React.Fragment>
                     <Chat messages={messages} send={send} />
                     <div className="workspace-panel">
-                        <div className="workspace-header">
-                            <div className="workspace-title">Mission Control</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                                <div style={{ 
-                                    color: '#00ff88', 
-                                    fontSize: '14px',
-                                    fontFamily: 'Roboto Mono, monospace'
-                                }}>
+                        <div className="top-header">
+                            <div className="user-info">
+                                <div className="username">
                                     {user && user.email}
                                 </div>
                                 <button
+                                    className="logout-button"
                                     onClick={handleLogout}
-                                    style={{
-                                        background: 'rgba(255, 68, 68, 0.8)',
-                                        border: '1px solid rgba(255, 68, 68, 0.5)',
-                                        borderRadius: '4px',
-                                        color: '#fff',
-                                        padding: '6px 12px',
-                                        fontSize: '12px',
-                                        fontFamily: 'Roboto Mono, monospace',
-                                        cursor: 'pointer'
-                                    }}
                                 >
                                     Logout
                                 </button>
-                                <Tabs current={tab} onSelect={setTab} />
                             </div>
+                        </div>
+                        <div className="workspace-header">
+                            <div className="workspace-title">Mission Control</div>
+                            <Tabs current={tab} onSelect={setTab} />
                         </div>
                         <div className="workspace-content">
                             <Panel tab={tab} send={send} authenticatedFetch={authenticatedFetch} />

@@ -1,4 +1,8 @@
-"""Document management using Supabase storage."""
+"""Document Manager for Supabase vector storage.
+
+This module provides a unified interface for managing documents, notes, memos,
+and interviews using Supabase vector storage with proper categorization and metadata.
+"""
 
 import os
 import json
@@ -7,457 +11,361 @@ from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 from pathlib import Path
 
-from .supabase_vector import SupabaseVectorClient
-from ..utils.logging import log_info, log_error, log_warning
+from src.storage.supabase_vector import SupabaseVectorClient
+from src.utils.logging import log_info, log_error, log_warning
 
 
-class SupabaseDocumentManager:
-    """Manages documents in Supabase with full CRUD operations."""
+class DocumentManager:
+    """Manages documents in Supabase vector storage with categorization."""
     
-    def __init__(self, collection_name: str = "documents", user_id: Optional[str] = None):
-        """Initialize the document manager.
+    DOCUMENT_TYPES = {
+        'document': 'documents',
+        'note': 'notes', 
+        'memo': 'memos',
+        'interview': 'interviews'
+    }
+    
+    def __init__(self, user_id: Optional[str] = None):
+        """Initialize document manager.
         
         Args:
-            collection_name: Name of the collection for documents
-            user_id: User ID for filtering user-specific documents
+            user_id: User ID for user-scoped document access
         """
-        self.collection_name = collection_name
         self.user_id = user_id
-        self.client = SupabaseVectorClient(collection_name=collection_name, user_id=user_id)
+        # Create separate collections for each document type
+        self.clients = {
+            doc_type: SupabaseVectorClient(
+                collection_name=collection_name,
+                enable_contextual=True,
+                user_id=user_id
+            )
+            for doc_type, collection_name in self.DOCUMENT_TYPES.items()
+        }
         
-        log_info(f"SupabaseDocumentManager initialized for collection '{collection_name}'")
+        log_info(f"DocumentManager initialized for user: {user_id}")
     
-    def create_document(
+    def add_document(
         self,
-        filename: str,
         content: str,
-        category: str = "document",
+        name: str,
+        doc_type: str,
+        description: Optional[str] = None,
+        filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None
     ) -> str:
-        """Create a new document.
+        """Add a document to vector storage.
         
         Args:
-            filename: Name of the document
             content: Document content
-            category: Document category
+            name: Document name/title
+            doc_type: Type of document (document, note, memo, interview)
+            description: Optional description
+            filename: Original filename
             metadata: Additional metadata
             
         Returns:
             Document ID
         """
-        try:
-            if not content.strip():
-                raise ValueError("Document content cannot be empty")
-            
-            # Generate document ID
-            doc_id = str(uuid.uuid4())
-            
-            # Create metadata
-            doc_metadata = {
-                "file_path": filename,
-                "filename": filename,
-                "category": category,
-                "file_size": len(content.encode('utf-8')),
-                "created_at": datetime.now().isoformat(),
-                "modified_at": datetime.now().isoformat(),
-                "file_extension": Path(filename).suffix,
-                "document_type": "user_created"
-            }
-            
-            # Add user-provided metadata
-            if metadata:
-                doc_metadata.update(metadata)
-            
-            # Add to Supabase using contextual chunking
-            chunk_ids = self.client.add_documents_with_context(
-                content=content,
-                context_info=doc_metadata,
-                use_llm_context=False
-            )
-            
-            log_info(f"Created document '{filename}' with {len(chunk_ids)} chunks")
-            return doc_id
-            
-        except Exception as e:
-            log_error(f"Failed to create document '{filename}': {str(e)}")
-            raise
+        if doc_type not in self.DOCUMENT_TYPES:
+            raise ValueError(f"Invalid document type: {doc_type}")
+        
+        client = self.clients[doc_type]
+        
+        # Prepare metadata
+        doc_metadata = {
+            'name': name,
+            'description': description or f"{doc_type.title()} - {name}",
+            'filename': filename or f"{name.lower().replace(' ', '_')}.md",
+            'doc_type': doc_type,
+            'created_at': datetime.now().isoformat(),
+            'last_modified': datetime.now().isoformat(),
+            **(metadata or {})
+        }
+        
+        # Add document with contextual chunking
+        doc_ids = client.add_documents_with_context(
+            content=content,
+            context_info=doc_metadata,
+            use_llm_context=True
+        )
+        
+        # Store the main document metadata
+        main_doc_id = str(uuid.uuid4())
+        main_metadata = doc_metadata.copy()
+        main_metadata['is_main_document'] = True
+        main_metadata['chunk_ids'] = doc_ids
+        
+        client.add_documents(
+            documents=[content],
+            metadatas=[main_metadata],
+            ids=[main_doc_id]
+        )
+        
+        log_info(f"Added {doc_type}: {name} with ID: {main_doc_id}")
+        return main_doc_id
     
-    def get_document(self, filename: str) -> Optional[Dict[str, Any]]:
-        """Get a document by filename.
+    def get_documents(self, doc_type: str) -> List[Dict[str, Any]]:
+        """Get all documents of a specific type.
         
         Args:
-            filename: Name of the document
+            doc_type: Type of document to retrieve
             
         Returns:
-            Document data or None if not found
+            List of document metadata
         """
-        try:
-            # Search for document chunks by filename
-            # Try multiple search strategies
-            results = None
-            
-            # Strategy 1: Search by metadata filter
-            try:
-                results = self.client.query(
-                    [filename],  # Use filename as query
-                    n_results=50,
-                    where={"filename": filename}
-                )
-                if results and results["documents"] and results["documents"][0]:
-                    log_info(f"Found document using metadata filter: {len(results['documents'][0])} chunks")
-                else:
-                    results = None
-            except Exception as e:
-                log_warning(f"Metadata filter search failed: {e}")
-            
-            # Strategy 2: If metadata filter failed, try broader search
-            if not results or not results["documents"] or not results["documents"][0]:
-                try:
-                    results = self.client.query(
-                        [filename.replace('.md', '').replace('_', ' ')],  # Clean filename for search
-                        n_results=50
-                    )
-                    
-                    # Filter results by filename in metadata
-                    if results and results["documents"] and results["documents"][0]:
-                        filtered_docs = []
-                        filtered_metadata = []
-                        filtered_distances = []
-                        
-                        for i, doc in enumerate(results["documents"][0]):
-                            metadata = results["metadatas"][0][i] if results["metadatas"] else {}
-                            if metadata.get("filename") == filename:
-                                filtered_docs.append(doc)
-                                filtered_metadata.append(metadata)
-                                filtered_distances.append(results["distances"][0][i])
-                        
-                        if filtered_docs:
-                            results = {
-                                "documents": [filtered_docs],
-                                "metadatas": [filtered_metadata],
-                                "distances": [filtered_distances]
-                            }
-                            log_info(f"Found document using filtered search: {len(filtered_docs)} chunks")
-                        else:
-                            results = None
-                except Exception as e:
-                    log_warning(f"Filtered search failed: {e}")
-                    results = None
-            
-            if not results["documents"] or not results["documents"][0]:
-                return None
-            
-            # Reconstruct document from chunks
-            chunks = []
-            metadata = None
-            
-            for i, chunk in enumerate(results["documents"][0]):
-                chunk_metadata = results["metadatas"][0][i] if results["metadatas"] else {}
+        if doc_type not in self.DOCUMENT_TYPES:
+            raise ValueError(f"Invalid document type: {doc_type}")
+        
+        client = self.clients[doc_type]
+        
+        # Query for main documents only
+        results = client.query(
+            query_texts=[""],
+            n_results=1000,  # Large number to get all
+            where={"is_main_document": True}
+        )
+        
+        documents = []
+        if results["metadatas"] and results["metadatas"][0]:
+            for i, metadata in enumerate(results["metadatas"][0]):
+                doc_id = results["ids"][0][i]
                 
-                # Use metadata from first chunk
-                if metadata is None:
-                    metadata = chunk_metadata
-                
-                # Extract original content if available
-                original_content = chunk_metadata.get('original_content', chunk)
-                chunks.append({
-                    "content": original_content,
-                    "chunk_index": chunk_metadata.get('chunk_index', i),
-                    "distance": results["distances"][0][i]
+                documents.append({
+                    "id": doc_id,
+                    "name": metadata.get("name", "Untitled"),
+                    "description": metadata.get("description", ""),
+                    "filename": metadata.get("filename", ""),
+                    "doc_type": metadata.get("doc_type", doc_type),
+                    "created_at": metadata.get("created_at"),
+                    "last_modified": metadata.get("last_modified"),
+                    "path": f"supabase://{self.DOCUMENT_TYPES[doc_type]}/{doc_id}",
+                    **{k: v for k, v in metadata.items() 
+                       if k not in ['name', 'description', 'filename', 'doc_type', 'created_at', 'last_modified', 'is_main_document', 'chunk_ids']}
                 })
+        
+        # Sort by last_modified descending
+        documents.sort(key=lambda x: x.get("last_modified", ""), reverse=True)
+        
+        log_info(f"Retrieved {len(documents)} {doc_type}s")
+        return documents
+    
+    def get_document_content(self, doc_id: str, doc_type: str) -> Optional[str]:
+        """Get document content by ID.
+        
+        Args:
+            doc_id: Document ID
+            doc_type: Type of document
             
-            # Sort chunks by index and combine
-            chunks.sort(key=lambda x: x.get('chunk_index', 0))
-            full_content = "\n".join(chunk["content"] for chunk in chunks)
-            
-            return {
-                "filename": filename,
-                "content": full_content,
-                "metadata": metadata,
-                "chunk_count": len(chunks)
-            }
-            
-        except Exception as e:
-            log_error(f"Failed to get document '{filename}': {str(e)}")
-            return None
+        Returns:
+            Document content or None if not found
+        """
+        if doc_type not in self.DOCUMENT_TYPES:
+            raise ValueError(f"Invalid document type: {doc_type}")
+        
+        client = self.clients[doc_type]
+        
+        # Query for the specific document
+        results = client.query(
+            query_texts=[""],
+            n_results=1,
+            where={"is_main_document": True}
+        )
+        
+        if results["ids"] and results["ids"][0]:
+            for i, result_id in enumerate(results["ids"][0]):
+                if result_id == doc_id:
+                    return results["documents"][0][i]
+        
+        log_warning(f"Document not found: {doc_id}")
+        return None
     
     def update_document(
         self,
-        filename: str,
-        content: str,
+        doc_id: str,
+        doc_type: str,
+        content: Optional[str] = None,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None
     ) -> bool:
-        """Update an existing document.
+        """Update a document.
         
         Args:
-            filename: Name of the document
-            content: New document content
+            doc_id: Document ID
+            doc_type: Type of document
+            content: New content
+            name: New name
+            description: New description
             metadata: Additional metadata updates
             
         Returns:
-            True if successful, False otherwise
+            Success status
         """
+        if doc_type not in self.DOCUMENT_TYPES:
+            raise ValueError(f"Invalid document type: {doc_type}")
+        
+        client = self.clients[doc_type]
+        
         try:
-            if not content.strip():
-                raise ValueError("Document content cannot be empty")
-            
-            # First, delete existing document chunks
-            if not self.delete_document(filename):
-                log_warning(f"Document '{filename}' not found, creating new one")
-            
-            # Create updated document
-            doc_metadata = {
-                "file_path": filename,
-                "filename": filename,
-                "category": "document",
-                "file_size": len(content.encode('utf-8')),
-                "created_at": datetime.now().isoformat(),
-                "modified_at": datetime.now().isoformat(),
-                "file_extension": Path(filename).suffix,
-                "document_type": "user_updated"
-            }
-            
-            # Add user-provided metadata
-            if metadata:
-                doc_metadata.update(metadata)
-            
-            # Add updated content
-            chunk_ids = self.client.add_documents_with_context(
-                content=content,
-                context_info=doc_metadata,
-                use_llm_context=False
+            # Get current metadata
+            current_results = client.query(
+                query_texts=[""],
+                n_results=1000,
+                where={"is_main_document": True}
             )
             
-            log_info(f"Updated document '{filename}' with {len(chunk_ids)} chunks")
-            return True
+            current_metadata = None
+            doc_index = None
             
-        except Exception as e:
-            log_error(f"Failed to update document '{filename}': {str(e)}")
-            return False
-    
-    def delete_document(self, filename: str) -> bool:
-        """Delete a document by filename.
-        
-        Args:
-            filename: Name of the document
+            if current_results["ids"] and current_results["ids"][0]:
+                for i, result_id in enumerate(current_results["ids"][0]):
+                    if result_id == doc_id:
+                        current_metadata = current_results["metadatas"][0][i]
+                        doc_index = i
+                        break
             
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            # Find all chunks for this document using same strategy as get_document
-            results = None
-            
-            # Strategy 1: Search by metadata filter
-            try:
-                results = self.client.query(
-                    [filename],
-                    n_results=100,
-                    where={"filename": filename}
-                )
-                if results and results["documents"] and results["documents"][0]:
-                    log_info(f"Found document for deletion using metadata filter: {len(results['documents'][0])} chunks")
-                else:
-                    results = None
-            except Exception as e:
-                log_warning(f"Metadata filter search for deletion failed: {e}")
-            
-            # Strategy 2: If metadata filter failed, try broader search
-            if not results or not results["documents"] or not results["documents"][0]:
-                try:
-                    results = self.client.query(
-                        [filename.replace('.md', '').replace('_', ' ')],
-                        n_results=100
-                    )
-                    
-                    # Filter results by filename in metadata
-                    if results and results["documents"] and results["documents"][0]:
-                        filtered_ids = []
-                        
-                        for i, doc in enumerate(results["documents"][0]):
-                            metadata = results["metadatas"][0][i] if results["metadatas"] else {}
-                            if metadata.get("filename") == filename:
-                                filtered_ids.append(results["ids"][0][i])
-                        
-                        if filtered_ids:
-                            # Reconstruct results with filtered IDs
-                            results = {"ids": [filtered_ids]}
-                            log_info(f"Found document for deletion using filtered search: {len(filtered_ids)} chunks")
-                        else:
-                            results = None
-                except Exception as e:
-                    log_warning(f"Filtered search for deletion failed: {e}")
-                    results = None
-            
-            if not results["ids"] or not results["ids"][0]:
-                log_warning(f"Document '{filename}' not found")
+            if current_metadata is None:
+                log_error(f"Document not found for update: {doc_id}")
                 return False
             
-            # Delete all chunks
-            chunk_ids = results["ids"][0]
-            self.client.delete_documents(chunk_ids)
+            # Update metadata
+            updated_metadata = current_metadata.copy()
+            updated_metadata['last_modified'] = datetime.now().isoformat()
             
-            log_info(f"Deleted document '{filename}' ({len(chunk_ids)} chunks)")
+            if name is not None:
+                updated_metadata['name'] = name
+            if description is not None:
+                updated_metadata['description'] = description
+            if metadata:
+                updated_metadata.update(metadata)
+            
+            # Update document
+            update_content = content if content is not None else current_results["documents"][0][doc_index]
+            
+            client.update_documents(
+                ids=[doc_id],
+                documents=[update_content],
+                metadatas=[updated_metadata]
+            )
+            
+            log_info(f"Updated {doc_type}: {doc_id}")
             return True
             
         except Exception as e:
-            log_error(f"Failed to delete document '{filename}': {str(e)}")
+            log_error(f"Failed to update document {doc_id}: {str(e)}")
             return False
     
-    def list_documents(self, category: Optional[str] = None) -> List[Dict[str, Any]]:
-        """List all documents.
+    def delete_document(self, doc_id: str, doc_type: str) -> bool:
+        """Delete a document.
         
         Args:
-            category: Optional category filter
+            doc_id: Document ID
+            doc_type: Type of document
             
         Returns:
-            List of document summaries
+            Success status
         """
+        if doc_type not in self.DOCUMENT_TYPES:
+            raise ValueError(f"Invalid document type: {doc_type}")
+        
+        client = self.clients[doc_type]
+        
         try:
-            # Get collection stats first
-            stats = self.client.get_collection_stats()
-            
-            if stats["count"] == 0:
-                return []
-            
-            # Query for documents with a broad search
-            where_filter = {}
-            if category:
-                where_filter["category"] = category
-            
-            # Use a generic query to get documents
-            results = self.client.query(
-                ["document"],  # Generic search term
-                n_results=min(stats["count"], 100),  # Limit to reasonable number
-                where=where_filter if where_filter else None
+            # Get document metadata to find associated chunks
+            results = client.query(
+                query_texts=[""],
+                n_results=1000,
+                where={"is_main_document": True}
             )
             
-            if not results["documents"] or not results["documents"][0]:
-                return []
+            chunk_ids = []
+            if results["ids"] and results["ids"][0]:
+                for i, result_id in enumerate(results["ids"][0]):
+                    if result_id == doc_id:
+                        metadata = results["metadatas"][0][i]
+                        chunk_ids = metadata.get("chunk_ids", [])
+                        break
             
-            # Group by filename to get unique documents
-            documents = {}
+            # Delete main document and associated chunks
+            all_ids = [doc_id] + chunk_ids
+            client.delete_documents(all_ids)
             
-            for i, chunk in enumerate(results["documents"][0]):
-                chunk_metadata = results["metadatas"][0][i] if results["metadatas"] else {}
-                filename = chunk_metadata.get("filename", f"unknown_{i}")
-                
-                if filename not in documents:
-                    documents[filename] = {
-                        "filename": filename,
-                        "category": chunk_metadata.get("category", "unknown"),
-                        "file_size": chunk_metadata.get("file_size", 0),
-                        "created_at": chunk_metadata.get("created_at"),
-                        "modified_at": chunk_metadata.get("modified_at"),
-                        "file_extension": chunk_metadata.get("file_extension", ".md"),
-                        "chunk_count": 0
-                    }
-                
-                documents[filename]["chunk_count"] += 1
-            
-            # Return sorted list
-            doc_list = list(documents.values())
-            doc_list.sort(key=lambda x: x.get("modified_at", ""), reverse=True)
-            
-            log_info(f"Listed {len(doc_list)} documents")
-            return doc_list
+            log_info(f"Deleted {doc_type}: {doc_id} and {len(chunk_ids)} chunks")
+            return True
             
         except Exception as e:
-            log_error(f"Failed to list documents: {str(e)}")
-            return []
+            log_error(f"Failed to delete document {doc_id}: {str(e)}")
+            return False
     
     def search_documents(
         self,
         query: str,
-        n_results: int = 10,
-        category: Optional[str] = None
+        doc_type: Optional[str] = None,
+        n_results: int = 10
     ) -> List[Dict[str, Any]]:
         """Search documents by content.
         
         Args:
             query: Search query
+            doc_type: Optional document type filter
             n_results: Number of results to return
-            category: Optional category filter
             
         Returns:
-            List of search results with content snippets
+            Search results with document information
         """
-        try:
-            where_filter = {}
-            if category:
-                where_filter["category"] = category
-            
-            # Search using vector similarity
-            results = self.client.query(
-                [query],
+        results = []
+        
+        # Search in specified type or all types
+        types_to_search = [doc_type] if doc_type else list(self.DOCUMENT_TYPES.keys())
+        
+        for dtype in types_to_search:
+            if dtype not in self.DOCUMENT_TYPES:
+                continue
+                
+            client = self.clients[dtype]
+            search_results = client.query(
+                query_texts=[query],
                 n_results=n_results,
-                where=where_filter if where_filter else None
+                where=None  # Search in both main documents and chunks
             )
             
-            if not results["documents"] or not results["documents"][0]:
-                return []
-            
-            search_results = []
-            
-            for i, chunk in enumerate(results["documents"][0]):
-                chunk_metadata = results["metadatas"][0][i] if results["metadatas"] else {}
-                
-                result = {
-                    "filename": chunk_metadata.get("filename", "unknown"),
-                    "content_snippet": chunk[:200] + "..." if len(chunk) > 200 else chunk,
-                    "full_content": chunk,
-                    "similarity": results["distances"][0][i],
-                    "metadata": chunk_metadata
-                }
-                
-                search_results.append(result)
-            
-            log_info(f"Search for '{query}' returned {len(search_results)} results")
-            return search_results
-            
-        except Exception as e:
-            log_error(f"Failed to search documents: {str(e)}")
-            return []
+            if search_results["ids"] and search_results["ids"][0]:
+                for i in range(len(search_results["ids"][0])):
+                    doc_id = search_results["ids"][0][i]
+                    content = search_results["documents"][0][i]
+                    metadata = search_results["metadatas"][0][i]
+                    similarity = search_results["distances"][0][i]
+                    
+                    results.append({
+                        "id": doc_id,
+                        "doc_type": dtype,
+                        "name": metadata.get("name", "Untitled"),
+                        "content_snippet": content[:200] + "..." if len(content) > 200 else content,
+                        "similarity": similarity,
+                        "metadata": metadata,
+                        "is_main_document": metadata.get("is_main_document", False)
+                    })
+        
+        # Sort by similarity
+        results.sort(key=lambda x: x["similarity"], reverse=True)
+        
+        log_info(f"Search for '{query}' returned {len(results)} results")
+        return results[:n_results]
     
-    def get_collection_info(self) -> Dict[str, Any]:
-        """Get information about the document collection.
+    def get_collection_stats(self) -> Dict[str, Any]:
+        """Get statistics for all document collections.
         
         Returns:
-            Collection statistics and information
+            Statistics for each document type
         """
-        try:
-            stats = self.client.get_collection_stats()
-            
-            # Get document count by listing unique filenames
-            documents = self.list_documents()
-            
-            return {
-                "collection_name": self.collection_name,
-                "total_chunks": stats["count"],
-                "total_documents": len(documents),
-                "embedding_model": stats["embedding_model"],
-                "vector_dimensions": stats["vector_dimensions"]
-            }
-            
-        except Exception as e:
-            log_error(f"Failed to get collection info: {str(e)}")
-            return {
-                "collection_name": self.collection_name,
-                "total_chunks": 0,
-                "total_documents": 0,
-                "embedding_model": "unknown",
-                "vector_dimensions": 0
-            }
-
-
-# Helper function for backward compatibility
-def get_document_manager(user_id: Optional[str] = None) -> SupabaseDocumentManager:
-    """Get a document manager instance.
-    
-    Args:
-        user_id: Optional user ID for filtering
+        stats = {}
         
-    Returns:
-        SupabaseDocumentManager instance
-    """
-    return SupabaseDocumentManager(collection_name="documents", user_id=user_id)
+        for doc_type, client in self.clients.items():
+            try:
+                collection_stats = client.get_collection_stats()
+                stats[doc_type] = collection_stats
+            except Exception as e:
+                log_error(f"Failed to get stats for {doc_type}: {str(e)}")
+                stats[doc_type] = {"error": str(e)}
+        
+        return stats

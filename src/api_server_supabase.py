@@ -21,6 +21,7 @@ from src.agents.rag_cloud import CloudRAGAgent
 from src.agents.analyzer import AnalyzerAgent
 from src.storage.supabase_ops import SupabaseOperations
 from src.storage.auth_storage import AuthStorage
+from src.storage.document_manager import DocumentManager
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 TASKS_FILE = BASE_DIR / "data" / "tasks.md"
@@ -119,6 +120,12 @@ load_dotenv("local.env")
 
 # Initialize Supabase operations
 db_ops = SupabaseOperations()
+
+# Document manager will be initialized per request with user context
+def get_document_manager(current_user = Depends(get_current_user_optional)):
+    """Get document manager for current user."""
+    user_id = current_user["id"] if current_user else None
+    return DocumentManager(user_id=user_id)
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -439,41 +446,45 @@ async def update_log(log_index: int, log_update: LogUpdate):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Keep existing endpoints for documents, notes, interviews unchanged
+# Document endpoints using Supabase vector storage
 @app.get("/documents")
-async def get_documents():
-    docs_dir = Path(config_storage["documents_dir"])
-    if not docs_dir.exists():
-        return {"documents": []}
-
-    documents = []
-    # Sort files by name for consistent ordering
-    sorted_files = sorted(docs_dir.glob("*.md"), key=lambda x: x.name)
-    
-    for file_path in sorted_files:
-        name = file_path.stem.replace("_", " ").title()
-        description = f"Markdown document - {file_path.name}"
-        documents.append({
-            "name": name,
-            "description": description,
-            "filename": file_path.name,
-            "path": str(file_path.relative_to(BASE_DIR))
-        })
-    
-    return {"documents": documents}
+async def get_documents(doc_manager: DocumentManager = Depends(get_document_manager)):
+    """Get all documents from Supabase vector storage."""
+    try:
+        documents = doc_manager.get_documents("document")
+        
+        # Format for frontend compatibility
+        formatted_docs = []
+        for i, doc in enumerate(documents):
+            formatted_docs.append({
+                "name": doc["name"],
+                "description": doc["description"],
+                "filename": doc["filename"],
+                "path": doc["path"],
+                "id": doc["id"],
+                "index": i,  # For compatibility with existing frontend
+                "lastModified": doc.get("last_modified")
+            })
+        
+        return {"documents": formatted_docs}
+    except Exception as e:
+        log_error(f"Error getting documents: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/documents/{doc_index}/content")
-async def get_document_content(doc_index: int):
+async def get_document_content(doc_index: int, doc_manager: DocumentManager = Depends(get_document_manager)):
     """Get the content of a specific document"""
     try:
-        # Use same sorting as get_documents
-        docs_dir = Path(config_storage["documents_dir"])
-        docs = sorted(docs_dir.glob("*.md"), key=lambda x: x.name)
-        if 0 <= doc_index < len(docs):
-            file_path = docs[doc_index]
-            content = file_path.read_text()
-            return {"content": content}
+        documents = doc_manager.get_documents("document")
+        
+        if 0 <= doc_index < len(documents):
+            doc = documents[doc_index]
+            content = doc_manager.get_document_content(doc["id"], "document")
+            if content is not None:
+                return {"content": content}
+            else:
+                raise HTTPException(status_code=404, detail="Document content not found")
         else:
             raise HTTPException(status_code=404, detail="Document not found")
     except Exception as e:
@@ -481,55 +492,43 @@ async def get_document_content(doc_index: int):
 
 
 @app.get("/notes")
-async def get_notes():
-    notes_dir = Path(config_storage["notes_dir"])
-    if not notes_dir.exists():
-        return {"notes": []}
-    
-    notes = []
-    # Use rglob to recursively find all .md files in subdirectories
-    for file_path in notes_dir.rglob("*.md"):
-        # Get relative path from meeting_notes directory
-        relative_path = file_path.relative_to(notes_dir)
+async def get_notes(doc_manager: DocumentManager = Depends(get_document_manager)):
+    """Get all notes from Supabase vector storage."""
+    try:
+        notes = doc_manager.get_documents("note")
         
-        # Create a more descriptive name from the path
-        name = file_path.stem.replace("_", " ").replace("-", " ").title()
+        # Format for frontend compatibility
+        formatted_notes = []
+        for i, note in enumerate(notes):
+            formatted_notes.append({
+                "name": note["name"],
+                "description": note["description"],
+                "filename": note["filename"],
+                "path": note["path"],
+                "id": note["id"],
+                "index": i,  # For compatibility with existing frontend
+                "lastModified": note.get("last_modified")
+            })
         
-        # Include subdirectory in description if file is not in root
-        if relative_path.parent != Path("."):
-            description = f"{relative_path.parent} / {file_path.name}"
-        else:
-            description = file_path.name
-            
-        notes.append({
-            "name": name,
-            "description": description,
-            "filename": file_path.name,
-            "path": str(file_path.relative_to(BASE_DIR))
-        })
-    
-    # Sort by path for consistent ordering
-    notes.sort(key=lambda x: x["path"])
-    
-    return {"notes": notes}
+        return {"notes": formatted_notes}
+    except Exception as e:
+        log_error(f"Error getting notes: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/notes/{note_index}/content")
-async def get_note_content(note_index: int):
+async def get_note_content(note_index: int, doc_manager: DocumentManager = Depends(get_document_manager)):
     """Get the content of a specific note"""
     try:
-        notes_dir = Path(config_storage["notes_dir"])
-        notes = []
-        for file_path in notes_dir.rglob("*.md"):
-            notes.append(file_path)
-        
-        # Sort to ensure consistent ordering
-        notes.sort(key=lambda x: str(x))
+        notes = doc_manager.get_documents("note")
         
         if 0 <= note_index < len(notes):
-            file_path = notes[note_index]
-            content = file_path.read_text()
-            return {"content": content}
+            note = notes[note_index]
+            content = doc_manager.get_document_content(note["id"], "note")
+            if content is not None:
+                return {"content": content}
+            else:
+                raise HTTPException(status_code=404, detail="Note content not found")
         else:
             raise HTTPException(status_code=404, detail="Note not found")
     except Exception as e:
@@ -537,58 +536,51 @@ async def get_note_content(note_index: int):
 
 
 @app.post("/notes")
-async def create_note(note_update: NoteUpdate):
+async def create_note(note_update: NoteUpdate, doc_manager: DocumentManager = Depends(get_document_manager)):
     """Create a new note"""
     try:
-        # Create filename from name
-        filename = note_update.name.lower().replace(' ', '_') + '.md'
-        notes_dir = Path(config_storage["notes_dir"])
-        file_path = notes_dir / filename
-        
-        # Ensure directory exists
-        notes_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Write content to file
         content = note_update.content or f"# {note_update.name}\n\n{note_update.description or ''}"
-        file_path.write_text(content)
+        filename = note_update.name.lower().replace(' ', '_') + '.md'
         
-        # Find the index of the newly created note
-        notes = []
-        for fp in notes_dir.rglob("*.md"):
-            notes.append(fp)
-        notes.sort(key=lambda x: str(x))
+        doc_id = doc_manager.add_document(
+            content=content,
+            name=note_update.name,
+            doc_type="note",
+            description=note_update.description,
+            filename=filename
+        )
         
-        new_index = next((i for i, n in enumerate(notes) if n.name == filename), -1)
+        # Get updated list to find index
+        notes = doc_manager.get_documents("note")
+        new_index = next((i for i, n in enumerate(notes) if n["id"] == doc_id), -1)
         
-        return {"success": True, "message": "Note created", "filename": filename, "index": new_index}
+        return {"success": True, "message": "Note created", "filename": filename, "index": new_index, "id": doc_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.put("/notes/{note_index}")
-async def update_note(note_index: int, note_update: NoteUpdate):
+async def update_note(note_index: int, note_update: NoteUpdate, doc_manager: DocumentManager = Depends(get_document_manager)):
     """Update a specific note by index"""
     try:
-        # For notes, we need to handle file content updates
-        # This is a simplified version - in production, you'd want more robust file handling
-        
-        # Get the list of notes to find which file to update
-        notes_dir = Path(config_storage["notes_dir"])
-        notes = []
-        for file_path in notes_dir.rglob("*.md"):
-            notes.append(file_path)
-        
-        # Sort to ensure consistent ordering
-        notes.sort(key=lambda x: str(x))
+        notes = doc_manager.get_documents("note")
         
         if 0 <= note_index < len(notes):
-            file_path = notes[note_index]
+            note = notes[note_index]
+            doc_id = note["id"]
             
-            # If content is provided, update the file
-            if note_update.content is not None:
-                file_path.write_text(note_update.content)
+            success = doc_manager.update_document(
+                doc_id=doc_id,
+                doc_type="note",
+                content=note_update.content,
+                name=note_update.name,
+                description=note_update.description
+            )
             
-            return {"success": True, "message": "Note updated"}
+            if success:
+                return {"success": True, "message": "Note updated"}
+            else:
+                raise HTTPException(status_code=500, detail="Failed to update note")
         else:
             raise HTTPException(status_code=404, detail="Note not found")
     except Exception as e:
@@ -596,88 +588,88 @@ async def update_note(note_index: int, note_update: NoteUpdate):
 
 
 @app.post("/documents")
-async def create_document(doc_update: DocumentUpdate):
+async def create_document(doc_update: DocumentUpdate, doc_manager: DocumentManager = Depends(get_document_manager)):
     """Create a new document"""
     try:
-        # Create filename from name
-        filename = doc_update.name.lower().replace(' ', '_') + '.md'
-        docs_dir = Path(config_storage["documents_dir"])
-        file_path = docs_dir / filename
-        
-        # Ensure directory exists
-        docs_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Write content to file
         content = doc_update.content or f"# {doc_update.name}\n\n{doc_update.description or ''}"
-        file_path.write_text(content)
+        filename = doc_update.filename or f"{doc_update.name.lower().replace(' ', '_')}.md"
         
-        # Find the index of the newly created document
-        docs = sorted(docs_dir.glob("*.md"), key=lambda x: x.name)
-        new_index = next((i for i, d in enumerate(docs) if d.name == filename), -1)
+        doc_id = doc_manager.add_document(
+            content=content,
+            name=doc_update.name,
+            doc_type="document",
+            description=doc_update.description,
+            filename=filename
+        )
         
-        return {"success": True, "message": "Document created", "filename": filename, "index": new_index}
+        # Get updated list to find index
+        documents = doc_manager.get_documents("document")
+        new_index = next((i for i, d in enumerate(documents) if d["id"] == doc_id), -1)
+        
+        return {"success": True, "message": "Document created", "filename": filename, "index": new_index, "id": doc_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.put("/documents/{doc_index}")
-async def update_document(doc_index: int, doc_update: DocumentUpdate):
+async def update_document(doc_index: int, doc_update: DocumentUpdate, doc_manager: DocumentManager = Depends(get_document_manager)):
     """Update a specific document by index"""
     try:
-        # Use same sorting as get_documents
-        docs_dir = Path(config_storage["documents_dir"])
-        docs = sorted(docs_dir.glob("*.md"), key=lambda x: x.name)
+        documents = doc_manager.get_documents("document")
         
-        if 0 <= doc_index < len(docs):
-            file_path = docs[doc_index]
+        if 0 <= doc_index < len(documents):
+            document = documents[doc_index]
+            doc_id = document["id"]
             
-            # If content is provided, update the file
-            if doc_update.content is not None:
-                file_path.write_text(doc_update.content)
+            success = doc_manager.update_document(
+                doc_id=doc_id,
+                doc_type="document",
+                content=doc_update.content,
+                name=doc_update.name,
+                description=doc_update.description
+            )
             
-            return {"success": True, "message": "Document updated"}
+            if success:
+                return {"success": True, "message": "Document updated"}
+            else:
+                raise HTTPException(status_code=500, detail="Failed to update document")
         else:
             raise HTTPException(status_code=404, detail="Document not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Memos endpoints
+# Memos endpoints using Supabase vector storage
 @app.get("/memos")
-async def get_memos():
-    """Get all memos from the data/memos directory"""
-    memos_dir = BASE_DIR / "data" / "memos"
-    if not memos_dir.exists():
-        memos_dir.mkdir(parents=True, exist_ok=True)
-        return {"memos": []}
-
-    memos = []
-    # Sort files by name for consistent ordering
-    sorted_files = sorted(memos_dir.glob("*.md"), key=lambda x: x.name)
-    
-    for file_path in sorted_files:
-        name = file_path.stem.replace("_", " ").title()
-        description = f"Memo - {file_path.name}"
-        memos.append({
-            "id": file_path.stem,
-            "name": name,
-            "description": description,
-            "filename": file_path.name,
-            "path": str(file_path.relative_to(BASE_DIR)),
-            "type": "memo",
-            "format": "markdown",
-            "lastModified": file_path.stat().st_mtime
-        })
-    
-    return {"memos": memos}
+async def get_memos(doc_manager: DocumentManager = Depends(get_document_manager)):
+    """Get all memos from Supabase vector storage"""
+    try:
+        memos = doc_manager.get_documents("memo")
+        
+        # Format for frontend compatibility
+        formatted_memos = []
+        for memo in memos:
+            formatted_memos.append({
+                "id": memo["id"],
+                "name": memo["name"],
+                "description": memo["description"],
+                "filename": memo["filename"],
+                "path": memo["path"],
+                "type": "memo",
+                "format": "markdown",
+                "lastModified": memo.get("last_modified")
+            })
+        
+        return {"memos": formatted_memos}
+    except Exception as e:
+        log_error(f"Error getting memos: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/memos")
-async def create_memo(memo_update: DocumentUpdate):
+async def create_memo(memo_update: DocumentUpdate, doc_manager: DocumentManager = Depends(get_document_manager)):
     """Create a new memo"""
     try:
-        memos_dir = BASE_DIR / "data" / "memos"
-        memos_dir.mkdir(parents=True, exist_ok=True)
         
         # Generate filename from name
         filename = memo_update.filename or f"{memo_update.name.lower().replace(' ', '_')}.md"
