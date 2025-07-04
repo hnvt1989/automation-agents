@@ -332,6 +332,9 @@ Send a message to the #general channel about deployment status
 
 ## 🏗️ Architecture
 
+For a more detailed explanation of the system's architecture, please see the [ARCHITECTURE.md](ARCHITECTURE.md) file.
+
+
 ### **Project Structure**
 ```
 automation-agents/
