@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Response
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Response, Depends, Header
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,6 +10,7 @@ import yaml
 from datetime import datetime
 import os
 from dotenv import load_dotenv, set_key, find_dotenv
+from typing import Optional
 
 from src.core.config import get_settings
 from src.mcp import get_mcp_manager
@@ -19,15 +20,15 @@ from src.agents.filesystem import FilesystemAgent
 from src.agents.rag_cloud import CloudRAGAgent
 from src.agents.analyzer import AnalyzerAgent
 from src.storage.supabase_ops import SupabaseOperations
+from src.storage.auth_storage import AuthStorage
+from src.storage.document_manager import DocumentManager
+from src.storage.user_settings import UserSettingsStorage
+from src.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-TASKS_FILE = BASE_DIR / "data" / "tasks.md"
-TASKS_YAML_FILE = BASE_DIR / "data" / "tasks.yaml"
-DAILY_LOGS_FILE = BASE_DIR / "data" / "daily_logs.yaml"
 FRONTEND_DIR = BASE_DIR / "frontend"
-VA_NOTES_DIR = BASE_DIR / "data" / "va_notes"
-MEETING_NOTES_DIR = BASE_DIR / "data" / "meeting_notes"
-INTERVIEWS_DIR = BASE_DIR / "data" / "interviews"
 
 
 class Task(BaseModel):
@@ -102,6 +103,25 @@ class SuggestedTaskRequest(BaseModel):
     due_date: str
 
 
+class UserRegistration(BaseModel):
+    email: str
+    password: str
+
+
+class UserLogin(BaseModel):
+    email: str
+    password: str
+
+
+class UserSettingsUpdate(BaseModel):
+    google_drive_calendar_secret_link: str | None = None
+
+
+class UserSetting(BaseModel):
+    setting_key: str
+    setting_value: str
+
+
 # Load environment variables from local.env
 load_dotenv("local.env")
 
@@ -111,12 +131,20 @@ db_ops = SupabaseOperations()
 # Initialize FastAPI app
 app = FastAPI()
 
+# Initialize auth storage at app startup
+@app.on_event("startup")
+async def startup_event():
+    app.state.auth_storage = AuthStorage()
+    app.state.user_settings_storage = UserSettingsStorage()
+
 # Add CORS middleware
+# Production-ready CORS configuration
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # You may want to restrict this to specific origins
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -125,20 +153,53 @@ if FRONTEND_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
 
-# Track config changes dynamically
-config_storage = {
-    "documents_dir": str(VA_NOTES_DIR),
-    "notes_dir": str(MEETING_NOTES_DIR),
-    "tasks_file": str(TASKS_YAML_FILE),
-    "logs_file": str(DAILY_LOGS_FILE)
-}
 
-# Helper function to ensure directories exist
-def ensure_dirs():
-    docs_dir = Path(config_storage["documents_dir"])
-    notes_dir = Path(config_storage["notes_dir"])
-    docs_dir.mkdir(parents=True, exist_ok=True)
-    notes_dir.mkdir(parents=True, exist_ok=True)
+# Authentication helper functions
+def get_auth_storage() -> AuthStorage:
+    return app.state.auth_storage
+
+
+def get_user_settings_storage() -> UserSettingsStorage:
+    return app.state.user_settings_storage
+
+
+def get_current_user(authorization: Optional[str] = Header(None)):
+    """Get current user from authorization header."""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header required")
+    
+    try:
+        # Extract token from "Bearer <token>"
+        token = authorization.split(" ")[1] if authorization.startswith("Bearer ") else authorization
+        auth_storage = get_auth_storage()
+        user = auth_storage.verify_session(token)
+        
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
+        
+        return user
+    except Exception as e:
+        raise HTTPException(status_code=401, detail="Invalid authorization header")
+
+
+def get_current_user_optional(authorization: Optional[str] = Header(None)):
+    """Get current user from authorization header, return None if not authenticated."""
+    if not authorization:
+        return None
+    
+    try:
+        token = authorization.split(" ")[1] if authorization.startswith("Bearer ") else authorization
+        auth_storage = get_auth_storage()
+        return auth_storage.verify_session(token)
+    except Exception:
+        return None
+
+
+# Document manager will be initialized per request with user context
+def get_document_manager(current_user = Depends(get_current_user)):
+    """Get document manager for current user."""
+    user_id = current_user["user_id"]
+    return DocumentManager(user_id=user_id)
 
 
 # Root endpoint
@@ -385,156 +446,164 @@ async def update_log(log_index: int, log_update: LogUpdate):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Keep existing endpoints for documents, notes, interviews unchanged
+# Document endpoints using Supabase vector storage
 @app.get("/documents")
-async def get_documents():
-    docs_dir = Path(config_storage["documents_dir"])
-    if not docs_dir.exists():
-        return {"documents": []}
-
-    documents = []
-    # Sort files by name for consistent ordering
-    sorted_files = sorted(docs_dir.glob("*.md"), key=lambda x: x.name)
-    
-    for file_path in sorted_files:
-        name = file_path.stem.replace("_", " ").title()
-        description = f"Markdown document - {file_path.name}"
-        documents.append({
-            "name": name,
-            "description": description,
-            "filename": file_path.name,
-            "path": str(file_path.relative_to(BASE_DIR))
-        })
-    
-    return {"documents": documents}
-
-
-@app.get("/documents/{doc_index}/content")
-async def get_document_content(doc_index: int):
-    """Get the content of a specific document"""
+async def get_documents(doc_manager: DocumentManager = Depends(get_document_manager)):
+    """Get all documents from Supabase vector storage."""
     try:
-        # Use same sorting as get_documents
-        docs_dir = Path(config_storage["documents_dir"])
-        docs = sorted(docs_dir.glob("*.md"), key=lambda x: x.name)
-        if 0 <= doc_index < len(docs):
-            file_path = docs[doc_index]
-            content = file_path.read_text()
+        documents = doc_manager.get_documents("document")
+        
+        # Format for frontend compatibility
+        formatted_docs = []
+        for i, doc in enumerate(documents):
+            formatted_docs.append({
+                "name": doc["name"],
+                "description": doc["description"] or "",
+                "filename": doc.get("metadata", {}).get("filename", doc["name"]),
+                "path": f"supabase://documents/{doc['id']}",
+                "id": doc["id"],
+                "index": i,  # For compatibility with existing frontend
+                "lastModified": doc.get("updated_at") or doc.get("created_at")
+            })
+        
+        return {"documents": formatted_docs}
+    except Exception as e:
+        log_error(f"Error getting documents: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/documents/{doc_identifier}/content")
+async def get_document_content(doc_identifier: str, doc_manager: DocumentManager = Depends(get_document_manager)):
+    """Get the content of a specific document by ID or index (for backward compatibility)"""
+    try:
+        # Check if doc_identifier is a number (index) or UUID (ID)
+        if doc_identifier.isdigit():
+            # It's an index - convert to ID
+            documents = doc_manager.get_documents("document")
+            doc_index = int(doc_identifier)
+            
+            if 0 <= doc_index < len(documents):
+                doc_id = documents[doc_index]["id"]
+            else:
+                raise HTTPException(status_code=404, detail="Document index out of range")
+        else:
+            # It's already a document ID
+            doc_id = doc_identifier
+        
+        content = doc_manager.get_document_content(doc_id, "document")
+        if content is not None:
             return {"content": content}
         else:
-            raise HTTPException(status_code=404, detail="Document not found")
+            raise HTTPException(status_code=404, detail="Document content not found")
+    except ValueError:
+        # doc_identifier is not a number, treat as ID
+        content = doc_manager.get_document_content(doc_identifier, "document")
+        if content is not None:
+            return {"content": content}
+        else:
+            raise HTTPException(status_code=404, detail="Document content not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/notes")
-async def get_notes():
-    notes_dir = Path(config_storage["notes_dir"])
-    if not notes_dir.exists():
-        return {"notes": []}
-    
-    notes = []
-    # Use rglob to recursively find all .md files in subdirectories
-    for file_path in notes_dir.rglob("*.md"):
-        # Get relative path from meeting_notes directory
-        relative_path = file_path.relative_to(notes_dir)
-        
-        # Create a more descriptive name from the path
-        name = file_path.stem.replace("_", " ").replace("-", " ").title()
-        
-        # Include subdirectory in description if file is not in root
-        if relative_path.parent != Path("."):
-            description = f"{relative_path.parent} / {file_path.name}"
-        else:
-            description = file_path.name
-            
-        notes.append({
-            "name": name,
-            "description": description,
-            "filename": file_path.name,
-            "path": str(file_path.relative_to(BASE_DIR))
-        })
-    
-    # Sort by path for consistent ordering
-    notes.sort(key=lambda x: x["path"])
-    
-    return {"notes": notes}
-
-
-@app.get("/notes/{note_index}/content")
-async def get_note_content(note_index: int):
-    """Get the content of a specific note"""
+async def get_notes(doc_manager: DocumentManager = Depends(get_document_manager)):
+    """Get all notes from Supabase vector storage."""
     try:
-        notes_dir = Path(config_storage["notes_dir"])
-        notes = []
-        for file_path in notes_dir.rglob("*.md"):
-            notes.append(file_path)
+        notes = doc_manager.get_documents("note")
         
-        # Sort to ensure consistent ordering
-        notes.sort(key=lambda x: str(x))
+        # Format for frontend compatibility
+        formatted_notes = []
+        for i, note in enumerate(notes):
+            formatted_notes.append({
+                "name": note["name"],
+                "description": note["description"] or "",
+                "filename": note.get("metadata", {}).get("filename", note["name"]),
+                "path": f"supabase://notes/{note['id']}",
+                "id": note["id"],
+                "index": i,  # For compatibility with existing frontend
+                "lastModified": note.get("updated_at") or note.get("created_at")
+            })
         
-        if 0 <= note_index < len(notes):
-            file_path = notes[note_index]
-            content = file_path.read_text()
+        return {"notes": formatted_notes}
+    except Exception as e:
+        log_error(f"Error getting notes: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/notes/{note_identifier}/content")
+async def get_note_content(note_identifier: str, doc_manager: DocumentManager = Depends(get_document_manager)):
+    """Get the content of a specific note by ID or index (for backward compatibility)"""
+    try:
+        # Check if note_identifier is a number (index) or UUID (ID)
+        if note_identifier.isdigit():
+            # It's an index - convert to ID
+            notes = doc_manager.get_documents("note")
+            note_index = int(note_identifier)
+            
+            if 0 <= note_index < len(notes):
+                note_id = notes[note_index]["id"]
+            else:
+                raise HTTPException(status_code=404, detail="Note index out of range")
+        else:
+            # It's already a note ID
+            note_id = note_identifier
+        
+        content = doc_manager.get_document_content(note_id, "note")
+        if content is not None:
             return {"content": content}
         else:
-            raise HTTPException(status_code=404, detail="Note not found")
+            raise HTTPException(status_code=404, detail="Note content not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/notes")
-async def create_note(note_update: NoteUpdate):
+async def create_note(note_update: NoteUpdate, doc_manager: DocumentManager = Depends(get_document_manager)):
     """Create a new note"""
     try:
-        # Create filename from name
-        filename = note_update.name.lower().replace(' ', '_') + '.md'
-        notes_dir = Path(config_storage["notes_dir"])
-        file_path = notes_dir / filename
-        
-        # Ensure directory exists
-        notes_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Write content to file
         content = note_update.content or f"# {note_update.name}\n\n{note_update.description or ''}"
-        file_path.write_text(content)
+        filename = note_update.name.lower().replace(' ', '_') + '.md'
         
-        # Find the index of the newly created note
-        notes = []
-        for fp in notes_dir.rglob("*.md"):
-            notes.append(fp)
-        notes.sort(key=lambda x: str(x))
+        doc_id = doc_manager.add_document(
+            content=content,
+            name=note_update.name,
+            doc_type="note",
+            description=note_update.description,
+            filename=filename
+        )
         
-        new_index = next((i for i, n in enumerate(notes) if n.name == filename), -1)
+        # Get updated list to find index
+        notes = doc_manager.get_documents("note")
+        new_index = next((i for i, n in enumerate(notes) if n["id"] == doc_id), -1)
         
-        return {"success": True, "message": "Note created", "filename": filename, "index": new_index}
+        return {"success": True, "message": "Note created", "filename": filename, "index": new_index, "id": doc_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.put("/notes/{note_index}")
-async def update_note(note_index: int, note_update: NoteUpdate):
+async def update_note(note_index: int, note_update: NoteUpdate, doc_manager: DocumentManager = Depends(get_document_manager)):
     """Update a specific note by index"""
     try:
-        # For notes, we need to handle file content updates
-        # This is a simplified version - in production, you'd want more robust file handling
-        
-        # Get the list of notes to find which file to update
-        notes_dir = Path(config_storage["notes_dir"])
-        notes = []
-        for file_path in notes_dir.rglob("*.md"):
-            notes.append(file_path)
-        
-        # Sort to ensure consistent ordering
-        notes.sort(key=lambda x: str(x))
+        notes = doc_manager.get_documents("note")
         
         if 0 <= note_index < len(notes):
-            file_path = notes[note_index]
+            note = notes[note_index]
+            doc_id = note["id"]
             
-            # If content is provided, update the file
-            if note_update.content is not None:
-                file_path.write_text(note_update.content)
+            success = doc_manager.update_document(
+                doc_id=doc_id,
+                doc_type="note",
+                content=note_update.content,
+                name=note_update.name,
+                description=note_update.description
+            )
             
-            return {"success": True, "message": "Note updated"}
+            if success:
+                return {"success": True, "message": "Note updated"}
+            else:
+                raise HTTPException(status_code=500, detail="Failed to update note")
         else:
             raise HTTPException(status_code=404, detail="Note not found")
     except Exception as e:
@@ -542,111 +611,131 @@ async def update_note(note_index: int, note_update: NoteUpdate):
 
 
 @app.post("/documents")
-async def create_document(doc_update: DocumentUpdate):
+async def create_document(doc_update: DocumentUpdate, doc_manager: DocumentManager = Depends(get_document_manager)):
     """Create a new document"""
     try:
-        # Create filename from name
-        filename = doc_update.name.lower().replace(' ', '_') + '.md'
-        docs_dir = Path(config_storage["documents_dir"])
-        file_path = docs_dir / filename
-        
-        # Ensure directory exists
-        docs_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Write content to file
         content = doc_update.content or f"# {doc_update.name}\n\n{doc_update.description or ''}"
-        file_path.write_text(content)
+        filename = doc_update.filename or f"{doc_update.name.lower().replace(' ', '_')}.md"
         
-        # Find the index of the newly created document
-        docs = sorted(docs_dir.glob("*.md"), key=lambda x: x.name)
-        new_index = next((i for i, d in enumerate(docs) if d.name == filename), -1)
+        doc_id = doc_manager.add_document(
+            content=content,
+            name=doc_update.name,
+            doc_type="document",
+            description=doc_update.description,
+            filename=filename
+        )
         
-        return {"success": True, "message": "Document created", "filename": filename, "index": new_index}
+        # Get updated list to find index
+        documents = doc_manager.get_documents("document")
+        new_index = next((i for i, d in enumerate(documents) if d["id"] == doc_id), -1)
+        
+        return {"success": True, "message": "Document created", "filename": filename, "index": new_index, "id": doc_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.put("/documents/{doc_index}")
-async def update_document(doc_index: int, doc_update: DocumentUpdate):
-    """Update a specific document by index"""
+@app.put("/documents/{doc_identifier}")
+async def update_document(doc_identifier: str, doc_update: DocumentUpdate, doc_manager: DocumentManager = Depends(get_document_manager)):
+    """Update a specific document by ID or index (for backward compatibility)"""
     try:
-        # Use same sorting as get_documents
-        docs_dir = Path(config_storage["documents_dir"])
-        docs = sorted(docs_dir.glob("*.md"), key=lambda x: x.name)
+        # Check if doc_identifier is a number (index) or UUID (ID)
+        if doc_identifier.isdigit():
+            # It's an index - convert to ID
+            documents = doc_manager.get_documents("document")
+            doc_index = int(doc_identifier)
+            
+            if 0 <= doc_index < len(documents):
+                doc_id = documents[doc_index]["id"]
+            else:
+                raise HTTPException(status_code=404, detail="Document index out of range")
+        else:
+            # It's already a document ID
+            doc_id = doc_identifier
         
-        if 0 <= doc_index < len(docs):
-            file_path = docs[doc_index]
-            
-            # If content is provided, update the file
-            if doc_update.content is not None:
-                file_path.write_text(doc_update.content)
-            
+        success = doc_manager.update_document(
+            doc_id=doc_id,
+            doc_type="document",
+            content=doc_update.content,
+            name=doc_update.name,
+            description=doc_update.description
+        )
+        
+        if success:
             return {"success": True, "message": "Document updated"}
         else:
-            raise HTTPException(status_code=404, detail="Document not found")
+            raise HTTPException(status_code=500, detail="Failed to update document")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Memos endpoints
-@app.get("/memos")
-async def get_memos():
-    """Get all memos from the data/memos directory"""
-    memos_dir = BASE_DIR / "data" / "memos"
-    if not memos_dir.exists():
-        memos_dir.mkdir(parents=True, exist_ok=True)
-        return {"memos": []}
+@app.delete("/documents/{doc_id}")
+async def delete_document(doc_id: str, doc_manager: DocumentManager = Depends(get_document_manager)):
+    """Delete a specific document by ID"""
+    try:
+        success = doc_manager.delete_document(doc_id, "document")
+        
+        if success:
+            return {"success": True, "message": "Document deleted"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to delete document")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-    memos = []
-    # Sort files by name for consistent ordering
-    sorted_files = sorted(memos_dir.glob("*.md"), key=lambda x: x.name)
-    
-    for file_path in sorted_files:
-        name = file_path.stem.replace("_", " ").title()
-        description = f"Memo - {file_path.name}"
-        memos.append({
-            "id": file_path.stem,
-            "name": name,
-            "description": description,
-            "filename": file_path.name,
-            "path": str(file_path.relative_to(BASE_DIR)),
-            "type": "memo",
-            "format": "markdown",
-            "lastModified": file_path.stat().st_mtime
-        })
-    
-    return {"memos": memos}
+
+# Memos endpoints using Supabase vector storage
+@app.get("/memos")
+async def get_memos(doc_manager: DocumentManager = Depends(get_document_manager)):
+    """Get all memos from Supabase vector storage"""
+    try:
+        memos = doc_manager.get_documents("memo")
+        
+        # Format for frontend compatibility
+        formatted_memos = []
+        for memo in memos:
+            formatted_memos.append({
+                "id": memo["id"],
+                "name": memo["name"],
+                "description": memo["description"] or "",
+                "filename": memo.get("metadata", {}).get("filename", memo["name"]),
+                "path": f"supabase://memos/{memo['id']}",
+                "type": "memo",
+                "format": "markdown",
+                "lastModified": memo.get("updated_at") or memo.get("created_at")
+            })
+        
+        return {"memos": formatted_memos}
+    except Exception as e:
+        log_error(f"Error getting memos: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/memos")
-async def create_memo(memo_update: DocumentUpdate):
+async def create_memo(memo_update: DocumentUpdate, doc_manager: DocumentManager = Depends(get_document_manager)):
     """Create a new memo"""
     try:
-        memos_dir = BASE_DIR / "data" / "memos"
-        memos_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Generate filename from name
+        content = memo_update.content or ""
         filename = memo_update.filename or f"{memo_update.name.lower().replace(' ', '_')}.md"
         if not filename.endswith('.md'):
             filename += '.md'
         
-        file_path = memos_dir / filename
-        
-        # Write content to file
-        content = memo_update.content or ""
-        file_path.write_text(content)
+        doc_id = doc_manager.add_document(
+            content=content,
+            name=memo_update.name,
+            doc_type="memo",
+            description=memo_update.description,
+            filename=filename
+        )
         
         # Return memo data
         memo = {
-            "id": file_path.stem,
+            "id": doc_id,
             "name": memo_update.name,
             "description": memo_update.description or f"Memo - {filename}",
             "filename": filename,
-            "path": str(file_path.relative_to(BASE_DIR)),
+            "path": f"supabase://memos/{doc_id}",
             "type": "memo",
             "format": "markdown",
-            "content": content,
-            "lastModified": file_path.stat().st_mtime
+            "content": content
         }
         
         return {"success": True, "memo": memo}
@@ -655,30 +744,33 @@ async def create_memo(memo_update: DocumentUpdate):
 
 
 @app.put("/memos/{memo_id}")
-async def update_memo(memo_id: str, memo_update: DocumentUpdate):
+async def update_memo(memo_id: str, memo_update: DocumentUpdate, doc_manager: DocumentManager = Depends(get_document_manager)):
     """Update an existing memo"""
     try:
-        memos_dir = BASE_DIR / "data" / "memos"
-        file_path = memos_dir / f"{memo_id}.md"
+        success = doc_manager.update_document(
+            doc_id=memo_id,
+            doc_type="memo",
+            content=memo_update.content,
+            name=memo_update.name,
+            description=memo_update.description
+        )
         
-        if not file_path.exists():
+        if not success:
             raise HTTPException(status_code=404, detail="Memo not found")
         
-        # Update content
-        if memo_update.content is not None:
-            file_path.write_text(memo_update.content)
+        # Get updated content for response
+        content = doc_manager.get_document_content(memo_id, "memo")
         
         # Return updated memo data
         memo = {
             "id": memo_id,
-            "name": memo_update.name or file_path.stem.replace("_", " ").title(),
-            "description": memo_update.description or f"Memo - {file_path.name}",
-            "filename": file_path.name,
-            "path": str(file_path.relative_to(BASE_DIR)),
+            "name": memo_update.name,
+            "description": memo_update.description,
+            "filename": f"{memo_update.name.lower().replace(' ', '_')}.md" if memo_update.name else None,
+            "path": f"supabase://memos/{memo_id}",
             "type": "memo",
             "format": "markdown",
-            "content": memo_update.content,
-            "lastModified": file_path.stat().st_mtime
+            "content": content
         }
         
         return {"success": True, "memo": memo}
@@ -687,99 +779,89 @@ async def update_memo(memo_id: str, memo_update: DocumentUpdate):
 
 
 @app.delete("/memos/{memo_id}")
-async def delete_memo(memo_id: str):
+async def delete_memo(memo_id: str, doc_manager: DocumentManager = Depends(get_document_manager)):
     """Delete a specific memo"""
     try:
-        memos_dir = BASE_DIR / "data" / "memos"
-        file_path = memos_dir / f"{memo_id}.md"
+        success = doc_manager.delete_document(memo_id, "memo")
         
-        if not file_path.exists():
+        if not success:
             raise HTTPException(status_code=404, detail="Memo not found")
         
-        file_path.unlink()
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Interviews endpoints
+# Interviews endpoints using Supabase vector storage
 @app.get("/interviews")
-async def get_interviews():
-    """Get all interviews from the data/interviews directory"""
-    interviews_dir = INTERVIEWS_DIR
-    if not interviews_dir.exists():
-        interviews_dir.mkdir(parents=True, exist_ok=True)
-        return {"interviews": []}
-
-    interviews = []
-    # Sort files by name for consistent ordering
-    sorted_files = sorted(interviews_dir.glob("*.yaml"), key=lambda x: x.name)
-    
-    for file_path in sorted_files:
-        try:
-            with open(file_path, 'r') as f:
-                interview_data = yaml.safe_load(f) or {}
-            
-            # Use filename stem as ID
-            interview_id = file_path.stem
-            
-            interview = {
-                "id": interview_id,
-                "name": interview_data.get("name", file_path.stem.replace("_", " ").title()),
-                "description": interview_data.get("description", f"Interview - {file_path.name}"),
-                "filename": file_path.name,
-                "path": str(file_path.relative_to(BASE_DIR)),
-                "status": interview_data.get("status", "pending"),
-                "priority": interview_data.get("priority", "medium"),
-                "notes": interview_data.get("notes", ""),
-                "lastModified": file_path.stat().st_mtime
-            }
-            interviews.append(interview)
-        except Exception as e:
-            print(f"Error reading interview file {file_path}: {e}")
-            continue
-    
-    return {"interviews": interviews}
+async def get_interviews(doc_manager: DocumentManager = Depends(get_document_manager)):
+    """Get all interviews from Supabase vector storage"""
+    try:
+        interviews = doc_manager.get_documents("interview")
+        
+        # Format for frontend compatibility
+        formatted_interviews = []
+        for interview in interviews:
+            # Extract metadata fields
+            metadata = interview.get("metadata", {})
+            formatted_interviews.append({
+                "id": interview["id"],
+                "name": interview["name"],
+                "description": interview["description"] or "",
+                "filename": metadata.get("filename", interview["name"]),
+                "path": f"supabase://interviews/{interview['id']}",
+                "status": metadata.get("status", "pending"),
+                "priority": metadata.get("priority", "medium"),
+                "notes": metadata.get("original_notes", ""),
+                "lastModified": interview.get("updated_at") or interview.get("created_at")
+            })
+        
+        return {"interviews": formatted_interviews}
+    except Exception as e:
+        log_error(f"Error getting interviews: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/interviews")
-async def create_interview(interview_update: InterviewUpdate):
+async def create_interview(interview_update: InterviewUpdate, doc_manager: DocumentManager = Depends(get_document_manager)):
     """Create a new interview"""
     try:
-        interviews_dir = INTERVIEWS_DIR
-        interviews_dir.mkdir(parents=True, exist_ok=True)
+        # Create content from interview data
+        content = f"# {interview_update.name}\n\n"
+        if interview_update.description:
+            content += f"**Description:** {interview_update.description}\n\n"
+        content += f"**Status:** {interview_update.status or 'pending'}\n"
+        content += f"**Priority:** {interview_update.priority or 'medium'}\n\n"
+        if interview_update.notes:
+            content += f"## Notes\n\n{interview_update.notes}\n"
         
-        # Generate filename from name
         filename = interview_update.filename or f"{interview_update.name.lower().replace(' ', '_')}.yaml"
         if not filename.endswith('.yaml'):
             filename += '.yaml'
         
-        file_path = interviews_dir / filename
-        
-        # Create interview data
-        interview_data = {
-            "name": interview_update.name,
-            "description": interview_update.description or f"Interview - {filename}",
-            "status": interview_update.status or "pending",
-            "priority": interview_update.priority or "medium",
-            "notes": interview_update.notes or ""
-        }
-        
-        # Write to file
-        with open(file_path, 'w') as f:
-            yaml.dump(interview_data, f, default_flow_style=False, allow_unicode=True)
+        doc_id = doc_manager.add_document(
+            content=content,
+            name=interview_update.name,
+            doc_type="interview",
+            description=interview_update.description or f"Interview - {filename}",
+            filename=filename,
+            metadata={
+                "status": interview_update.status or "pending",
+                "priority": interview_update.priority or "medium",
+                "original_notes": interview_update.notes or ""
+            }
+        )
         
         # Return interview data
         interview = {
-            "id": file_path.stem,
-            "name": interview_data["name"],
-            "description": interview_data["description"],
+            "id": doc_id,
+            "name": interview_update.name,
+            "description": interview_update.description or f"Interview - {filename}",
             "filename": filename,
-            "path": str(file_path.relative_to(BASE_DIR)),
-            "status": interview_data["status"],
-            "priority": interview_data["priority"],
-            "notes": interview_data["notes"],
-            "lastModified": file_path.stat().st_mtime
+            "path": f"supabase://interviews/{doc_id}",
+            "status": interview_update.status or "pending",
+            "priority": interview_update.priority or "medium",
+            "notes": interview_update.notes or ""
         }
         
         return {"success": True, "interview": interview}
@@ -788,46 +870,49 @@ async def create_interview(interview_update: InterviewUpdate):
 
 
 @app.put("/interviews/{interview_id}")
-async def update_interview(interview_id: str, interview_update: InterviewUpdate):
+async def update_interview(interview_id: str, interview_update: InterviewUpdate, doc_manager: DocumentManager = Depends(get_document_manager)):
     """Update an existing interview"""
     try:
-        interviews_dir = INTERVIEWS_DIR
-        file_path = interviews_dir / f"{interview_id}.yaml"
+        # Create updated content
+        content = f"# {interview_update.name or 'Interview'}\n\n"
+        if interview_update.description:
+            content += f"**Description:** {interview_update.description}\n\n"
+        content += f"**Status:** {interview_update.status or 'pending'}\n"
+        content += f"**Priority:** {interview_update.priority or 'medium'}\n\n"
+        if interview_update.notes:
+            content += f"## Notes\n\n{interview_update.notes}\n"
         
-        if not file_path.exists():
+        # Update metadata
+        metadata = {}
+        if interview_update.status:
+            metadata["status"] = interview_update.status
+        if interview_update.priority:
+            metadata["priority"] = interview_update.priority
+        if interview_update.notes:
+            metadata["original_notes"] = interview_update.notes
+        
+        success = doc_manager.update_document(
+            doc_id=interview_id,
+            doc_type="interview",
+            content=content,
+            name=interview_update.name,
+            description=interview_update.description,
+            metadata=metadata
+        )
+        
+        if not success:
             raise HTTPException(status_code=404, detail="Interview not found")
-        
-        # Read existing data
-        with open(file_path, 'r') as f:
-            interview_data = yaml.safe_load(f) or {}
-        
-        # Update fields that are provided
-        if interview_update.name is not None:
-            interview_data["name"] = interview_update.name
-        if interview_update.description is not None:
-            interview_data["description"] = interview_update.description
-        if interview_update.status is not None:
-            interview_data["status"] = interview_update.status
-        if interview_update.priority is not None:
-            interview_data["priority"] = interview_update.priority
-        if interview_update.notes is not None:
-            interview_data["notes"] = interview_update.notes
-        
-        # Write back to file
-        with open(file_path, 'w') as f:
-            yaml.dump(interview_data, f, default_flow_style=False, allow_unicode=True)
         
         # Return updated interview data
         interview = {
             "id": interview_id,
-            "name": interview_data["name"],
-            "description": interview_data["description"],
-            "filename": file_path.name,
-            "path": str(file_path.relative_to(BASE_DIR)),
-            "status": interview_data["status"],
-            "priority": interview_data["priority"],
-            "notes": interview_data["notes"],
-            "lastModified": file_path.stat().st_mtime
+            "name": interview_update.name,
+            "description": interview_update.description,
+            "filename": f"{interview_update.name.lower().replace(' ', '_')}.yaml" if interview_update.name else None,
+            "path": f"supabase://interviews/{interview_id}",
+            "status": interview_update.status,
+            "priority": interview_update.priority,
+            "notes": interview_update.notes
         }
         
         return {"success": True, "interview": interview}
@@ -836,16 +921,14 @@ async def update_interview(interview_id: str, interview_update: InterviewUpdate)
 
 
 @app.delete("/interviews/{interview_id}")
-async def delete_interview(interview_id: str):
+async def delete_interview(interview_id: str, doc_manager: DocumentManager = Depends(get_document_manager)):
     """Delete a specific interview"""
     try:
-        interviews_dir = INTERVIEWS_DIR
-        file_path = interviews_dir / f"{interview_id}.yaml"
+        success = doc_manager.delete_document(interview_id, "interview")
         
-        if not file_path.exists():
+        if not success:
             raise HTTPException(status_code=404, detail="Interview not found")
         
-        file_path.unlink()
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -854,6 +937,18 @@ async def delete_interview(interview_id: str):
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
+    
+    # Try to get user from query parameters (token)
+    user_id = None
+    try:
+        token = websocket.query_params.get("token")
+        if token:
+            auth_storage = get_auth_storage()
+            user = auth_storage.verify_session(token)
+            if user:
+                user_id = user["user_id"]
+    except Exception as e:
+        print(f"WebSocket auth error: {e}")
     
     # Get instances
     settings = get_settings()
@@ -904,9 +999,10 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 print(f"WebSocket processing message: {message}")  # Debug log
                 
-                # Use primary agent to handle the request
+                # Use primary agent to handle the request with user context
                 response_parts = []
-                async for delta in primary_agent.run_stream(message):
+                deps = PrimaryAgentDeps(user_id=user_id)
+                async for delta in primary_agent.run_stream(message, deps=deps):
                     response_parts.append(delta)
                     await websocket.send_text(delta)
                 
@@ -923,7 +1019,193 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.close()
 
 
+# Authentication endpoints
+@app.post("/auth/register")
+async def register(user_data: UserRegistration):
+    """Register a new user."""
+    auth_storage = get_auth_storage()
+    result = auth_storage.register_user(user_data.email, user_data.password)
+    
+    if result["success"]:
+        return {
+            "success": True,
+            "user": result["user"],
+            "token": result["token"]
+        }
+    else:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+
+@app.post("/auth/login")
+async def login(user_data: UserLogin):
+    """Login a user."""
+    auth_storage = get_auth_storage()
+    result = auth_storage.login_user(user_data.email, user_data.password)
+    
+    if result["success"]:
+        return {
+            "success": True,
+            "user": result["user"],
+            "token": result["token"]
+        }
+    else:
+        raise HTTPException(status_code=401, detail=result["error"])
+
+
+@app.get("/auth/me")
+async def get_current_user_info(current_user = Depends(get_current_user)):
+    """Get current user information."""
+    return {
+        "success": True,
+        "user": current_user
+    }
+
+
+@app.post("/auth/logout")
+async def logout(current_user = Depends(get_current_user)):
+    """Logout user (client should discard token)."""
+    return {
+        "success": True,
+        "message": "Logged out successfully"
+    }
+
+
+@app.post("/auth/setup-default-user")
+async def setup_default_user():
+    """Create the default user and migrate existing data."""
+    auth_storage = get_auth_storage()
+    result = auth_storage.create_default_user("huynguyenvt1989@gmail.com", "Vungtau1989")
+    
+    if result["success"]:
+        return result
+    else:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+
+# User Settings endpoints
+@app.get("/user/settings")
+async def get_user_settings(
+    current_user = Depends(get_current_user),
+    settings_storage: UserSettingsStorage = Depends(get_user_settings_storage)
+):
+    """Get all settings for the current user."""
+    try:
+        user_id = current_user["user_id"]
+        settings = settings_storage.get_user_settings(user_id)
+        
+        # Provide default values for known settings
+        default_settings = {
+            "google_drive_calendar_secret_link": ""
+        }
+        
+        # Merge defaults with user settings
+        for key, default_value in default_settings.items():
+            if key not in settings:
+                settings[key] = default_value
+        
+        return {
+            "success": True,
+            "settings": settings
+        }
+    except Exception as e:
+        logger.error(f"Error getting user settings: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get user settings")
+
+
+@app.get("/user/settings/{setting_key}")
+async def get_user_setting(
+    setting_key: str,
+    current_user = Depends(get_current_user),
+    settings_storage: UserSettingsStorage = Depends(get_user_settings_storage)
+):
+    """Get a specific setting for the current user."""
+    try:
+        user_id = current_user["user_id"]
+        setting_value = settings_storage.get_user_setting(user_id, setting_key)
+        
+        if setting_value is None:
+            # Return default value for known settings
+            defaults = {
+                "google_drive_calendar_secret_link": ""
+            }
+            setting_value = defaults.get(setting_key, "")
+        
+        return {
+            "success": True,
+            "setting_key": setting_key,
+            "setting_value": setting_value
+        }
+    except Exception as e:
+        logger.error(f"Error getting user setting {setting_key}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get user setting")
+
+
+@app.put("/user/settings")
+async def update_user_settings(
+    settings_update: UserSettingsUpdate,
+    current_user = Depends(get_current_user),
+    settings_storage: UserSettingsStorage = Depends(get_user_settings_storage)
+):
+    """Update user settings."""
+    try:
+        user_id = current_user["user_id"]
+        
+        # Build settings dictionary from update model
+        settings_to_update = {}
+        update_data = settings_update.dict(exclude_unset=True)
+        
+        for key, value in update_data.items():
+            if value is not None:
+                settings_to_update[key] = value
+        
+        if not settings_to_update:
+            return {
+                "success": True,
+                "message": "No settings to update"
+            }
+        
+        success = settings_storage.update_user_settings(user_id, settings_to_update)
+        
+        if success:
+            return {
+                "success": True,
+                "message": f"Updated {len(settings_to_update)} setting(s)",
+                "updated_settings": settings_to_update
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to update settings")
+    except Exception as e:
+        logger.error(f"Error updating user settings: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update user settings")
+
+
+@app.put("/user/settings/{setting_key}")
+async def update_user_setting(
+    setting_key: str,
+    setting: UserSetting,
+    current_user = Depends(get_current_user),
+    settings_storage: UserSettingsStorage = Depends(get_user_settings_storage)
+):
+    """Update a specific user setting."""
+    try:
+        user_id = current_user["user_id"]
+        
+        success = settings_storage.set_user_setting(user_id, setting_key, setting.setting_value)
+        
+        if success:
+            return {
+                "success": True,
+                "message": f"Updated setting {setting_key}",
+                "setting_key": setting_key,
+                "setting_value": setting.setting_value
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to update setting")
+    except Exception as e:
+        logger.error(f"Error updating user setting {setting_key}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update user setting")
+
+
 if __name__ == "__main__":
     import uvicorn
-    ensure_dirs()
     uvicorn.run(app, host="0.0.0.0", port=8000)

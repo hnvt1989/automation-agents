@@ -13,6 +13,7 @@ import os
 from src.agents.base import BaseAgent
 from src.core.constants import AgentType, SYSTEM_PROMPTS
 from src.utils.logging import log_info, log_error
+from src.storage.user_settings import UserSettingsStorage
 
 
 class PrimaryAgentDeps(BaseModel):
@@ -20,6 +21,7 @@ class PrimaryAgentDeps(BaseModel):
     agents: Dict[str, Any] = Field(default_factory=dict)
     query: str = ""
     debug: bool = False
+    user_id: Optional[str] = None
     
     class Config:
         arbitrary_types_allowed = True
@@ -44,6 +46,20 @@ class PrimaryAgent(BaseAgent):
         
         self.agents = agents
         self._register_tools()
+    
+    def _get_calendar_url(self, user_id: Optional[str]) -> Optional[str]:
+        """Get calendar URL from user settings or environment variable as fallback."""
+        if user_id:
+            try:
+                settings_storage = UserSettingsStorage()
+                calendar_url = settings_storage.get_user_setting(user_id, "google_drive_calendar_secret_link")
+                if calendar_url:
+                    return calendar_url
+            except Exception as e:
+                log_error(f"Error getting calendar URL from user settings: {e}")
+        
+        # Fallback to environment variable
+        return os.getenv("GOOGLE_DRIVE_CALENDAR_SECRET_LINK")
     
     def _register_tools(self):
         """Register tools for the primary agent."""
@@ -447,10 +463,10 @@ class PrimaryAgent(BaseAgent):
             """
             log_info(f"Parsing calendar events for: {time_range}")
             try:
-                # Get the calendar URL from environment
-                calendar_url = os.getenv("GOOGLE_DRIVE_CALENDAR_SECRET_LINK")
+                # Get the calendar URL from user settings or environment fallback
+                calendar_url = self._get_calendar_url(ctx.deps.user_id)
                 if not calendar_url:
-                    return "Error: Calendar URL not configured in environment variables"
+                    return "Error: Calendar URL not configured. Please set your Google Drive Calendar secret link in the settings tab."
                 
                 # Fetch ICS data
                 async with httpx.AsyncClient() as client:

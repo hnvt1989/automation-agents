@@ -65,7 +65,16 @@ GITHUB_TOKEN=your_github_token
 SLACK_BOT_TOKEN=your_slack_bot_token
 LOCAL_FILE_DIR=/path/to/files
 LOCAL_FILE_DIR_KNOWLEDGE_BASE=/path/to/knowledge
+SUPABASE_URL=your_supabase_url
+SUPABASE_KEY=your_supabase_anon_key
+# Note: GOOGLE_DRIVE_CALENDAR_SECRET_LINK can now be configured via user settings in the UI
 ```
+
+### User Settings
+Some configurations can now be managed through the web interface:
+- **Google Drive Calendar Secret Link**: Configure your calendar integration URL through the Settings tab
+- **Personal Preferences**: User-specific settings stored securely in the database
+- **Per-user Configuration**: Each user maintains their own settings independently
 
 ## Architecture Overview
 
@@ -75,7 +84,7 @@ This is a PydanticAI-based multi-agent system using Model Context Protocol (MCP)
 - **Primary Agent** (`src/agents/primary.py`) - Main orchestrator that routes requests to specialized agents
 - **Specialized Agents** - Each handles specific domains (search, filesystem, RAG, planning, etc.)
 - **MCP Integration** (`src/mcp/manager.py`) - Manages external tool servers (GitHub, Slack)
-- **Storage Layer** (`src/storage/`) - Supabase vector database and Neo4j graph for RAG functionality
+- **Storage Layer** (`src/storage/`) - Supabase for both full document storage and vector embeddings, Neo4j graph for RAG functionality
 
 ### Key Components
 
@@ -87,10 +96,14 @@ This is a PydanticAI-based multi-agent system using Model Context Protocol (MCP)
 - `brave_search.py` - Web search capabilities
 
 #### Storage Layer (`src/storage/`)
-- `supabase_vector.py` - Supabase vector database operations
+- `document_storage.py` - Full document storage in Supabase (documents, notes, memos, interviews)
+- `document_manager.py` - Unified document management with both full storage and vector search
+- `supabase_vector.py` - Supabase vector database operations for embeddings
 - `neo4j_cloud.py` - Neo4j Aura cloud integration
 - `cloud_graph_manager.py` - Cloud-based knowledge graph management
 - `contextual_chunker.py` - Intelligent text segmentation
+- `auth_storage.py` - User authentication and session management
+- `user_settings.py` - User-specific configuration storage (calendar links, preferences)
 
 #### Processing Layer (`src/processors/`)
 - `image.py` - Vision API integration for calendar/chat screenshots
@@ -101,9 +114,10 @@ This is a PydanticAI-based multi-agent system using Model Context Protocol (MCP)
 - `index.html` - Single-page application with inline React and Babel
 - **Technology Stack**: HTML5, inline React 18, Babel transpilation
 - **Architecture**: Standalone HTML file with WebSocket connection to backend
-- **Features**: Task management, document editing, daily logs with date filtering, meeting notes
+- **Features**: Task management, document editing, daily logs with date filtering, meeting notes, user settings
 - **API Integration**: RESTful endpoints for CRUD operations
-- **Real-time**: WebSocket for chat functionality
+- **Real-time**: WebSocket for chat functionality with user authentication
+- **Settings**: User configuration panel for calendar integration and other personal settings
 
 ### Data Flow
 ```

@@ -238,6 +238,64 @@
             transform: translateY(-2px);
         }
         
+        .top-header {
+            padding: 16px 24px;
+            background: linear-gradient(90deg, rgba(0, 255, 136, 0.05) 0%, rgba(255, 215, 0, 0.05) 100%);
+            border-bottom: 1px solid rgba(0, 255, 136, 0.15);
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            position: relative;
+            gap: 16px;
+        }
+        
+        .top-header::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent 0%, rgba(0, 255, 136, 0.3) 50%, transparent 100%);
+            animation: pulse-line 3s infinite;
+        }
+        
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .username {
+            color: #00ff88;
+            font-size: 14px;
+            font-family: 'Roboto Mono', monospace;
+            text-shadow: 0 0 5px rgba(0, 255, 136, 0.3);
+            font-weight: 500;
+        }
+        
+        .logout-button {
+            background: rgba(255, 68, 68, 0.8);
+            border: 1px solid rgba(255, 68, 68, 0.5);
+            border-radius: 4px;
+            color: #fff;
+            padding: 6px 12px;
+            font-size: 12px;
+            font-family: 'Roboto Mono', monospace;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 500;
+        }
+        
+        .logout-button:hover {
+            background: rgba(255, 68, 68, 1);
+            border-color: rgba(255, 68, 68, 0.8);
+            box-shadow: 0 0 10px rgba(255, 68, 68, 0.4);
+            transform: translateY(-1px);
+        }
+
         .workspace-panel { 
             width: 60%; 
             display: flex; 
@@ -629,24 +687,33 @@
         .editor-input,
         .editor-textarea {
             width: 100%;
-            padding: 12px 16px;
-            border: 2px solid rgba(0, 255, 136, 0.3);
+            padding: 16px 20px;
+            border: 2px solid rgba(0, 255, 136, 0.4);
             border-radius: 8px;
             font-size: 14px;
             font-family: 'Roboto Mono', monospace;
-            background: rgba(10, 10, 10, 0.5);
+            background: rgba(10, 10, 10, 0.8);
             color: #e0e0e0;
             outline: none;
-            transition: all 0.3s;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             backdrop-filter: blur(5px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+            line-height: 1.6;
+            word-wrap: break-word;
         }
         
         .editor-input:focus,
         .editor-textarea:focus {
             border-color: #00ff88;
             box-shadow: 0 0 15px rgba(0, 255, 136, 0.3);
-            background: rgba(10, 10, 10, 0.7);
+            background: rgba(10, 10, 10, 0.9);
             color: #ffffff;
+        }
+        
+        .editor-input:hover,
+        .editor-textarea:hover {
+            border-color: rgba(0, 255, 136, 0.6);
+            background: rgba(10, 10, 10, 0.85);
         }
         
         .editor-input::placeholder,
@@ -954,7 +1021,8 @@ function Tabs({ current, onSelect }) {
         { id: 'notes', label: 'Briefings' },
         { id: 'logs', label: 'Operations Log' },
         { id: 'memos', label: 'Transmissions' },
-        { id: 'interviews', label: 'Interrogations' }
+        { id: 'interviews', label: 'Interrogations' },
+        { id: 'settings', label: 'Config' }
     ];
     
     return (
@@ -995,7 +1063,7 @@ function WorkspaceItem({ item, type, isSelected, onClick }) {
             <div className="item-icon"></div>
             <div className="item-content">
                 <div className="item-title">
-                    {item.name}
+                    {item.title || item.name}
                     {deadlineBadge && (
                         <span className={`deadline-badge ${deadlineBadge.class}`}>
                             {deadlineBadge.text}
@@ -1120,10 +1188,10 @@ function LoggingModal({ isOpen, onClose, onSave, taskItem, errors, isSubmitting 
     );
 }
 
-function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 'edit' }) {
+function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 'edit', authenticatedFetch }) {
     const isAddMode = mode === 'add';
     const [formData, setFormData] = useState({
-        name: (item && item.name) || '',
+        name: (item && (item.title || item.name)) || '',
         description: (item && item.description) || '',
         content: (item && item.content) || '',
         ...(item || {})
@@ -1170,9 +1238,8 @@ function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 
 
         try {
             const meetingData = item.meetingData;
-            const response = await fetch(`${CONFIG.API_BASE_URL}/analyze-meeting`, {
+            const response = await authenticatedFetch(`${CONFIG.API_BASE_URL}/analyze-meeting`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     meeting_content: meetingData.content || formData.content,
                     meeting_date: meetingData.date,
@@ -1196,9 +1263,8 @@ function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 
                     // Create tasks from suggestions
                     for (const suggestedTask of analysis.suggested_tasks) {
                         try {
-                            await fetch(`${CONFIG.API_BASE_URL}/create-task-from-suggestion`, {
+                            await authenticatedFetch(`${CONFIG.API_BASE_URL}/create-task-from-suggestion`, {
                                 method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify(suggestedTask)
                             });
                         } catch (error) {
@@ -1271,9 +1337,8 @@ function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 
             };
             
             // Save the log entry
-            const response = await fetch(`${CONFIG.API_BASE_URL}/logs`, {
+            const response = await authenticatedFetch(`${CONFIG.API_BASE_URL}/logs`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(logEntry)
             });
             
@@ -1583,7 +1648,247 @@ function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 
 }
 
 
-function Panel({ tab, send }) {
+function SettingsPanel({ authenticatedFetch }) {
+    const [settings, setSettings] = useState({
+        google_drive_calendar_secret_link: ''
+    });
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [message, setMessage] = useState('');
+    const [error, setError] = useState('');
+
+    // Load settings on component mount
+    useEffect(() => {
+        loadSettings();
+    }, []);
+
+    const loadSettings = async () => {
+        try {
+            setLoading(true);
+            const response = await authenticatedFetch(`${CONFIG.API_BASE_URL}/user/settings`);
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success) {
+                    setSettings(data.settings);
+                }
+            } else {
+                setError('Failed to load settings');
+            }
+        } catch (err) {
+            setError('Error loading settings: ' + err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const saveSettings = async () => {
+        try {
+            setSaving(true);
+            setError('');
+            setMessage('');
+
+            const response = await authenticatedFetch(`${CONFIG.API_BASE_URL}/user/settings`, {
+                method: 'PUT',
+                body: JSON.stringify(settings)
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success) {
+                    setMessage('Settings saved successfully!');
+                    setTimeout(() => setMessage(''), 3000);
+                } else {
+                    setError('Failed to save settings');
+                }
+            } else {
+                setError('Failed to save settings');
+            }
+        } catch (err) {
+            setError('Error saving settings: ' + err.message);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleInputChange = (key, value) => {
+        setSettings(prev => ({
+            ...prev,
+            [key]: value
+        }));
+    };
+
+    if (loading) {
+        return (
+            <div style={{ 
+                padding: '40px 0', 
+                textAlign: 'center',
+                color: '#00ff88',
+                fontFamily: 'Roboto Mono, monospace'
+            }}>
+                Loading settings...
+            </div>
+        );
+    }
+
+    return (
+        <div style={{ 
+            padding: '32px',
+            maxWidth: '600px',
+            margin: '0 auto'
+        }}>
+            <div style={{
+                background: 'linear-gradient(135deg, rgba(0, 255, 136, 0.1) 0%, rgba(22, 33, 62, 0.3) 100%)',
+                border: '2px solid rgba(0, 255, 136, 0.3)',
+                borderRadius: '12px',
+                padding: '32px',
+                boxShadow: '0 4px 15px rgba(0, 0, 0, 0.3)',
+                backdropFilter: 'blur(5px)'
+            }}>
+                <h2 style={{
+                    fontFamily: 'Orbitron, monospace',
+                    color: '#00ff88',
+                    fontSize: '24px',
+                    fontWeight: '700',
+                    marginBottom: '24px',
+                    textShadow: '0 0 10px rgba(0, 255, 136, 0.5)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '2px'
+                }}>
+                    Configuration Settings
+                </h2>
+
+                <div style={{ marginBottom: '24px' }}>
+                    <label style={{
+                        display: 'block',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        fontFamily: 'Orbitron, monospace',
+                        color: '#00ff88',
+                        marginBottom: '8px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '1px',
+                        textShadow: '0 0 5px rgba(0, 255, 136, 0.3)'
+                    }}>
+                        Google Drive Calendar Secret Link
+                    </label>
+                    <input
+                        type="url"
+                        value={settings.google_drive_calendar_secret_link}
+                        onChange={(e) => handleInputChange('google_drive_calendar_secret_link', e.target.value)}
+                        placeholder="Enter your Google Drive Calendar secret link..."
+                        style={{
+                            width: '100%',
+                            padding: '16px 20px',
+                            border: '2px solid rgba(0, 255, 136, 0.4)',
+                            borderRadius: '8px',
+                            fontSize: '14px',
+                            fontFamily: 'Roboto Mono, monospace',
+                            background: 'rgba(10, 10, 10, 0.8)',
+                            color: '#e0e0e0',
+                            outline: 'none',
+                            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                            backdropFilter: 'blur(5px)',
+                            boxShadow: '0 4px 15px rgba(0, 0, 0, 0.3)',
+                            lineHeight: '1.6',
+                            wordWrap: 'break-word'
+                        }}
+                        onFocus={(e) => {
+                            e.target.style.borderColor = '#00ff88';
+                            e.target.style.boxShadow = '0 0 15px rgba(0, 255, 136, 0.3)';
+                            e.target.style.background = 'rgba(10, 10, 10, 0.9)';
+                            e.target.style.color = '#ffffff';
+                        }}
+                        onBlur={(e) => {
+                            e.target.style.borderColor = 'rgba(0, 255, 136, 0.4)';
+                            e.target.style.boxShadow = '0 4px 15px rgba(0, 0, 0, 0.3)';
+                            e.target.style.background = 'rgba(10, 10, 10, 0.8)';
+                            e.target.style.color = '#e0e0e0';
+                        }}
+                    />
+                    <div style={{
+                        fontSize: '12px',
+                        color: 'rgba(0, 255, 136, 0.7)',
+                        marginTop: '8px',
+                        fontFamily: 'Roboto Mono, monospace'
+                    }}>
+                        This link will be used to access your Google Drive calendar for meeting processing.
+                    </div>
+                </div>
+
+                {error && (
+                    <div style={{
+                        background: 'rgba(255, 69, 0, 0.2)',
+                        border: '1px solid rgba(255, 69, 0, 0.5)',
+                        borderRadius: '6px',
+                        padding: '12px',
+                        marginBottom: '16px',
+                        color: '#ff4500',
+                        fontSize: '14px',
+                        fontFamily: 'Roboto Mono, monospace'
+                    }}>
+                        {error}
+                    </div>
+                )}
+
+                {message && (
+                    <div style={{
+                        background: 'rgba(0, 255, 136, 0.2)',
+                        border: '1px solid rgba(0, 255, 136, 0.5)',
+                        borderRadius: '6px',
+                        padding: '12px',
+                        marginBottom: '16px',
+                        color: '#00ff88',
+                        fontSize: '14px',
+                        fontFamily: 'Roboto Mono, monospace'
+                    }}>
+                        {message}
+                    </div>
+                )}
+
+                <button
+                    onClick={saveSettings}
+                    disabled={saving}
+                    style={{
+                        padding: '12px 24px',
+                        background: saving ? 'rgba(169, 169, 169, 0.3)' : 'linear-gradient(135deg, #00ff88 0%, #ffd700 100%)',
+                        color: saving ? '#a9a9a9' : '#000',
+                        border: saving ? '2px solid rgba(169, 169, 169, 0.5)' : '2px solid #ffd700',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        fontFamily: 'Orbitron, monospace',
+                        cursor: saving ? 'not-allowed' : 'pointer',
+                        transition: 'all 0.3s',
+                        textTransform: 'uppercase',
+                        letterSpacing: '1px',
+                        backdropFilter: 'blur(5px)',
+                        width: '100%'
+                    }}
+                    onMouseEnter={(e) => {
+                        if (!saving) {
+                            e.target.style.background = 'linear-gradient(135deg, #ffd700 0%, #00ff88 100%)';
+                            e.target.style.borderColor = '#00ff88';
+                            e.target.style.boxShadow = '0 8px 20px rgba(255, 215, 0, 0.4)';
+                            e.target.style.transform = 'translateY(-2px)';
+                        }
+                    }}
+                    onMouseLeave={(e) => {
+                        if (!saving) {
+                            e.target.style.background = 'linear-gradient(135deg, #00ff88 0%, #ffd700 100%)';
+                            e.target.style.borderColor = '#ffd700';
+                            e.target.style.boxShadow = 'none';
+                            e.target.style.transform = 'translateY(0)';
+                        }
+                    }}
+                >
+                    {saving ? 'Saving...' : 'Save Configuration'}
+                </button>
+            </div>
+        </div>
+    );
+}
+
+function Panel({ tab, send, authenticatedFetch }) {
     const [allItems, setAllItems] = useState({
         tasks: [],
         documents: [],
@@ -1636,42 +1941,51 @@ function Panel({ tab, send }) {
     }, []);
 
     useEffect(() => {
-        if (!loaded) {
-            // Fetch tasks
-            fetch(`${CONFIG.API_BASE_URL}/tasks`)
-                .then(r => r.json())
-                .then(data => { 
-                    if (data.tasks) {
-                        setAllItems(prev => ({ ...prev, tasks: data.tasks }));
-                    }
-                })
-                .catch(() => {});
-            
-            // Fetch documents
-            fetch(`${CONFIG.API_BASE_URL}/documents`)
-                .then(r => r.json())
-                .then(data => { 
-                    if (data.documents) {
-                        setAllItems(prev => ({ ...prev, documents: data.documents }));
-                    }
-                })
-                .catch(() => {});
-            
-            // Fetch notes (meeting notes from files)
-            fetch(`${CONFIG.API_BASE_URL}/notes`)
-                .then(r => r.json())
-                .then(data => { 
-                    console.log('🔍 Notes API Response:', data);
-                    if (data.notes) {
-                        setAllItems(prev => ({ ...prev, notes: data.notes }));
-                    }
-                })
-                .catch(error => {
-                    console.error('❌ Error fetching notes:', error);
-                });
-            
-            // Fetch logs
-            fetch(`${CONFIG.API_BASE_URL}/logs`)
+        if (!authenticatedFetch || loaded) {
+            return;
+        }
+        
+        // Fetch tasks
+        authenticatedFetch(`${CONFIG.API_BASE_URL}/tasks`)
+            .then(r => r.json())
+            .then(data => { 
+                if (data.tasks) {
+                    // Map backend field names to frontend field names
+                    const mappedTasks = data.tasks.map(task => ({
+                        ...task,
+                        dueDate: task.due_date,
+                        name: task.title || task.name // For backward compatibility
+                    }));
+                    setAllItems(prev => ({ ...prev, tasks: mappedTasks }));
+                }
+            })
+            .catch(() => {});
+        
+        // Fetch documents
+        authenticatedFetch(`${CONFIG.API_BASE_URL}/documents`)
+            .then(r => r.json())
+            .then(data => { 
+                if (data.documents) {
+                    setAllItems(prev => ({ ...prev, documents: data.documents }));
+                }
+            })
+            .catch(() => {});
+        
+        // Fetch notes (meeting notes from files)
+        authenticatedFetch(`${CONFIG.API_BASE_URL}/notes`)
+            .then(r => r.json())
+            .then(data => { 
+                console.log('🔍 Notes API Response:', data);
+                if (data.notes) {
+                    setAllItems(prev => ({ ...prev, notes: data.notes }));
+                }
+            })
+            .catch(error => {
+                console.error('❌ Error fetching notes:', error);
+            });
+        
+        // Fetch logs
+        authenticatedFetch(`${CONFIG.API_BASE_URL}/logs`)
                 .then(r => r.json())
                 .then(data => { 
                     if (data.logs) {
@@ -1680,39 +1994,37 @@ function Panel({ tab, send }) {
                 })
                 .catch(() => {});
             
-            // Fetch memos
-            fetch(`${CONFIG.API_BASE_URL}/memos`)
-                .then(r => r.json())
-                .then(data => { 
-                    if (data.memos) {
-                        setAllItems(prev => ({ ...prev, memos: data.memos }));
-                    }
-                })
-                .catch(() => {});
+        // Fetch memos
+        authenticatedFetch(`${CONFIG.API_BASE_URL}/memos`)
+            .then(r => r.json())
+            .then(data => { 
+                if (data.memos) {
+                    setAllItems(prev => ({ ...prev, memos: data.memos }));
+                }
+            })
+            .catch(() => {});
+        
+        // Fetch interviews
+        authenticatedFetch(`${CONFIG.API_BASE_URL}/interviews`)
+            .then(r => r.json())
+            .then(data => { 
+                if (data.interviews) {
+                    setAllItems(prev => ({ ...prev, interviews: data.interviews }));
+                }
+            })
+            .catch(() => {});
             
-            // Fetch interviews
-            fetch(`${CONFIG.API_BASE_URL}/interviews`)
-                .then(r => r.json())
-                .then(data => { 
-                    if (data.interviews) {
-                        setAllItems(prev => ({ ...prev, interviews: data.interviews }));
-                    }
-                })
-                .catch(() => {});
-            
-            setLoaded(true);
-        }
-    }, [loaded]);
+        setLoaded(true);
+    }, [loaded, authenticatedFetch]);
 
 
     const getCurrentItems = () => {
         let items = allItems[tab] || [];
-        console.log(`🗂️ Getting items for tab "${tab}":`, items);
         
         // Apply search filter
         if (searchQuery) {
             items = items.filter(item => 
-                (item.name && item.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                ((item.title || item.name) && (item.title || item.name).toLowerCase().includes(searchQuery.toLowerCase())) ||
                 (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()))
             );
         }
@@ -1818,10 +2130,9 @@ function Panel({ tab, send }) {
     };
 
     const saveTasks = () => {
-        if (tab !== 'tasks') return;
-        fetch(`${CONFIG.API_BASE_URL}/tasks`, {
+        if (tab !== 'tasks' || !authenticatedFetch) return;
+        authenticatedFetch(`${CONFIG.API_BASE_URL}/tasks`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ tasks: allItems.tasks }),
         });
     };
@@ -1867,9 +2178,8 @@ function Panel({ tab, send }) {
                 status: 'completed'
             };
 
-            const response = await fetch(`${CONFIG.API_BASE_URL}/logs`, {
+            const response = await authenticatedFetch(`${CONFIG.API_BASE_URL}/logs`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(logEntry),
             });
 
@@ -1920,9 +2230,8 @@ function Panel({ tab, send }) {
                 if (addMode) {
                     console.log('📤 POST: Creating new item');
                     // For add mode, POST to create new item
-                    response = await fetch(`${CONFIG.API_BASE_URL}/${tab}`, {
+                    response = await authenticatedFetch(`${CONFIG.API_BASE_URL}/${tab}`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(requestData)
                     });
                 } else {
@@ -1940,7 +2249,7 @@ function Panel({ tab, send }) {
                                 return item.id === editingItem.id;
                             }
                             // Fallback: compare by name and description
-                            return item.name === editingItem.name && 
+                            return (item.title || item.name) === (editingItem.title || editingItem.name) && 
                                    item.description === editingItem.description;
                         });
                         
@@ -1955,9 +2264,8 @@ function Panel({ tab, send }) {
                     
                     if (originalIndex >= 0 && itemId !== null) {
                         console.log('🌐 API Request: PUT /' + tab + '/' + itemId, requestData);
-                        response = await fetch(`${CONFIG.API_BASE_URL}/${tab}/${itemId}`, {
+                        response = await authenticatedFetch(`${CONFIG.API_BASE_URL}/${tab}/${itemId}`, {
                             method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(requestData)
                         });
                         console.log('📡 API Response status:', response.status, response.statusText);
@@ -1975,7 +2283,7 @@ function Panel({ tab, send }) {
                         // to get the correct indices after adding
                         if (tab === 'documents' || tab === 'notes') {
                             try {
-                                const listResponse = await fetch(`${CONFIG.API_BASE_URL}/${tab}`);
+                                const listResponse = await authenticatedFetch(`${CONFIG.API_BASE_URL}/${tab}`);
                                 if (listResponse.ok) {
                                     const data = await listResponse.json();
                                     setAllItems(prev => ({
@@ -2012,7 +2320,7 @@ function Panel({ tab, send }) {
                                     return item.id === editingItem.id;
                                 }
                                 // Fallback: compare by name and description
-                                return item.name === editingItem.name && 
+                                return (item.title || item.name) === (editingItem.title || editingItem.name) && 
                                        item.description === editingItem.description;
                             });
                         }
@@ -2053,9 +2361,9 @@ function Panel({ tab, send }) {
         // Send message to index the file at its path
         if (item && item.path) {
             send(`Index the file at this directory ${item.path}`);
-        } else if (item && item.name) {
+        } else if (item && (item.title || item.name)) {
             // Fallback if path is not available
-            send(`Index the file: ${item.name}`);
+            send(`Index the file: ${item.title || item.name}`);
         }
         setEditingItem(null);
         setEditingItemIndex(null);
@@ -2073,7 +2381,7 @@ function Panel({ tab, send }) {
                 
                 console.log('🗑️ DELETE: Using ID:', itemId, 'for item at index:', itemIndex, 'item:', item);
                 
-                const response = await fetch(`/${tab}/${itemId}`, {
+                const response = await authenticatedFetch(`${CONFIG.API_BASE_URL}/${tab}/${itemId}`, {
                     method: 'DELETE'
                 });
                 
@@ -2303,9 +2611,11 @@ function Panel({ tab, send }) {
                     )}
                 </div>
             </div>
-            
+
             <div className="items-list">
-                {items.length === 0 ? (
+                {tab === 'settings' ? (
+                    <SettingsPanel authenticatedFetch={authenticatedFetch} />
+                ) : items.length === 0 ? (
                     <div className="empty-state">
                         <div className="empty-state-title">
                             {tab === 'logs' && dateFilter ? 'No daily logs for this date' : 'No items yet'}
@@ -2330,7 +2640,8 @@ function Panel({ tab, send }) {
                 )}
             </div>
             
-            <div className="action-buttons">
+            {tab !== 'settings' && (
+                <div className="action-buttons">
                     <button className="action-button" onClick={addItem}>
                         Add {tab === 'tasks' ? 'task' : 
                              tab === 'documents' ? 'document' : 
@@ -2357,7 +2668,7 @@ function Panel({ tab, send }) {
                                         endpoint = `${CONFIG.API_BASE_URL}/${tab}/${selected}/content`;
                                     }
                                     
-                                    const response = await fetch(endpoint);
+                                    const response = await authenticatedFetch(endpoint);
                                     if (response.ok) {
                                         const data = await response.json();
                                         if (tab === 'interviews') {
@@ -2389,6 +2700,7 @@ function Panel({ tab, send }) {
                         </button>
                     )}
                 </div>
+            )}
             
             {editingItem && (
                 <Editor
@@ -2404,6 +2716,7 @@ function Panel({ tab, send }) {
                     onDelete={handleDelete}
                     onLog={handleOpenLoggingModal}
                     mode={addMode ? 'add' : 'edit'}
+                    authenticatedFetch={authenticatedFetch}
                 />
             )}
             
@@ -2526,6 +2839,209 @@ function Chat({ messages, send }) {
     );
 }
 
+// Authentication Modal Component
+function AuthModal({ onLogin }) {
+    const [isLogin, setIsLogin] = useState(true);
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
+
+    // Client-side password hashing function
+    const hashPassword = async (password) => {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(password);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    };
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        setError('');
+
+        try {
+            // Hash the password before sending to server
+            const hashedPassword = await hashPassword(password);
+            
+            const endpoint = isLogin ? '/auth/login' : '/auth/register';
+            const response = await fetch(`${CONFIG.API_BASE_URL}${endpoint}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ email, password: hashedPassword }),
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                localStorage.setItem('authToken', data.token);
+                localStorage.setItem('user', JSON.stringify(data.user));
+                onLogin(data.user, data.token);
+            } else {
+                setError(data.detail || 'Authentication failed');
+            }
+        } catch (err) {
+            setError('Connection error. Please try again.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.9)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000
+        }}>
+            <div style={{
+                background: 'linear-gradient(180deg, rgba(22, 33, 62, 0.95) 0%, rgba(10, 10, 10, 0.95) 100%)',
+                border: '2px solid rgba(0, 255, 136, 0.3)',
+                borderRadius: '12px',
+                padding: '32px',
+                minWidth: '400px',
+                boxShadow: '0 0 30px rgba(0, 255, 136, 0.2)',
+                backdropFilter: 'blur(10px)'
+            }}>
+                <h2 style={{
+                    fontFamily: 'Orbitron, monospace',
+                    color: '#00ff88',
+                    textAlign: 'center',
+                    marginBottom: '24px',
+                    fontSize: '24px',
+                    fontWeight: '700',
+                    textShadow: '0 0 10px rgba(0, 255, 136, 0.5)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '2px'
+                }}>
+                    {isLogin ? 'Access Terminal' : 'Create Account'}
+                </h2>
+                
+                <form onSubmit={handleSubmit}>
+                    <div style={{ marginBottom: '20px' }}>
+                        <label style={{
+                            display: 'block',
+                            marginBottom: '8px',
+                            color: '#00ff88',
+                            fontFamily: 'Roboto Mono, monospace',
+                            fontSize: '14px'
+                        }}>
+                            Email Address
+                        </label>
+                        <input
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            required
+                            style={{
+                                width: '100%',
+                                padding: '12px',
+                                background: 'rgba(0, 0, 0, 0.5)',
+                                border: '1px solid rgba(0, 255, 136, 0.3)',
+                                borderRadius: '6px',
+                                color: '#00ff88',
+                                fontFamily: 'Roboto Mono, monospace',
+                                fontSize: '14px'
+                            }}
+                            placeholder="Enter your email"
+                        />
+                    </div>
+                    
+                    <div style={{ marginBottom: '24px' }}>
+                        <label style={{
+                            display: 'block',
+                            marginBottom: '8px',
+                            color: '#00ff88',
+                            fontFamily: 'Roboto Mono, monospace',
+                            fontSize: '14px'
+                        }}>
+                            Password
+                        </label>
+                        <input
+                            type="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
+                            style={{
+                                width: '100%',
+                                padding: '12px',
+                                background: 'rgba(0, 0, 0, 0.5)',
+                                border: '1px solid rgba(0, 255, 136, 0.3)',
+                                borderRadius: '6px',
+                                color: '#00ff88',
+                                fontFamily: 'Roboto Mono, monospace',
+                                fontSize: '14px'
+                            }}
+                            placeholder="Enter your password"
+                        />
+                    </div>
+                    
+                    {error && (
+                        <div style={{
+                            color: '#ff4444',
+                            marginBottom: '16px',
+                            textAlign: 'center',
+                            fontFamily: 'Roboto Mono, monospace',
+                            fontSize: '14px'
+                        }}>
+                            {error}
+                        </div>
+                    )}
+                    
+                    <button
+                        type="submit"
+                        disabled={loading}
+                        style={{
+                            width: '100%',
+                            padding: '14px',
+                            background: loading ? 'rgba(0, 255, 136, 0.3)' : 'linear-gradient(90deg, #00ff88 0%, #00cc6a 100%)',
+                            border: 'none',
+                            borderRadius: '6px',
+                            color: loading ? '#666' : '#000',
+                            fontFamily: 'Orbitron, monospace',
+                            fontSize: '16px',
+                            fontWeight: '600',
+                            cursor: loading ? 'not-allowed' : 'pointer',
+                            textTransform: 'uppercase',
+                            letterSpacing: '1px',
+                            marginBottom: '16px'
+                        }}
+                    >
+                        {loading ? 'Processing...' : (isLogin ? 'Access System' : 'Create Account')}
+                    </button>
+                    
+                    <div style={{ textAlign: 'center' }}>
+                        <button
+                            type="button"
+                            onClick={() => setIsLogin(!isLogin)}
+                            style={{
+                                background: 'none',
+                                border: 'none',
+                                color: '#00ff88',
+                                fontFamily: 'Roboto Mono, monospace',
+                                fontSize: '14px',
+                                cursor: 'pointer',
+                                textDecoration: 'underline'
+                            }}
+                        >
+                            {isLogin ? 'Need an account? Register here' : 'Already have an account? Login here'}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+}
+
 function App() {
     const [tab, setTab] = useState('tasks');
     const [messages, setMessages] = useState([]);
@@ -2533,10 +3049,65 @@ function App() {
     const [showDeadlineAlert, setShowDeadlineAlert] = useState(false);
     const [deadlineAlertType, setDeadlineAlertType] = useState('danger');
     const [deadlineAlertMessage, setDeadlineAlertMessage] = useState('');
+    const [user, setUser] = useState(null);
+    const [authToken, setAuthToken] = useState(null);
+    const [showAuth, setShowAuth] = useState(true);
     const wsRef = useRef(null);
 
+    // Check for existing authentication on component mount
     useEffect(() => {
-        const ws = new WebSocket(CONFIG.WS_URL);
+        const token = localStorage.getItem('authToken');
+        const savedUser = localStorage.getItem('user');
+        
+        if (token && savedUser) {
+            try {
+                const userData = JSON.parse(savedUser);
+                setAuthToken(token);
+                setUser(userData);
+                setShowAuth(false);
+            } catch (error) {
+                // Invalid stored data, clear it
+                localStorage.removeItem('authToken');
+                localStorage.removeItem('user');
+            }
+        }
+    }, []);
+
+    const handleLogin = (userData, token) => {
+        setUser(userData);
+        setAuthToken(token);
+        setShowAuth(false);
+    };
+
+    const handleLogout = () => {
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('user');
+        setUser(null);
+        setAuthToken(null);
+        setShowAuth(true);
+    };
+
+    // Update fetch requests to include auth token
+    const authenticatedFetch = React.useCallback((url, options = {}) => {
+        const headers = {
+            'Content-Type': 'application/json',
+            ...options.headers,
+        };
+        
+        if (authToken) {
+            headers['Authorization'] = `Bearer ${authToken}`;
+        }
+        
+        return fetch(url, {
+            ...options,
+            headers
+        });
+    }, [authToken]);
+
+    useEffect(() => {
+        if (!authToken) return; // Don't connect WebSocket until authenticated
+        
+        const ws = new WebSocket(`${CONFIG.WS_URL}?token=${authToken}`);
         wsRef.current = ws;
         ws.onmessage = (e) => {
             const text = e.data;
@@ -2553,24 +3124,32 @@ function App() {
             });
         };
         return () => ws.close();
-    }, []);
+    }, [authToken]);
 
     // Fetch tasks and check for deadline alerts
     useEffect(() => {
-        fetch(`${CONFIG.API_BASE_URL}/tasks`)
+        if (!authToken) return; // Don't fetch data until authenticated
+        
+        authenticatedFetch(`${CONFIG.API_BASE_URL}/tasks`)
             .then(r => r.json())
             .then(data => {
                 if (data.tasks) {
-                    setTasks(data.tasks);
+                    // Map backend field names to frontend field names
+                    const mappedTasks = data.tasks.map(task => ({
+                        ...task,
+                        dueDate: task.due_date,
+                        name: task.title || task.name // For backward compatibility
+                    }));
+                    setTasks(mappedTasks);
                     
                     // Check for deadline alerts (exclude completed tasks)
-                    const overdueTasks = data.tasks.filter(task => 
+                    const overdueTasks = mappedTasks.filter(task => 
                         task.dueDate && 
                         getDeadlineStatus(task.dueDate) === 'overdue' &&
                         task.status !== 'completed' && 
                         !task.completed
                     );
-                    const dueSoonTasks = data.tasks.filter(task => 
+                    const dueSoonTasks = mappedTasks.filter(task => 
                         task.dueDate && 
                         getDeadlineStatus(task.dueDate) === 'due-soon' &&
                         task.status !== 'completed' && 
@@ -2599,7 +3178,7 @@ function App() {
                 }
             })
             .catch(() => {});
-    }, []);
+    }, [authToken]);
 
     const send = (text) => {
         if (!text.trim() || !wsRef.current) return;
@@ -2609,32 +3188,51 @@ function App() {
 
     return (
         <div className="container">
-            <Chat messages={messages} send={send} />
-            <div className="workspace-panel">
-                <div className="workspace-header">
-                    <div className="workspace-title">Mission Control</div>
-                    <Tabs current={tab} onSelect={setTab} />
-                </div>
-                <div className="workspace-content">
-                    <Panel tab={tab} send={send} />
-                </div>
-            </div>
+            {showAuth && <AuthModal onLogin={handleLogin} />}
             
-            {/* Deadline Alert */}
-            {showDeadlineAlert && (
-                <div 
-                    className={`deadline-alert ${deadlineAlertType === 'warning' ? 'warning' : ''}`}
-                    onClick={() => setShowDeadlineAlert(false)}
-                    style={{ cursor: 'pointer' }}
-                >
-                    <div style={{ fontWeight: '600', marginBottom: '4px' }}>
-                        Deadline Alert
+            {!showAuth && (
+                <React.Fragment>
+                    <Chat messages={messages} send={send} />
+                    <div className="workspace-panel">
+                        <div className="top-header">
+                            <div className="user-info">
+                                <div className="username">
+                                    {user && user.email}
+                                </div>
+                                <button
+                                    className="logout-button"
+                                    onClick={handleLogout}
+                                >
+                                    Logout
+                                </button>
+                            </div>
+                        </div>
+                        <div className="workspace-header">
+                            <div className="workspace-title">Mission Control</div>
+                            <Tabs current={tab} onSelect={setTab} />
+                        </div>
+                        <div className="workspace-content">
+                            <Panel tab={tab} send={send} authenticatedFetch={authenticatedFetch} />
+                        </div>
                     </div>
-                    <div>{deadlineAlertMessage}</div>
-                    <div style={{ fontSize: '12px', marginTop: '4px', opacity: 0.9 }}>
-                        Click to dismiss
-                    </div>
-                </div>
+                    
+                    {/* Deadline Alert */}
+                    {showDeadlineAlert && (
+                        <div 
+                            className={`deadline-alert ${deadlineAlertType === 'warning' ? 'warning' : ''}`}
+                            onClick={() => setShowDeadlineAlert(false)}
+                            style={{ cursor: 'pointer' }}
+                        >
+                            <div style={{ fontWeight: '600', marginBottom: '4px' }}>
+                                Deadline Alert
+                            </div>
+                            <div>{deadlineAlertMessage}</div>
+                            <div style={{ fontSize: '12px', marginTop: '4px', opacity: 0.9 }}>
+                                Click to dismiss
+                            </div>
+                        </div>
+                    )}
+                </React.Fragment>
             )}
         </div>
     );

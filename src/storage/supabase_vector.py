@@ -21,16 +21,18 @@ from src.storage.contextual_chunker import ContextualChunker, ChunkContext
 class SupabaseVectorClient:
     """Client for vector operations using Supabase pgvector and OpenAI embeddings."""
     
-    def __init__(self, collection_name: str = "default", enable_contextual: bool = True):
+    def __init__(self, collection_name: str = "default", enable_contextual: bool = True, user_id: Optional[str] = None):
         """Initialize Supabase vector client.
         
         Args:
             collection_name: Name of the collection (used for filtering)
             enable_contextual: Whether to enable contextual chunking
+            user_id: User ID for filtering user-specific data
         """
         self.settings = get_settings()
         self.collection_name = collection_name
         self.enable_contextual = enable_contextual
+        self.user_id = user_id
         
         # Initialize Supabase client
         supabase_url = os.getenv("SUPABASE_URL")
@@ -108,7 +110,8 @@ class SupabaseVectorClient:
                     "document_id": doc_id,
                     "content": doc,
                     "embedding": embedding,
-                    "metadata": json.dumps(metadata) if metadata else json.dumps({})
+                    "metadata": json.dumps(metadata) if metadata else json.dumps({}),
+                    "user_id": self.user_id
                 }
                 records.append(record)
             
@@ -164,7 +167,8 @@ class SupabaseVectorClient:
                     "query_embedding": query_embedding,
                     "match_count": n_results,
                     "filter_collection": self.collection_name,
-                    "filter_metadata": json.dumps(where) if where else None
+                    "filter_metadata": json.dumps(where) if where else None,
+                    "filter_user_id": self.user_id
                 }
             )
             
@@ -294,6 +298,31 @@ class SupabaseVectorClient:
         except Exception as e:
             log_error(f"Failed to clear collection: {str(e)}")
             raise
+    
+    def get_document_by_id(self, document_id: str) -> Optional[str]:
+        """Get document content by ID.
+        
+        Args:
+            document_id: ID of the document to retrieve
+            
+        Returns:
+            Document content or None if not found
+        """
+        try:
+            result = self.client.table("document_embeddings") \
+                .select("content") \
+                .eq("document_id", document_id) \
+                .eq("collection_name", self.collection_name) \
+                .execute()
+            
+            if result.data and len(result.data) > 0:
+                return result.data[0]["content"]
+            
+            return None
+            
+        except Exception as e:
+            log_error(f"Failed to get document by ID {document_id}: {str(e)}")
+            return None
     
     def chunk_text(
         self,
@@ -531,7 +560,8 @@ CREATE OR REPLACE FUNCTION match_documents(
     query_embedding vector(1536),
     match_count int,
     filter_collection text DEFAULT NULL,
-    filter_metadata jsonb DEFAULT NULL
+    filter_metadata jsonb DEFAULT NULL,
+    filter_user_id uuid DEFAULT NULL
 )
 RETURNS TABLE (
     document_id text,
@@ -552,6 +582,7 @@ BEGIN
     WHERE
         (filter_collection IS NULL OR de.collection_name = filter_collection)
         AND (filter_metadata IS NULL OR de.metadata @> filter_metadata)
+        AND (filter_user_id IS NULL OR de.user_id = filter_user_id)
     ORDER BY de.embedding <=> query_embedding
     LIMIT match_count;
 END;
