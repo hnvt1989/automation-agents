@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Response
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Response, Depends, Header
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,6 +10,7 @@ import yaml
 from datetime import datetime
 import os
 from dotenv import load_dotenv, set_key, find_dotenv
+from typing import Optional
 
 from src.core.config import get_settings
 from src.mcp import get_mcp_manager
@@ -19,6 +20,7 @@ from src.agents.filesystem import FilesystemAgent
 from src.agents.rag_cloud import CloudRAGAgent
 from src.agents.analyzer import AnalyzerAgent
 from src.storage.supabase_ops import SupabaseOperations
+from src.storage.auth_storage import AuthStorage
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 TASKS_FILE = BASE_DIR / "data" / "tasks.md"
@@ -102,6 +104,16 @@ class SuggestedTaskRequest(BaseModel):
     due_date: str
 
 
+class UserRegistration(BaseModel):
+    email: str
+    password: str
+
+
+class UserLogin(BaseModel):
+    email: str
+    password: str
+
+
 # Load environment variables from local.env
 load_dotenv("local.env")
 
@@ -110,6 +122,11 @@ db_ops = SupabaseOperations()
 
 # Initialize FastAPI app
 app = FastAPI()
+
+# Initialize auth storage at app startup
+@app.on_event("startup")
+async def startup_event():
+    app.state.auth_storage = AuthStorage()
 
 # Add CORS middleware
 app.add_middleware(
@@ -139,6 +156,43 @@ def ensure_dirs():
     notes_dir = Path(config_storage["notes_dir"])
     docs_dir.mkdir(parents=True, exist_ok=True)
     notes_dir.mkdir(parents=True, exist_ok=True)
+
+
+# Authentication helper functions
+def get_auth_storage() -> AuthStorage:
+    return app.state.auth_storage
+
+
+def get_current_user(authorization: Optional[str] = Header(None)):
+    """Get current user from authorization header."""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header required")
+    
+    try:
+        # Extract token from "Bearer <token>"
+        token = authorization.split(" ")[1] if authorization.startswith("Bearer ") else authorization
+        auth_storage = get_auth_storage()
+        user = auth_storage.verify_session(token)
+        
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
+        
+        return user
+    except Exception as e:
+        raise HTTPException(status_code=401, detail="Invalid authorization header")
+
+
+def get_current_user_optional(authorization: Optional[str] = Header(None)):
+    """Get current user from authorization header, return None if not authenticated."""
+    if not authorization:
+        return None
+    
+    try:
+        token = authorization.split(" ")[1] if authorization.startswith("Bearer ") else authorization
+        auth_storage = get_auth_storage()
+        return auth_storage.verify_session(token)
+    except Exception:
+        return None
 
 
 # Root endpoint
@@ -921,6 +975,69 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception as e:
         print(f"WebSocket error: {e}")
         await websocket.close()
+
+
+# Authentication endpoints
+@app.post("/auth/register")
+async def register(user_data: UserRegistration):
+    """Register a new user."""
+    auth_storage = get_auth_storage()
+    result = auth_storage.register_user(user_data.email, user_data.password)
+    
+    if result["success"]:
+        return {
+            "success": True,
+            "user": result["user"],
+            "token": result["token"]
+        }
+    else:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+
+@app.post("/auth/login")
+async def login(user_data: UserLogin):
+    """Login a user."""
+    auth_storage = get_auth_storage()
+    result = auth_storage.login_user(user_data.email, user_data.password)
+    
+    if result["success"]:
+        return {
+            "success": True,
+            "user": result["user"],
+            "token": result["token"]
+        }
+    else:
+        raise HTTPException(status_code=401, detail=result["error"])
+
+
+@app.get("/auth/me")
+async def get_current_user_info(current_user = Depends(get_current_user)):
+    """Get current user information."""
+    return {
+        "success": True,
+        "user": current_user
+    }
+
+
+@app.post("/auth/logout")
+async def logout(current_user = Depends(get_current_user)):
+    """Logout user (client should discard token)."""
+    return {
+        "success": True,
+        "message": "Logged out successfully"
+    }
+
+
+@app.post("/auth/setup-default-user")
+async def setup_default_user():
+    """Create the default user and migrate existing data."""
+    auth_storage = get_auth_storage()
+    result = auth_storage.create_default_user("huynguyenvt1989@gmail.com", "Vungtau1989")
+    
+    if result["success"]:
+        return result
+    else:
+        raise HTTPException(status_code=400, detail=result["error"])
 
 
 if __name__ == "__main__":
