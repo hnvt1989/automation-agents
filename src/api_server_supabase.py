@@ -22,6 +22,10 @@ from src.agents.analyzer import AnalyzerAgent
 from src.storage.supabase_ops import SupabaseOperations
 from src.storage.auth_storage import AuthStorage
 from src.storage.document_manager import DocumentManager
+from src.storage.user_settings import UserSettingsStorage
+from src.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = BASE_DIR / "frontend"
@@ -109,6 +113,15 @@ class UserLogin(BaseModel):
     password: str
 
 
+class UserSettingsUpdate(BaseModel):
+    google_drive_calendar_secret_link: str | None = None
+
+
+class UserSetting(BaseModel):
+    setting_key: str
+    setting_value: str
+
+
 # Load environment variables from local.env
 load_dotenv("local.env")
 
@@ -122,6 +135,7 @@ app = FastAPI()
 @app.on_event("startup")
 async def startup_event():
     app.state.auth_storage = AuthStorage()
+    app.state.user_settings_storage = UserSettingsStorage()
 
 # Add CORS middleware
 app.add_middleware(
@@ -141,6 +155,10 @@ if FRONTEND_DIR.exists():
 # Authentication helper functions
 def get_auth_storage() -> AuthStorage:
     return app.state.auth_storage
+
+
+def get_user_settings_storage() -> UserSettingsStorage:
+    return app.state.user_settings_storage
 
 
 def get_current_user(authorization: Optional[str] = Header(None)):
@@ -176,16 +194,9 @@ def get_current_user_optional(authorization: Optional[str] = Header(None)):
 
 
 # Document manager will be initialized per request with user context
-def get_document_manager(current_user = Depends(get_current_user_optional)):
+def get_document_manager(current_user = Depends(get_current_user)):
     """Get document manager for current user."""
-    if current_user:
-        user_id = current_user["user_id"]
-    else:
-        # Fallback to default user when no authentication is provided
-        # TODO: Remove this fallback when proper authentication is implemented
-        default_user_id = os.getenv("DEFAULT_USER_ID", "34ed3b47-3198-43bd-91df-b2a389ad82aa")
-        user_id = default_user_id
-    
+    user_id = current_user["user_id"]
     return DocumentManager(user_id=user_id)
 
 
@@ -925,6 +936,18 @@ async def delete_interview(interview_id: str, doc_manager: DocumentManager = Dep
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     
+    # Try to get user from query parameters (token)
+    user_id = None
+    try:
+        token = websocket.query_params.get("token")
+        if token:
+            auth_storage = get_auth_storage()
+            user = auth_storage.verify_session(token)
+            if user:
+                user_id = user["user_id"]
+    except Exception as e:
+        print(f"WebSocket auth error: {e}")
+    
     # Get instances
     settings = get_settings()
     mcp_manager = get_mcp_manager()
@@ -974,9 +997,10 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 print(f"WebSocket processing message: {message}")  # Debug log
                 
-                # Use primary agent to handle the request
+                # Use primary agent to handle the request with user context
                 response_parts = []
-                async for delta in primary_agent.run_stream(message):
+                deps = PrimaryAgentDeps(user_id=user_id)
+                async for delta in primary_agent.run_stream(message, deps=deps):
                     response_parts.append(delta)
                     await websocket.send_text(delta)
                 
@@ -1054,6 +1078,130 @@ async def setup_default_user():
         return result
     else:
         raise HTTPException(status_code=400, detail=result["error"])
+
+
+# User Settings endpoints
+@app.get("/user/settings")
+async def get_user_settings(
+    current_user = Depends(get_current_user),
+    settings_storage: UserSettingsStorage = Depends(get_user_settings_storage)
+):
+    """Get all settings for the current user."""
+    try:
+        user_id = current_user["user_id"]
+        settings = settings_storage.get_user_settings(user_id)
+        
+        # Provide default values for known settings
+        default_settings = {
+            "google_drive_calendar_secret_link": ""
+        }
+        
+        # Merge defaults with user settings
+        for key, default_value in default_settings.items():
+            if key not in settings:
+                settings[key] = default_value
+        
+        return {
+            "success": True,
+            "settings": settings
+        }
+    except Exception as e:
+        logger.error(f"Error getting user settings: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get user settings")
+
+
+@app.get("/user/settings/{setting_key}")
+async def get_user_setting(
+    setting_key: str,
+    current_user = Depends(get_current_user),
+    settings_storage: UserSettingsStorage = Depends(get_user_settings_storage)
+):
+    """Get a specific setting for the current user."""
+    try:
+        user_id = current_user["user_id"]
+        setting_value = settings_storage.get_user_setting(user_id, setting_key)
+        
+        if setting_value is None:
+            # Return default value for known settings
+            defaults = {
+                "google_drive_calendar_secret_link": ""
+            }
+            setting_value = defaults.get(setting_key, "")
+        
+        return {
+            "success": True,
+            "setting_key": setting_key,
+            "setting_value": setting_value
+        }
+    except Exception as e:
+        logger.error(f"Error getting user setting {setting_key}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get user setting")
+
+
+@app.put("/user/settings")
+async def update_user_settings(
+    settings_update: UserSettingsUpdate,
+    current_user = Depends(get_current_user),
+    settings_storage: UserSettingsStorage = Depends(get_user_settings_storage)
+):
+    """Update user settings."""
+    try:
+        user_id = current_user["user_id"]
+        
+        # Build settings dictionary from update model
+        settings_to_update = {}
+        update_data = settings_update.dict(exclude_unset=True)
+        
+        for key, value in update_data.items():
+            if value is not None:
+                settings_to_update[key] = value
+        
+        if not settings_to_update:
+            return {
+                "success": True,
+                "message": "No settings to update"
+            }
+        
+        success = settings_storage.update_user_settings(user_id, settings_to_update)
+        
+        if success:
+            return {
+                "success": True,
+                "message": f"Updated {len(settings_to_update)} setting(s)",
+                "updated_settings": settings_to_update
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to update settings")
+    except Exception as e:
+        logger.error(f"Error updating user settings: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update user settings")
+
+
+@app.put("/user/settings/{setting_key}")
+async def update_user_setting(
+    setting_key: str,
+    setting: UserSetting,
+    current_user = Depends(get_current_user),
+    settings_storage: UserSettingsStorage = Depends(get_user_settings_storage)
+):
+    """Update a specific user setting."""
+    try:
+        user_id = current_user["user_id"]
+        
+        success = settings_storage.set_user_setting(user_id, setting_key, setting.setting_value)
+        
+        if success:
+            return {
+                "success": True,
+                "message": f"Updated setting {setting_key}",
+                "setting_key": setting_key,
+                "setting_value": setting.setting_value
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to update setting")
+    except Exception as e:
+        logger.error(f"Error updating user setting {setting_key}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update user setting")
 
 
 if __name__ == "__main__":

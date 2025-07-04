@@ -35,7 +35,11 @@ class AuthStorage:
         log_info("AuthStorage initialized")
     
     def _hash_password(self, password: str) -> str:
-        """Hash a password using SHA-256."""
+        """Hash a password using SHA-256.
+        
+        Note: As of the security update, passwords are pre-hashed on the client side.
+        This method now performs a second hash for additional security (double hashing).
+        """
         return hashlib.sha256(password.encode()).hexdigest()
     
     def _generate_token(self, user_id: str, email: str) -> str:

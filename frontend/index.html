@@ -1021,7 +1021,8 @@ function Tabs({ current, onSelect }) {
         { id: 'notes', label: 'Briefings' },
         { id: 'logs', label: 'Operations Log' },
         { id: 'memos', label: 'Transmissions' },
-        { id: 'interviews', label: 'Interrogations' }
+        { id: 'interviews', label: 'Interrogations' },
+        { id: 'settings', label: 'Config' }
     ];
     
     return (
@@ -1187,7 +1188,7 @@ function LoggingModal({ isOpen, onClose, onSave, taskItem, errors, isSubmitting 
     );
 }
 
-function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 'edit' }) {
+function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 'edit', authenticatedFetch }) {
     const isAddMode = mode === 'add';
     const [formData, setFormData] = useState({
         name: (item && (item.title || item.name)) || '',
@@ -1237,9 +1238,8 @@ function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 
 
         try {
             const meetingData = item.meetingData;
-            const response = await fetch(`${CONFIG.API_BASE_URL}/analyze-meeting`, {
+            const response = await authenticatedFetch(`${CONFIG.API_BASE_URL}/analyze-meeting`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     meeting_content: meetingData.content || formData.content,
                     meeting_date: meetingData.date,
@@ -1263,9 +1263,8 @@ function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 
                     // Create tasks from suggestions
                     for (const suggestedTask of analysis.suggested_tasks) {
                         try {
-                            await fetch(`${CONFIG.API_BASE_URL}/create-task-from-suggestion`, {
+                            await authenticatedFetch(`${CONFIG.API_BASE_URL}/create-task-from-suggestion`, {
                                 method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify(suggestedTask)
                             });
                         } catch (error) {
@@ -1338,9 +1337,8 @@ function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 
             };
             
             // Save the log entry
-            const response = await fetch(`${CONFIG.API_BASE_URL}/logs`, {
+            const response = await authenticatedFetch(`${CONFIG.API_BASE_URL}/logs`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(logEntry)
             });
             
@@ -1650,6 +1648,246 @@ function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 
 }
 
 
+function SettingsPanel({ authenticatedFetch }) {
+    const [settings, setSettings] = useState({
+        google_drive_calendar_secret_link: ''
+    });
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [message, setMessage] = useState('');
+    const [error, setError] = useState('');
+
+    // Load settings on component mount
+    useEffect(() => {
+        loadSettings();
+    }, []);
+
+    const loadSettings = async () => {
+        try {
+            setLoading(true);
+            const response = await authenticatedFetch(`${CONFIG.API_BASE_URL}/user/settings`);
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success) {
+                    setSettings(data.settings);
+                }
+            } else {
+                setError('Failed to load settings');
+            }
+        } catch (err) {
+            setError('Error loading settings: ' + err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const saveSettings = async () => {
+        try {
+            setSaving(true);
+            setError('');
+            setMessage('');
+
+            const response = await authenticatedFetch(`${CONFIG.API_BASE_URL}/user/settings`, {
+                method: 'PUT',
+                body: JSON.stringify(settings)
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success) {
+                    setMessage('Settings saved successfully!');
+                    setTimeout(() => setMessage(''), 3000);
+                } else {
+                    setError('Failed to save settings');
+                }
+            } else {
+                setError('Failed to save settings');
+            }
+        } catch (err) {
+            setError('Error saving settings: ' + err.message);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleInputChange = (key, value) => {
+        setSettings(prev => ({
+            ...prev,
+            [key]: value
+        }));
+    };
+
+    if (loading) {
+        return (
+            <div style={{ 
+                padding: '40px 0', 
+                textAlign: 'center',
+                color: '#00ff88',
+                fontFamily: 'Roboto Mono, monospace'
+            }}>
+                Loading settings...
+            </div>
+        );
+    }
+
+    return (
+        <div style={{ 
+            padding: '32px',
+            maxWidth: '600px',
+            margin: '0 auto'
+        }}>
+            <div style={{
+                background: 'linear-gradient(135deg, rgba(0, 255, 136, 0.1) 0%, rgba(22, 33, 62, 0.3) 100%)',
+                border: '2px solid rgba(0, 255, 136, 0.3)',
+                borderRadius: '12px',
+                padding: '32px',
+                boxShadow: '0 4px 15px rgba(0, 0, 0, 0.3)',
+                backdropFilter: 'blur(5px)'
+            }}>
+                <h2 style={{
+                    fontFamily: 'Orbitron, monospace',
+                    color: '#00ff88',
+                    fontSize: '24px',
+                    fontWeight: '700',
+                    marginBottom: '24px',
+                    textShadow: '0 0 10px rgba(0, 255, 136, 0.5)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '2px'
+                }}>
+                    Configuration Settings
+                </h2>
+
+                <div style={{ marginBottom: '24px' }}>
+                    <label style={{
+                        display: 'block',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        fontFamily: 'Orbitron, monospace',
+                        color: '#00ff88',
+                        marginBottom: '8px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '1px',
+                        textShadow: '0 0 5px rgba(0, 255, 136, 0.3)'
+                    }}>
+                        Google Drive Calendar Secret Link
+                    </label>
+                    <input
+                        type="url"
+                        value={settings.google_drive_calendar_secret_link}
+                        onChange={(e) => handleInputChange('google_drive_calendar_secret_link', e.target.value)}
+                        placeholder="Enter your Google Drive Calendar secret link..."
+                        style={{
+                            width: '100%',
+                            padding: '16px 20px',
+                            border: '2px solid rgba(0, 255, 136, 0.4)',
+                            borderRadius: '8px',
+                            fontSize: '14px',
+                            fontFamily: 'Roboto Mono, monospace',
+                            background: 'rgba(10, 10, 10, 0.8)',
+                            color: '#e0e0e0',
+                            outline: 'none',
+                            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                            backdropFilter: 'blur(5px)',
+                            boxShadow: '0 4px 15px rgba(0, 0, 0, 0.3)',
+                            lineHeight: '1.6',
+                            wordWrap: 'break-word'
+                        }}
+                        onFocus={(e) => {
+                            e.target.style.borderColor = '#00ff88';
+                            e.target.style.boxShadow = '0 0 15px rgba(0, 255, 136, 0.3)';
+                            e.target.style.background = 'rgba(10, 10, 10, 0.9)';
+                            e.target.style.color = '#ffffff';
+                        }}
+                        onBlur={(e) => {
+                            e.target.style.borderColor = 'rgba(0, 255, 136, 0.4)';
+                            e.target.style.boxShadow = '0 4px 15px rgba(0, 0, 0, 0.3)';
+                            e.target.style.background = 'rgba(10, 10, 10, 0.8)';
+                            e.target.style.color = '#e0e0e0';
+                        }}
+                    />
+                    <div style={{
+                        fontSize: '12px',
+                        color: 'rgba(0, 255, 136, 0.7)',
+                        marginTop: '8px',
+                        fontFamily: 'Roboto Mono, monospace'
+                    }}>
+                        This link will be used to access your Google Drive calendar for meeting processing.
+                    </div>
+                </div>
+
+                {error && (
+                    <div style={{
+                        background: 'rgba(255, 69, 0, 0.2)',
+                        border: '1px solid rgba(255, 69, 0, 0.5)',
+                        borderRadius: '6px',
+                        padding: '12px',
+                        marginBottom: '16px',
+                        color: '#ff4500',
+                        fontSize: '14px',
+                        fontFamily: 'Roboto Mono, monospace'
+                    }}>
+                        {error}
+                    </div>
+                )}
+
+                {message && (
+                    <div style={{
+                        background: 'rgba(0, 255, 136, 0.2)',
+                        border: '1px solid rgba(0, 255, 136, 0.5)',
+                        borderRadius: '6px',
+                        padding: '12px',
+                        marginBottom: '16px',
+                        color: '#00ff88',
+                        fontSize: '14px',
+                        fontFamily: 'Roboto Mono, monospace'
+                    }}>
+                        {message}
+                    </div>
+                )}
+
+                <button
+                    onClick={saveSettings}
+                    disabled={saving}
+                    style={{
+                        padding: '12px 24px',
+                        background: saving ? 'rgba(169, 169, 169, 0.3)' : 'linear-gradient(135deg, #00ff88 0%, #ffd700 100%)',
+                        color: saving ? '#a9a9a9' : '#000',
+                        border: saving ? '2px solid rgba(169, 169, 169, 0.5)' : '2px solid #ffd700',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        fontFamily: 'Orbitron, monospace',
+                        cursor: saving ? 'not-allowed' : 'pointer',
+                        transition: 'all 0.3s',
+                        textTransform: 'uppercase',
+                        letterSpacing: '1px',
+                        backdropFilter: 'blur(5px)',
+                        width: '100%'
+                    }}
+                    onMouseEnter={(e) => {
+                        if (!saving) {
+                            e.target.style.background = 'linear-gradient(135deg, #ffd700 0%, #00ff88 100%)';
+                            e.target.style.borderColor = '#00ff88';
+                            e.target.style.boxShadow = '0 8px 20px rgba(255, 215, 0, 0.4)';
+                            e.target.style.transform = 'translateY(-2px)';
+                        }
+                    }}
+                    onMouseLeave={(e) => {
+                        if (!saving) {
+                            e.target.style.background = 'linear-gradient(135deg, #00ff88 0%, #ffd700 100%)';
+                            e.target.style.borderColor = '#ffd700';
+                            e.target.style.boxShadow = 'none';
+                            e.target.style.transform = 'translateY(0)';
+                        }
+                    }}
+                >
+                    {saving ? 'Saving...' : 'Save Configuration'}
+                </button>
+            </div>
+        </div>
+    );
+}
+
 function Panel({ tab, send, authenticatedFetch }) {
     const [allItems, setAllItems] = useState({
         tasks: [],
@@ -1940,9 +2178,8 @@ function Panel({ tab, send, authenticatedFetch }) {
                 status: 'completed'
             };
 
-            const response = await fetch(`${CONFIG.API_BASE_URL}/logs`, {
+            const response = await authenticatedFetch(`${CONFIG.API_BASE_URL}/logs`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(logEntry),
             });
 
@@ -1993,9 +2230,8 @@ function Panel({ tab, send, authenticatedFetch }) {
                 if (addMode) {
                     console.log('📤 POST: Creating new item');
                     // For add mode, POST to create new item
-                    response = await fetch(`${CONFIG.API_BASE_URL}/${tab}`, {
+                    response = await authenticatedFetch(`${CONFIG.API_BASE_URL}/${tab}`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(requestData)
                     });
                 } else {
@@ -2028,9 +2264,8 @@ function Panel({ tab, send, authenticatedFetch }) {
                     
                     if (originalIndex >= 0 && itemId !== null) {
                         console.log('🌐 API Request: PUT /' + tab + '/' + itemId, requestData);
-                        response = await fetch(`${CONFIG.API_BASE_URL}/${tab}/${itemId}`, {
+                        response = await authenticatedFetch(`${CONFIG.API_BASE_URL}/${tab}/${itemId}`, {
                             method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(requestData)
                         });
                         console.log('📡 API Response status:', response.status, response.statusText);
@@ -2048,7 +2283,7 @@ function Panel({ tab, send, authenticatedFetch }) {
                         // to get the correct indices after adding
                         if (tab === 'documents' || tab === 'notes') {
                             try {
-                                const listResponse = await fetch(`${CONFIG.API_BASE_URL}/${tab}`);
+                                const listResponse = await authenticatedFetch(`${CONFIG.API_BASE_URL}/${tab}`);
                                 if (listResponse.ok) {
                                     const data = await listResponse.json();
                                     setAllItems(prev => ({
@@ -2146,7 +2381,7 @@ function Panel({ tab, send, authenticatedFetch }) {
                 
                 console.log('🗑️ DELETE: Using ID:', itemId, 'for item at index:', itemIndex, 'item:', item);
                 
-                const response = await fetch(`/${tab}/${itemId}`, {
+                const response = await authenticatedFetch(`${CONFIG.API_BASE_URL}/${tab}/${itemId}`, {
                     method: 'DELETE'
                 });
                 
@@ -2378,7 +2613,9 @@ function Panel({ tab, send, authenticatedFetch }) {
             </div>
 
             <div className="items-list">
-                {items.length === 0 ? (
+                {tab === 'settings' ? (
+                    <SettingsPanel authenticatedFetch={authenticatedFetch} />
+                ) : items.length === 0 ? (
                     <div className="empty-state">
                         <div className="empty-state-title">
                             {tab === 'logs' && dateFilter ? 'No daily logs for this date' : 'No items yet'}
@@ -2403,7 +2640,8 @@ function Panel({ tab, send, authenticatedFetch }) {
                 )}
             </div>
             
-            <div className="action-buttons">
+            {tab !== 'settings' && (
+                <div className="action-buttons">
                     <button className="action-button" onClick={addItem}>
                         Add {tab === 'tasks' ? 'task' : 
                              tab === 'documents' ? 'document' : 
@@ -2430,7 +2668,7 @@ function Panel({ tab, send, authenticatedFetch }) {
                                         endpoint = `${CONFIG.API_BASE_URL}/${tab}/${selected}/content`;
                                     }
                                     
-                                    const response = await fetch(endpoint);
+                                    const response = await authenticatedFetch(endpoint);
                                     if (response.ok) {
                                         const data = await response.json();
                                         if (tab === 'interviews') {
@@ -2462,6 +2700,7 @@ function Panel({ tab, send, authenticatedFetch }) {
                         </button>
                     )}
                 </div>
+            )}
             
             {editingItem && (
                 <Editor
@@ -2477,6 +2716,7 @@ function Panel({ tab, send, authenticatedFetch }) {
                     onDelete={handleDelete}
                     onLog={handleOpenLoggingModal}
                     mode={addMode ? 'add' : 'edit'}
+                    authenticatedFetch={authenticatedFetch}
                 />
             )}
             
@@ -2607,19 +2847,31 @@ function AuthModal({ onLogin }) {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
 
+    // Client-side password hashing function
+    const hashPassword = async (password) => {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(password);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         setLoading(true);
         setError('');
 
         try {
+            // Hash the password before sending to server
+            const hashedPassword = await hashPassword(password);
+            
             const endpoint = isLogin ? '/auth/login' : '/auth/register';
             const response = await fetch(`${CONFIG.API_BASE_URL}${endpoint}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ email, password }),
+                body: JSON.stringify({ email, password: hashedPassword }),
             });
 
             const data = await response.json();
@@ -2855,7 +3107,7 @@ function App() {
     useEffect(() => {
         if (!authToken) return; // Don't connect WebSocket until authenticated
         
-        const ws = new WebSocket(CONFIG.WS_URL);
+        const ws = new WebSocket(`${CONFIG.WS_URL}?token=${authToken}`);
         wsRef.current = ws;
         ws.onmessage = (e) => {
             const text = e.data;

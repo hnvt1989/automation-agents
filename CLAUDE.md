@@ -67,8 +67,14 @@ LOCAL_FILE_DIR=/path/to/files
 LOCAL_FILE_DIR_KNOWLEDGE_BASE=/path/to/knowledge
 SUPABASE_URL=your_supabase_url
 SUPABASE_KEY=your_supabase_anon_key
-DEFAULT_USER_ID=your_default_user_uuid
+# Note: GOOGLE_DRIVE_CALENDAR_SECRET_LINK can now be configured via user settings in the UI
 ```
+
+### User Settings
+Some configurations can now be managed through the web interface:
+- **Google Drive Calendar Secret Link**: Configure your calendar integration URL through the Settings tab
+- **Personal Preferences**: User-specific settings stored securely in the database
+- **Per-user Configuration**: Each user maintains their own settings independently
 
 ## Architecture Overview
 
@@ -97,6 +103,7 @@ This is a PydanticAI-based multi-agent system using Model Context Protocol (MCP)
 - `cloud_graph_manager.py` - Cloud-based knowledge graph management
 - `contextual_chunker.py` - Intelligent text segmentation
 - `auth_storage.py` - User authentication and session management
+- `user_settings.py` - User-specific configuration storage (calendar links, preferences)
 
 #### Processing Layer (`src/processors/`)
 - `image.py` - Vision API integration for calendar/chat screenshots
@@ -107,9 +114,10 @@ This is a PydanticAI-based multi-agent system using Model Context Protocol (MCP)
 - `index.html` - Single-page application with inline React and Babel
 - **Technology Stack**: HTML5, inline React 18, Babel transpilation
 - **Architecture**: Standalone HTML file with WebSocket connection to backend
-- **Features**: Task management, document editing, daily logs with date filtering, meeting notes
+- **Features**: Task management, document editing, daily logs with date filtering, meeting notes, user settings
 - **API Integration**: RESTful endpoints for CRUD operations
-- **Real-time**: WebSocket for chat functionality
+- **Real-time**: WebSocket for chat functionality with user authentication
+- **Settings**: User configuration panel for calendar integration and other personal settings
 
 ### Data Flow
 ```
