@@ -24,13 +24,7 @@ from src.storage.auth_storage import AuthStorage
 from src.storage.document_manager import DocumentManager
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-TASKS_FILE = BASE_DIR / "data" / "tasks.md"
-TASKS_YAML_FILE = BASE_DIR / "data" / "tasks.yaml"
-DAILY_LOGS_FILE = BASE_DIR / "data" / "daily_logs.yaml"
 FRONTEND_DIR = BASE_DIR / "frontend"
-VA_NOTES_DIR = BASE_DIR / "data" / "va_notes"
-MEETING_NOTES_DIR = BASE_DIR / "data" / "meeting_notes"
-INTERVIEWS_DIR = BASE_DIR / "data" / "interviews"
 
 
 class Task(BaseModel):
@@ -142,21 +136,6 @@ app.add_middleware(
 if FRONTEND_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
-
-# Track config changes dynamically
-config_storage = {
-    "documents_dir": str(VA_NOTES_DIR),
-    "notes_dir": str(MEETING_NOTES_DIR),
-    "tasks_file": str(TASKS_YAML_FILE),
-    "logs_file": str(DAILY_LOGS_FILE)
-}
-
-# Helper function to ensure directories exist
-def ensure_dirs():
-    docs_dir = Path(config_storage["documents_dir"])
-    notes_dir = Path(config_storage["notes_dir"])
-    docs_dir.mkdir(parents=True, exist_ok=True)
-    notes_dir.mkdir(parents=True, exist_ok=True)
 
 
 # Authentication helper functions
@@ -1079,5 +1058,4 @@ async def setup_default_user():
 
 if __name__ == "__main__":
     import uvicorn
-    ensure_dirs()
     uvicorn.run(app, host="0.0.0.0", port=8000)
