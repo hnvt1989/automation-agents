@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Response
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Response, Depends, Header
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,6 +10,7 @@ import yaml
 from datetime import datetime
 import os
 from dotenv import load_dotenv, set_key, find_dotenv
+from typing import Optional
 
 from src.core.config import get_settings
 from src.mcp import get_mcp_manager
@@ -18,6 +19,8 @@ from src.agents.brave_search import BraveSearchAgent
 from src.agents.filesystem import FilesystemAgent
 from src.agents.rag_cloud import CloudRAGAgent
 from src.agents.analyzer import AnalyzerAgent
+from src.storage.auth_storage import AuthStorage
+from src.storage.document_manager import SupabaseDocumentManager
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 TASKS_FILE = BASE_DIR / "data" / "tasks.md"
@@ -46,6 +49,17 @@ class TaskUpdate(BaseModel):
     status: str | None = None
     priority: str | None = None
     due_date: str | None = None
+
+
+class DocumentCreate(BaseModel):
+    filename: str
+    content: str
+    category: str | None = "document"
+
+
+class DocumentUpdate(BaseModel):
+    content: str
+    category: str | None = None
     tags: list[str] | None = None
     todo: str | None = None
 
@@ -103,6 +117,16 @@ class SuggestedTaskRequest(BaseModel):
     category: str
     confidence: float
     context: str
+
+
+class UserRegistration(BaseModel):
+    email: str
+    password: str
+
+
+class UserLogin(BaseModel):
+    email: str
+    password: str
 
 
 # Load configuration from environment file
@@ -172,10 +196,48 @@ async def startup_event():
     }
     app.state.primary_agent = PrimaryAgent(model, agents)
     app.state.analyzer_agent = AnalyzerAgent()
+    app.state.auth_storage = AuthStorage()
 
 @app.on_event("shutdown")
 async def shutdown_event():
     await mcp_manager.shutdown()
+
+
+# Authentication dependency functions
+def get_auth_storage() -> AuthStorage:
+    return app.state.auth_storage
+
+
+def get_current_user(authorization: Optional[str] = Header(None)):
+    """Get current user from authorization header."""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header required")
+    
+    try:
+        # Extract token from "Bearer <token>"
+        token = authorization.split(" ")[1] if authorization.startswith("Bearer ") else authorization
+        auth_storage = get_auth_storage()
+        user = auth_storage.verify_session(token)
+        
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
+        
+        return user
+    except Exception as e:
+        raise HTTPException(status_code=401, detail="Invalid authorization header")
+
+
+def get_current_user_optional(authorization: Optional[str] = Header(None)):
+    """Get current user from authorization header, return None if not authenticated."""
+    if not authorization:
+        return None
+    
+    try:
+        token = authorization.split(" ")[1] if authorization.startswith("Bearer ") else authorization
+        auth_storage = get_auth_storage()
+        return auth_storage.verify_session(token)
+    except Exception:
+        return None
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -192,8 +254,71 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.send_text(f"Error: {str(e)}")
 
 
+# Authentication endpoints
+@app.post("/auth/register")
+async def register(user_data: UserRegistration):
+    """Register a new user."""
+    auth_storage = get_auth_storage()
+    result = auth_storage.register_user(user_data.email, user_data.password)
+    
+    if result["success"]:
+        return {
+            "success": True,
+            "user": result["user"],
+            "token": result["token"]
+        }
+    else:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+
+@app.post("/auth/login")
+async def login(user_data: UserLogin):
+    """Login a user."""
+    auth_storage = get_auth_storage()
+    result = auth_storage.login_user(user_data.email, user_data.password)
+    
+    if result["success"]:
+        return {
+            "success": True,
+            "user": result["user"],
+            "token": result["token"]
+        }
+    else:
+        raise HTTPException(status_code=401, detail=result["error"])
+
+
+@app.get("/auth/me")
+async def get_current_user_info(current_user = Depends(get_current_user)):
+    """Get current user information."""
+    return {
+        "success": True,
+        "user": current_user
+    }
+
+
+@app.post("/auth/logout")
+async def logout(current_user = Depends(get_current_user)):
+    """Logout user (client should discard token)."""
+    return {
+        "success": True,
+        "message": "Logged out successfully"
+    }
+
+
+@app.post("/auth/setup-default-user")
+async def setup_default_user():
+    """Create the default user and migrate existing data."""
+    auth_storage = get_auth_storage()
+    result = auth_storage.create_default_user("huynguyenvt1989@gmail.com", "Vungtau1989")
+    
+    if result["success"]:
+        return result
+    else:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+
 @app.get("/tasks")
-async def get_tasks():
+async def get_tasks(current_user = Depends(get_current_user)):
     tasks_file = Path(config_storage["tasks_file"])
     if not tasks_file.exists():
         return {"tasks": []}
@@ -203,12 +328,21 @@ async def get_tasks():
             yaml_tasks = yaml.safe_load(f) or []
         
         print(f"\n=== GET TASKS DEBUG ===")
+        print(f"Current user: {current_user.get('user_id')}")
         print(f"Total tasks in YAML file: {len(yaml_tasks)}")
-        for i, task in enumerate(yaml_tasks):
-            print(f"  [{i}] ID: {task.get('id')}, Title: {task.get('title')}")
+        
+        # Filter tasks for current user
+        user_tasks = []
+        for task in yaml_tasks:
+            # Show task if it belongs to user OR if no user_id is set (legacy data)
+            task_user_id = task.get('user_id')
+            if task_user_id == current_user.get('user_id') or task_user_id is None:
+                user_tasks.append(task)
+        
+        print(f"Tasks for user {current_user.get('user_id')}: {len(user_tasks)}")
         
         tasks = []
-        for i, task in enumerate(yaml_tasks):
+        for i, task in enumerate(user_tasks):
             # Format the task for frontend display
             formatted_task = {
                 "name": task.get("title", "Untitled Task"),
@@ -223,7 +357,7 @@ async def get_tasks():
             }
             tasks.append(formatted_task)
         
-        print(f"Returning {len(tasks)} formatted tasks")
+        print(f"Returning {len(tasks)} formatted tasks for user")
         return {"tasks": tasks}
     except Exception as e:
         print(f"Error reading tasks.yaml: {e}")
@@ -231,7 +365,7 @@ async def get_tasks():
 
 
 @app.put("/tasks")
-async def update_tasks(task_list: TaskList):
+async def update_tasks(task_list: TaskList, current_user = Depends(get_current_user)):
     # For now, just update the old tasks.md file
     # In a real implementation, you might want to update the YAML file
     lines = ["# Tasks"]
@@ -248,47 +382,161 @@ async def update_tasks(task_list: TaskList):
 
 
 @app.get("/documents")
-async def get_documents():
-    docs_dir = Path(config_storage["documents_dir"])
-    if not docs_dir.exists():
+async def get_documents(current_user = Depends(get_current_user)):
+    """Get all documents from Supabase"""
+    try:
+        doc_manager = SupabaseDocumentManager(
+            collection_name="documents", 
+            user_id=current_user.get('user_id')
+        )
+        
+        documents = doc_manager.list_documents()
+        
+        # Format for frontend compatibility
+        formatted_docs = []
+        for doc in documents:
+            name = doc["filename"].replace("_", " ").replace(".md", "").title()
+            formatted_docs.append({
+                "name": name,
+                "description": f"Document - {doc['file_size']} bytes, {doc['chunk_count']} chunks",
+                "filename": doc["filename"],
+                "category": doc.get("category", "document"),
+                "created_at": doc.get("created_at"),
+                "modified_at": doc.get("modified_at"),
+                "file_size": doc.get("file_size", 0)
+            })
+        
+        return {"documents": formatted_docs}
+        
+    except Exception as e:
+        print(f"Error getting documents: {e}")
         return {"documents": []}
 
-    documents = []
-    # Sort files by name for consistent ordering
-    sorted_files = sorted(docs_dir.glob("*.md"), key=lambda x: x.name)
-    
-    for file_path in sorted_files:
-        name = file_path.stem.replace("_", " ").title()
-        description = f"Markdown document - {file_path.name}"
-        documents.append({
-            "name": name,
-            "description": description,
-            "filename": file_path.name,
-            "path": str(file_path.relative_to(BASE_DIR))
-        })
-    
-    return {"documents": documents}
 
-
-@app.get("/documents/{doc_index}/content")
-async def get_document_content(doc_index: int):
-    """Get the content of a specific document"""
+@app.get("/documents/{filename}/content")
+async def get_document_content(filename: str, current_user = Depends(get_current_user)):
+    """Get the content of a specific document by filename"""
     try:
-        # Use same sorting as get_documents
-        docs_dir = Path(config_storage["documents_dir"])
-        docs = sorted(docs_dir.glob("*.md"), key=lambda x: x.name)
-        if 0 <= doc_index < len(docs):
-            file_path = docs[doc_index]
-            content = file_path.read_text()
-            return {"content": content}
+        doc_manager = SupabaseDocumentManager(
+            collection_name="documents", 
+            user_id=current_user.get('user_id')
+        )
+        
+        document = doc_manager.get_document(filename)
+        
+        if document:
+            return {"content": document["content"]}
         else:
             raise HTTPException(status_code=404, detail="Document not found")
+            
     except Exception as e:
+        print(f"Error getting document content: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/documents")
+async def create_document(doc: DocumentCreate, current_user = Depends(get_current_user)):
+    """Create a new document"""
+    try:
+        doc_manager = SupabaseDocumentManager(
+            collection_name="documents", 
+            user_id=current_user.get('user_id')
+        )
+        
+        # Check if document already exists
+        existing = doc_manager.get_document(doc.filename)
+        if existing:
+            raise HTTPException(status_code=400, detail="Document already exists")
+        
+        doc_id = doc_manager.create_document(
+            filename=doc.filename,
+            content=doc.content,
+            category=doc.category or "document"
+        )
+        
+        return {"success": True, "document_id": doc_id, "filename": doc.filename}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error creating document: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/documents/{filename}")
+async def update_document(filename: str, doc: DocumentUpdate, current_user = Depends(get_current_user)):
+    """Update an existing document"""
+    try:
+        doc_manager = SupabaseDocumentManager(
+            collection_name="documents", 
+            user_id=current_user.get('user_id')
+        )
+        
+        metadata = {}
+        if doc.category:
+            metadata["category"] = doc.category
+        
+        success = doc_manager.update_document(
+            filename=filename,
+            content=doc.content,
+            metadata=metadata
+        )
+        
+        if success:
+            return {"success": True, "filename": filename}
+        else:
+            raise HTTPException(status_code=404, detail="Document not found")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error updating document: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/documents/{filename}")
+async def delete_document(filename: str, current_user = Depends(get_current_user)):
+    """Delete a document"""
+    try:
+        doc_manager = SupabaseDocumentManager(
+            collection_name="documents", 
+            user_id=current_user.get('user_id')
+        )
+        
+        success = doc_manager.delete_document(filename)
+        
+        if success:
+            return {"success": True, "filename": filename}
+        else:
+            raise HTTPException(status_code=404, detail="Document not found")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error deleting document: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/documents/search")
+async def search_documents(q: str, limit: int = 10, current_user = Depends(get_current_user)):
+    """Search documents by content"""
+    try:
+        doc_manager = SupabaseDocumentManager(
+            collection_name="documents", 
+            user_id=current_user.get('user_id')
+        )
+        
+        results = doc_manager.search_documents(query=q, n_results=limit)
+        
+        return {"results": results}
+        
+    except Exception as e:
+        print(f"Error searching documents: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/notes")
-async def get_notes():
+async def get_notes(current_user = Depends(get_current_user)):
     notes_dir = Path(config_storage["notes_dir"])
     if not notes_dir.exists():
         return {"notes": []}
@@ -344,7 +592,7 @@ async def get_note_content(note_index: int):
 
 
 @app.get("/logs")
-async def get_logs():
+async def get_logs(current_user = Depends(get_current_user)):
     logs_file = Path(config_storage["logs_file"])
     if not logs_file.exists():
         return {"logs": []}
@@ -379,7 +627,7 @@ async def get_logs():
 
 
 @app.post("/tasks")
-async def create_task(task_update: TaskUpdate):
+async def create_task(task_update: TaskUpdate, current_user = Depends(get_current_user)):
     """Create a new task"""
     try:
         tasks_file = Path(config_storage["tasks_file"])
@@ -396,7 +644,8 @@ async def create_task(task_update: TaskUpdate):
             'due_date': task_update.due_date,
             'tags': task_update.tags or [],
             'estimate_hours': None,
-            'todo': task_update.todo
+            'todo': task_update.todo,
+            'user_id': current_user.get('user_id')  # Assign to current user
         }
         
         # Add to tasks list
@@ -412,7 +661,7 @@ async def create_task(task_update: TaskUpdate):
 
 
 @app.delete("/tasks/{task_id}")
-async def delete_task(task_id: str):
+async def delete_task(task_id: str, current_user = Depends(get_current_user)):
     """Delete a specific task by ID"""
     try:
         tasks_file = Path(config_storage["tasks_file"])
@@ -471,7 +720,7 @@ async def delete_task(task_id: str):
 
 
 @app.put("/tasks/{task_id}")
-async def update_task(task_id: str, task_update: TaskUpdate):
+async def update_task(task_id: str, task_update: TaskUpdate, current_user = Depends(get_current_user)):
     """Update a specific task by ID"""
     try:
         tasks_file = Path(config_storage["tasks_file"])

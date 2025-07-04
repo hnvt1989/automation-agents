@@ -1583,7 +1583,7 @@ function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 
 }
 
 
-function Panel({ tab, send }) {
+function Panel({ tab, send, authenticatedFetch }) {
     const [allItems, setAllItems] = useState({
         tasks: [],
         documents: [],
@@ -1636,42 +1636,45 @@ function Panel({ tab, send }) {
     }, []);
 
     useEffect(() => {
-        if (!loaded) {
-            // Fetch tasks
-            fetch(`${CONFIG.API_BASE_URL}/tasks`)
-                .then(r => r.json())
-                .then(data => { 
-                    if (data.tasks) {
-                        setAllItems(prev => ({ ...prev, tasks: data.tasks }));
-                    }
-                })
-                .catch(() => {});
-            
-            // Fetch documents
-            fetch(`${CONFIG.API_BASE_URL}/documents`)
-                .then(r => r.json())
-                .then(data => { 
-                    if (data.documents) {
-                        setAllItems(prev => ({ ...prev, documents: data.documents }));
-                    }
-                })
-                .catch(() => {});
-            
-            // Fetch notes (meeting notes from files)
-            fetch(`${CONFIG.API_BASE_URL}/notes`)
-                .then(r => r.json())
-                .then(data => { 
-                    console.log('🔍 Notes API Response:', data);
-                    if (data.notes) {
-                        setAllItems(prev => ({ ...prev, notes: data.notes }));
-                    }
-                })
-                .catch(error => {
-                    console.error('❌ Error fetching notes:', error);
-                });
-            
-            // Fetch logs
-            fetch(`${CONFIG.API_BASE_URL}/logs`)
+        if (!authenticatedFetch || loaded) {
+            return;
+        }
+        
+        // Fetch tasks
+        authenticatedFetch(`${CONFIG.API_BASE_URL}/tasks`)
+            .then(r => r.json())
+            .then(data => { 
+                if (data.tasks) {
+                    setAllItems(prev => ({ ...prev, tasks: data.tasks }));
+                }
+            })
+            .catch(() => {});
+        
+        // Fetch documents
+        authenticatedFetch(`${CONFIG.API_BASE_URL}/documents`)
+            .then(r => r.json())
+            .then(data => { 
+                if (data.documents) {
+                    setAllItems(prev => ({ ...prev, documents: data.documents }));
+                }
+            })
+            .catch(() => {});
+        
+        // Fetch notes (meeting notes from files)
+        authenticatedFetch(`${CONFIG.API_BASE_URL}/notes`)
+            .then(r => r.json())
+            .then(data => { 
+                console.log('🔍 Notes API Response:', data);
+                if (data.notes) {
+                    setAllItems(prev => ({ ...prev, notes: data.notes }));
+                }
+            })
+            .catch(error => {
+                console.error('❌ Error fetching notes:', error);
+            });
+        
+        // Fetch logs
+        authenticatedFetch(`${CONFIG.API_BASE_URL}/logs`)
                 .then(r => r.json())
                 .then(data => { 
                     if (data.logs) {
@@ -1680,34 +1683,32 @@ function Panel({ tab, send }) {
                 })
                 .catch(() => {});
             
-            // Fetch memos
-            fetch(`${CONFIG.API_BASE_URL}/memos`)
-                .then(r => r.json())
-                .then(data => { 
-                    if (data.memos) {
-                        setAllItems(prev => ({ ...prev, memos: data.memos }));
-                    }
-                })
-                .catch(() => {});
+        // Fetch memos
+        authenticatedFetch(`${CONFIG.API_BASE_URL}/memos`)
+            .then(r => r.json())
+            .then(data => { 
+                if (data.memos) {
+                    setAllItems(prev => ({ ...prev, memos: data.memos }));
+                }
+            })
+            .catch(() => {});
+        
+        // Fetch interviews
+        authenticatedFetch(`${CONFIG.API_BASE_URL}/interviews`)
+            .then(r => r.json())
+            .then(data => { 
+                if (data.interviews) {
+                    setAllItems(prev => ({ ...prev, interviews: data.interviews }));
+                }
+            })
+            .catch(() => {});
             
-            // Fetch interviews
-            fetch(`${CONFIG.API_BASE_URL}/interviews`)
-                .then(r => r.json())
-                .then(data => { 
-                    if (data.interviews) {
-                        setAllItems(prev => ({ ...prev, interviews: data.interviews }));
-                    }
-                })
-                .catch(() => {});
-            
-            setLoaded(true);
-        }
-    }, [loaded]);
+        setLoaded(true);
+    }, [loaded, authenticatedFetch]);
 
 
     const getCurrentItems = () => {
         let items = allItems[tab] || [];
-        console.log(`🗂️ Getting items for tab "${tab}":`, items);
         
         // Apply search filter
         if (searchQuery) {
@@ -1818,10 +1819,9 @@ function Panel({ tab, send }) {
     };
 
     const saveTasks = () => {
-        if (tab !== 'tasks') return;
-        fetch(`${CONFIG.API_BASE_URL}/tasks`, {
+        if (tab !== 'tasks' || !authenticatedFetch) return;
+        authenticatedFetch(`${CONFIG.API_BASE_URL}/tasks`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ tasks: allItems.tasks }),
         });
     };
@@ -2304,6 +2304,23 @@ function Panel({ tab, send }) {
                 </div>
             </div>
             
+            {/* Debug Display */}
+            <div style={{
+                padding: '16px',
+                margin: '16px 0',
+                border: '2px solid rgba(255, 215, 0, 0.5)',
+                borderRadius: '8px',
+                background: 'rgba(255, 215, 0, 0.1)',
+                fontFamily: 'Roboto Mono, monospace',
+                fontSize: '12px',
+                color: '#ffd700'
+            }}>
+                <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>Debug: allItems State</div>
+                <div>Current tab: {tab}</div>
+                <div>Items count: {items.length}</div>
+                <div>All items: {JSON.stringify(allItems, null, 2)}</div>
+            </div>
+
             <div className="items-list">
                 {items.length === 0 ? (
                     <div className="empty-state">
@@ -2526,6 +2543,197 @@ function Chat({ messages, send }) {
     );
 }
 
+// Authentication Modal Component
+function AuthModal({ onLogin }) {
+    const [isLogin, setIsLogin] = useState(true);
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        setError('');
+
+        try {
+            const endpoint = isLogin ? '/auth/login' : '/auth/register';
+            const response = await fetch(`${CONFIG.API_BASE_URL}${endpoint}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ email, password }),
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                localStorage.setItem('authToken', data.token);
+                localStorage.setItem('user', JSON.stringify(data.user));
+                onLogin(data.user, data.token);
+            } else {
+                setError(data.detail || 'Authentication failed');
+            }
+        } catch (err) {
+            setError('Connection error. Please try again.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.9)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000
+        }}>
+            <div style={{
+                background: 'linear-gradient(180deg, rgba(22, 33, 62, 0.95) 0%, rgba(10, 10, 10, 0.95) 100%)',
+                border: '2px solid rgba(0, 255, 136, 0.3)',
+                borderRadius: '12px',
+                padding: '32px',
+                minWidth: '400px',
+                boxShadow: '0 0 30px rgba(0, 255, 136, 0.2)',
+                backdropFilter: 'blur(10px)'
+            }}>
+                <h2 style={{
+                    fontFamily: 'Orbitron, monospace',
+                    color: '#00ff88',
+                    textAlign: 'center',
+                    marginBottom: '24px',
+                    fontSize: '24px',
+                    fontWeight: '700',
+                    textShadow: '0 0 10px rgba(0, 255, 136, 0.5)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '2px'
+                }}>
+                    {isLogin ? 'Access Terminal' : 'Create Account'}
+                </h2>
+                
+                <form onSubmit={handleSubmit}>
+                    <div style={{ marginBottom: '20px' }}>
+                        <label style={{
+                            display: 'block',
+                            marginBottom: '8px',
+                            color: '#00ff88',
+                            fontFamily: 'Roboto Mono, monospace',
+                            fontSize: '14px'
+                        }}>
+                            Email Address
+                        </label>
+                        <input
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            required
+                            style={{
+                                width: '100%',
+                                padding: '12px',
+                                background: 'rgba(0, 0, 0, 0.5)',
+                                border: '1px solid rgba(0, 255, 136, 0.3)',
+                                borderRadius: '6px',
+                                color: '#00ff88',
+                                fontFamily: 'Roboto Mono, monospace',
+                                fontSize: '14px'
+                            }}
+                            placeholder="Enter your email"
+                        />
+                    </div>
+                    
+                    <div style={{ marginBottom: '24px' }}>
+                        <label style={{
+                            display: 'block',
+                            marginBottom: '8px',
+                            color: '#00ff88',
+                            fontFamily: 'Roboto Mono, monospace',
+                            fontSize: '14px'
+                        }}>
+                            Password
+                        </label>
+                        <input
+                            type="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
+                            style={{
+                                width: '100%',
+                                padding: '12px',
+                                background: 'rgba(0, 0, 0, 0.5)',
+                                border: '1px solid rgba(0, 255, 136, 0.3)',
+                                borderRadius: '6px',
+                                color: '#00ff88',
+                                fontFamily: 'Roboto Mono, monospace',
+                                fontSize: '14px'
+                            }}
+                            placeholder="Enter your password"
+                        />
+                    </div>
+                    
+                    {error && (
+                        <div style={{
+                            color: '#ff4444',
+                            marginBottom: '16px',
+                            textAlign: 'center',
+                            fontFamily: 'Roboto Mono, monospace',
+                            fontSize: '14px'
+                        }}>
+                            {error}
+                        </div>
+                    )}
+                    
+                    <button
+                        type="submit"
+                        disabled={loading}
+                        style={{
+                            width: '100%',
+                            padding: '14px',
+                            background: loading ? 'rgba(0, 255, 136, 0.3)' : 'linear-gradient(90deg, #00ff88 0%, #00cc6a 100%)',
+                            border: 'none',
+                            borderRadius: '6px',
+                            color: loading ? '#666' : '#000',
+                            fontFamily: 'Orbitron, monospace',
+                            fontSize: '16px',
+                            fontWeight: '600',
+                            cursor: loading ? 'not-allowed' : 'pointer',
+                            textTransform: 'uppercase',
+                            letterSpacing: '1px',
+                            marginBottom: '16px'
+                        }}
+                    >
+                        {loading ? 'Processing...' : (isLogin ? 'Access System' : 'Create Account')}
+                    </button>
+                    
+                    <div style={{ textAlign: 'center' }}>
+                        <button
+                            type="button"
+                            onClick={() => setIsLogin(!isLogin)}
+                            style={{
+                                background: 'none',
+                                border: 'none',
+                                color: '#00ff88',
+                                fontFamily: 'Roboto Mono, monospace',
+                                fontSize: '14px',
+                                cursor: 'pointer',
+                                textDecoration: 'underline'
+                            }}
+                        >
+                            {isLogin ? 'Need an account? Register here' : 'Already have an account? Login here'}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+}
+
 function App() {
     const [tab, setTab] = useState('tasks');
     const [messages, setMessages] = useState([]);
@@ -2533,9 +2741,64 @@ function App() {
     const [showDeadlineAlert, setShowDeadlineAlert] = useState(false);
     const [deadlineAlertType, setDeadlineAlertType] = useState('danger');
     const [deadlineAlertMessage, setDeadlineAlertMessage] = useState('');
+    const [user, setUser] = useState(null);
+    const [authToken, setAuthToken] = useState(null);
+    const [showAuth, setShowAuth] = useState(true);
     const wsRef = useRef(null);
 
+    // Check for existing authentication on component mount
     useEffect(() => {
+        const token = localStorage.getItem('authToken');
+        const savedUser = localStorage.getItem('user');
+        
+        if (token && savedUser) {
+            try {
+                const userData = JSON.parse(savedUser);
+                setAuthToken(token);
+                setUser(userData);
+                setShowAuth(false);
+            } catch (error) {
+                // Invalid stored data, clear it
+                localStorage.removeItem('authToken');
+                localStorage.removeItem('user');
+            }
+        }
+    }, []);
+
+    const handleLogin = (userData, token) => {
+        setUser(userData);
+        setAuthToken(token);
+        setShowAuth(false);
+    };
+
+    const handleLogout = () => {
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('user');
+        setUser(null);
+        setAuthToken(null);
+        setShowAuth(true);
+    };
+
+    // Update fetch requests to include auth token
+    const authenticatedFetch = React.useCallback((url, options = {}) => {
+        const headers = {
+            'Content-Type': 'application/json',
+            ...options.headers,
+        };
+        
+        if (authToken) {
+            headers['Authorization'] = `Bearer ${authToken}`;
+        }
+        
+        return fetch(url, {
+            ...options,
+            headers
+        });
+    }, [authToken]);
+
+    useEffect(() => {
+        if (!authToken) return; // Don't connect WebSocket until authenticated
+        
         const ws = new WebSocket(CONFIG.WS_URL);
         wsRef.current = ws;
         ws.onmessage = (e) => {
@@ -2553,11 +2816,13 @@ function App() {
             });
         };
         return () => ws.close();
-    }, []);
+    }, [authToken]);
 
     // Fetch tasks and check for deadline alerts
     useEffect(() => {
-        fetch(`${CONFIG.API_BASE_URL}/tasks`)
+        if (!authToken) return; // Don't fetch data until authenticated
+        
+        authenticatedFetch(`${CONFIG.API_BASE_URL}/tasks`)
             .then(r => r.json())
             .then(data => {
                 if (data.tasks) {
@@ -2599,7 +2864,7 @@ function App() {
                 }
             })
             .catch(() => {});
-    }, []);
+    }, [authToken]);
 
     const send = (text) => {
         if (!text.trim() || !wsRef.current) return;
@@ -2609,32 +2874,62 @@ function App() {
 
     return (
         <div className="container">
-            <Chat messages={messages} send={send} />
-            <div className="workspace-panel">
-                <div className="workspace-header">
-                    <div className="workspace-title">Mission Control</div>
-                    <Tabs current={tab} onSelect={setTab} />
-                </div>
-                <div className="workspace-content">
-                    <Panel tab={tab} send={send} />
-                </div>
-            </div>
+            {showAuth && <AuthModal onLogin={handleLogin} />}
             
-            {/* Deadline Alert */}
-            {showDeadlineAlert && (
-                <div 
-                    className={`deadline-alert ${deadlineAlertType === 'warning' ? 'warning' : ''}`}
-                    onClick={() => setShowDeadlineAlert(false)}
-                    style={{ cursor: 'pointer' }}
-                >
-                    <div style={{ fontWeight: '600', marginBottom: '4px' }}>
-                        Deadline Alert
+            {!showAuth && (
+                <React.Fragment>
+                    <Chat messages={messages} send={send} />
+                    <div className="workspace-panel">
+                        <div className="workspace-header">
+                            <div className="workspace-title">Mission Control</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                                <div style={{ 
+                                    color: '#00ff88', 
+                                    fontSize: '14px',
+                                    fontFamily: 'Roboto Mono, monospace'
+                                }}>
+                                    {user && user.email}
+                                </div>
+                                <button
+                                    onClick={handleLogout}
+                                    style={{
+                                        background: 'rgba(255, 68, 68, 0.8)',
+                                        border: '1px solid rgba(255, 68, 68, 0.5)',
+                                        borderRadius: '4px',
+                                        color: '#fff',
+                                        padding: '6px 12px',
+                                        fontSize: '12px',
+                                        fontFamily: 'Roboto Mono, monospace',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    Logout
+                                </button>
+                                <Tabs current={tab} onSelect={setTab} />
+                            </div>
+                        </div>
+                        <div className="workspace-content">
+                            <Panel tab={tab} send={send} authenticatedFetch={authenticatedFetch} />
+                        </div>
                     </div>
-                    <div>{deadlineAlertMessage}</div>
-                    <div style={{ fontSize: '12px', marginTop: '4px', opacity: 0.9 }}>
-                        Click to dismiss
-                    </div>
-                </div>
+                    
+                    {/* Deadline Alert */}
+                    {showDeadlineAlert && (
+                        <div 
+                            className={`deadline-alert ${deadlineAlertType === 'warning' ? 'warning' : ''}`}
+                            onClick={() => setShowDeadlineAlert(false)}
+                            style={{ cursor: 'pointer' }}
+                        >
+                            <div style={{ fontWeight: '600', marginBottom: '4px' }}>
+                                Deadline Alert
+                            </div>
+                            <div>{deadlineAlertMessage}</div>
+                            <div style={{ fontSize: '12px', marginTop: '4px', opacity: 0.9 }}>
+                                Click to dismiss
+                            </div>
+                        </div>
+                    )}
+                </React.Fragment>
             )}
         </div>
     );

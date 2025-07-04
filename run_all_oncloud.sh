@@ -11,6 +11,10 @@ if [ -d "venv" ]; then
     source venv/bin/activate
 fi
 
+# Install authentication dependencies
+echo "Installing authentication dependencies..."
+pip install PyJWT>=2.8.0
+
 # Function to check if port is in use
 check_port() {
     local port=$1
@@ -57,8 +61,8 @@ if check_port $FRONTEND_PORT; then
 fi
 
 # Start backend API server in background
-echo "Starting backend API server on port $BACKEND_PORT..."
-uvicorn src.api_server_supabase:app --reload --host 0.0.0.0 --port $BACKEND_PORT &
+echo "Starting backend API server with authentication on port $BACKEND_PORT..."
+uvicorn src.api_server:app --reload --host 0.0.0.0 --port $BACKEND_PORT &
 BACKEND_PID=$!
 
 # Wait a moment for backend to start

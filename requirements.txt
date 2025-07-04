@@ -103,3 +103,6 @@ sentence-transformers>=2.2.0  # For cross-encoder reranking
 
 # For calendar parsing
 pytz>=2023.3  # Timezone handling for calendar events
+
+# For authentication
+PyJWT>=2.8.0  # JWT token handling

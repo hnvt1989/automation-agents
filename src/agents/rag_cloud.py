@@ -99,8 +99,8 @@ class CloudRAGAgent(BaseAgent):
                     log_info(f"Searching across all collections for: {query}")
                     all_results = []
                     
-                    # Define collections to search
-                    collections_to_search = ["documents", "knowledge_base", "default", "websites", "conversations"]
+                    # Define collections to search (including our migrated files)
+                    collections_to_search = ["documents", "file_migration", "knowledge_base", "default", "websites", "conversations"]
                     
                     for coll in collections_to_search:
                         try:
