@@ -995,7 +995,7 @@ function WorkspaceItem({ item, type, isSelected, onClick }) {
             <div className="item-icon"></div>
             <div className="item-content">
                 <div className="item-title">
-                    {item.name}
+                    {item.title || item.name}
                     {deadlineBadge && (
                         <span className={`deadline-badge ${deadlineBadge.class}`}>
                             {deadlineBadge.text}
@@ -1123,7 +1123,7 @@ function LoggingModal({ isOpen, onClose, onSave, taskItem, errors, isSubmitting 
 function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 'edit' }) {
     const isAddMode = mode === 'add';
     const [formData, setFormData] = useState({
-        name: (item && item.name) || '',
+        name: (item && (item.title || item.name)) || '',
         description: (item && item.description) || '',
         content: (item && item.content) || '',
         ...(item || {})
@@ -1645,7 +1645,13 @@ function Panel({ tab, send, authenticatedFetch }) {
             .then(r => r.json())
             .then(data => { 
                 if (data.tasks) {
-                    setAllItems(prev => ({ ...prev, tasks: data.tasks }));
+                    // Map backend field names to frontend field names
+                    const mappedTasks = data.tasks.map(task => ({
+                        ...task,
+                        dueDate: task.due_date,
+                        name: task.title || task.name // For backward compatibility
+                    }));
+                    setAllItems(prev => ({ ...prev, tasks: mappedTasks }));
                 }
             })
             .catch(() => {});
@@ -1713,7 +1719,7 @@ function Panel({ tab, send, authenticatedFetch }) {
         // Apply search filter
         if (searchQuery) {
             items = items.filter(item => 
-                (item.name && item.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                ((item.title || item.name) && (item.title || item.name).toLowerCase().includes(searchQuery.toLowerCase())) ||
                 (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()))
             );
         }
@@ -1940,7 +1946,7 @@ function Panel({ tab, send, authenticatedFetch }) {
                                 return item.id === editingItem.id;
                             }
                             // Fallback: compare by name and description
-                            return item.name === editingItem.name && 
+                            return (item.title || item.name) === (editingItem.title || editingItem.name) && 
                                    item.description === editingItem.description;
                         });
                         
@@ -2012,7 +2018,7 @@ function Panel({ tab, send, authenticatedFetch }) {
                                     return item.id === editingItem.id;
                                 }
                                 // Fallback: compare by name and description
-                                return item.name === editingItem.name && 
+                                return (item.title || item.name) === (editingItem.title || editingItem.name) && 
                                        item.description === editingItem.description;
                             });
                         }
@@ -2053,9 +2059,9 @@ function Panel({ tab, send, authenticatedFetch }) {
         // Send message to index the file at its path
         if (item && item.path) {
             send(`Index the file at this directory ${item.path}`);
-        } else if (item && item.name) {
+        } else if (item && (item.title || item.name)) {
             // Fallback if path is not available
-            send(`Index the file: ${item.name}`);
+            send(`Index the file: ${item.title || item.name}`);
         }
         setEditingItem(null);
         setEditingItemIndex(null);
@@ -2302,23 +2308,6 @@ function Panel({ tab, send, authenticatedFetch }) {
                         </React.Fragment>
                     )}
                 </div>
-            </div>
-            
-            {/* Debug Display */}
-            <div style={{
-                padding: '16px',
-                margin: '16px 0',
-                border: '2px solid rgba(255, 215, 0, 0.5)',
-                borderRadius: '8px',
-                background: 'rgba(255, 215, 0, 0.1)',
-                fontFamily: 'Roboto Mono, monospace',
-                fontSize: '12px',
-                color: '#ffd700'
-            }}>
-                <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>Debug: allItems State</div>
-                <div>Current tab: {tab}</div>
-                <div>Items count: {items.length}</div>
-                <div>All items: {JSON.stringify(allItems, null, 2)}</div>
             </div>
 
             <div className="items-list">
@@ -2826,16 +2815,22 @@ function App() {
             .then(r => r.json())
             .then(data => {
                 if (data.tasks) {
-                    setTasks(data.tasks);
+                    // Map backend field names to frontend field names
+                    const mappedTasks = data.tasks.map(task => ({
+                        ...task,
+                        dueDate: task.due_date,
+                        name: task.title || task.name // For backward compatibility
+                    }));
+                    setTasks(mappedTasks);
                     
                     // Check for deadline alerts (exclude completed tasks)
-                    const overdueTasks = data.tasks.filter(task => 
+                    const overdueTasks = mappedTasks.filter(task => 
                         task.dueDate && 
                         getDeadlineStatus(task.dueDate) === 'overdue' &&
                         task.status !== 'completed' && 
                         !task.completed
                     );
-                    const dueSoonTasks = data.tasks.filter(task => 
+                    const dueSoonTasks = mappedTasks.filter(task => 
                         task.dueDate && 
                         getDeadlineStatus(task.dueDate) === 'due-soon' &&
                         task.status !== 'completed' && 
