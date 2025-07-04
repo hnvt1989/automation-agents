@@ -75,7 +75,7 @@ This is a PydanticAI-based multi-agent system using Model Context Protocol (MCP)
 - **Primary Agent** (`src/agents/primary.py`) - Main orchestrator that routes requests to specialized agents
 - **Specialized Agents** - Each handles specific domains (search, filesystem, RAG, planning, etc.)
 - **MCP Integration** (`src/mcp/manager.py`) - Manages external tool servers (GitHub, Slack)
-- **Storage Layer** (`src/storage/`) - ChromaDB vector database for RAG functionality
+- **Storage Layer** (`src/storage/`) - Supabase vector database and Neo4j graph for RAG functionality
 
 ### Key Components
 
@@ -87,10 +87,10 @@ This is a PydanticAI-based multi-agent system using Model Context Protocol (MCP)
 - `brave_search.py` - Web search capabilities
 
 #### Storage Layer (`src/storage/`)
-- `chromadb_client.py` - Vector database operations
+- `supabase_vector.py` - Supabase vector database operations
+- `neo4j_cloud.py` - Neo4j Aura cloud integration
+- `cloud_graph_manager.py` - Cloud-based knowledge graph management
 - `contextual_chunker.py` - Intelligent text segmentation
-- `collection_manager.py` - Multi-collection RAG management
-- `graph_knowledge_manager.py` - Neo4j integration for knowledge graphs
 
 #### Processing Layer (`src/processors/`)
 - `image.py` - Vision API integration for calendar/chat screenshots
@@ -133,10 +133,11 @@ def your_tool(ctx: RunContext[YourDepsType], param: str) -> str:
 MCP servers are auto-managed via `npx` - no manual installation required. The system handles GitHub, Slack, and other external tool integrations through standardized MCP protocols.
 
 ### RAG Implementation
-The RAG system uses multi-collection architecture:
+The RAG system uses cloud-based storage:
+- Supabase for vector similarity search
+- Neo4j Aura for knowledge graph operations
 - Contextual chunking with overlap
 - Metadata-rich indexing (file paths, chunk indices)
-- ChromaDB for vector similarity search
 - Support for images, text, and structured data
 
 ### Configuration Management

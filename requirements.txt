@@ -90,14 +90,16 @@ zipp==3.21.0
 crawl4ai
 openai
 # supabase
+supabase>=2.4.0
 
 # For image processing
 Pillow>=10.0.0  # PIL for image handling and validation
-chromadb>=0.4.0  # Vector database for storing embeddings
 
 # For knowledge graph
-graphiti-core>=0.1.0  # Knowledge graph management
 neo4j>=5.0.0  # Graph database driver
+
+# For advanced RAG features
+sentence-transformers>=2.2.0  # For cross-encoder reranking
 
 # For calendar parsing
 pytz>=2023.3  # Timezone handling for calendar events

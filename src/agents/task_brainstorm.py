@@ -14,8 +14,7 @@ from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
-from src.agents.rag import RAGAgent
-from src.storage.chromadb_client import get_chromadb_client
+from src.agents.rag_cloud import CloudRAGAgent
 from src.utils.logging import log_info, log_error, log_warning
 from src.core.config import get_settings
 from src.agents.enhanced_rag import (

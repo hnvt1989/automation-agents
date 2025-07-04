@@ -101,14 +101,9 @@ def reset_singletons():
     import src.mcp.manager
     src.mcp.manager._mcp_manager = None
     
-    # Reset ChromaDB client singleton
-    import src.storage.chromadb_client
-    src.storage.chromadb_client._chromadb_client = None
-    
     yield
     
     # Clean up after test
     src.core.config._settings = None
     src.core.config._mcp_config = None
     src.mcp.manager._mcp_manager = None
-    src.storage.chromadb_client._chromadb_client = None

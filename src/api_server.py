@@ -16,7 +16,7 @@ from src.mcp import get_mcp_manager
 from src.agents.primary import PrimaryAgent
 from src.agents.brave_search import BraveSearchAgent
 from src.agents.filesystem import FilesystemAgent
-from src.agents.rag import RAGAgent
+from src.agents.rag_cloud import CloudRAGAgent
 from src.agents.analyzer import AnalyzerAgent
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -168,7 +168,7 @@ async def startup_event():
     agents = {
         "brave_search": BraveSearchAgent(model),
         "filesystem": FilesystemAgent(model),
-        "rag": RAGAgent(model),
+        "rag": CloudRAGAgent(model, use_cloud=True),
     }
     app.state.primary_agent = PrimaryAgent(model, agents)
     app.state.analyzer_agent = AnalyzerAgent()

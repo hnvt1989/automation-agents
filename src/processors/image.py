@@ -18,7 +18,6 @@ import re
 from src.utils.logging import log_info, log_warning, log_error
 
 from openai import AsyncOpenAI
-import chromadb
 
 load_dotenv("local.env")
 
@@ -549,162 +548,6 @@ async def process_image_chunk(original_chunk_content: str, chunk_idx: int, image
         embedding=embedding_vector
     )
 
-async def add_image_chunk_to_collection(chunk: ProcessedImageChunk, chroma_collection: chromadb.api.models.Collection.Collection):
-    """Add a processed image chunk to the provided ChromaDB collection."""
-    if not chroma_collection:
-        log_error(f"ChromaDB collection not provided. Cannot add chunk for {chunk.image_source}.")
-        return None
-    
-    if chunk.embedding is None:
-        log_warning(f"Skipping chunk {chunk.chunk_number} from {chunk.image_source} due to missing embedding.")
-        return None
-
-    chroma_metadata = {
-        "source_type": "image_text_contextualized",
-        "image_source": chunk.image_source,
-        "title": chunk.title or "N/A",
-        "summary": chunk.summary or "N/A",
-        "image_chunk_number": chunk.chunk_number,
-        "processed_at": chunk.metadata.get("processed_at", datetime.now(timezone.utc).isoformat()),
-        "content_length": len(chunk.content),
-        "original_content_length": chunk.metadata.get("original_content_length", 0),
-        "context_prefix_length": chunk.metadata.get("context_prefix_length", 0)
-    }
-    
-    # Add other metadata
-    for key, value in chunk.metadata.items():
-        if key not in chroma_metadata and isinstance(value, (str, int, float, bool)):
-            chroma_metadata[key] = value
-    
-    # Create unique document ID
-    content_hash_short = hashlib.md5(chunk.content.encode('utf-8')).hexdigest()[:8]
-    source_hash = hashlib.md5(chunk.image_source.encode('utf-8')).hexdigest()[:8]
-    doc_id = f"img_txt::{source_hash}::num_{chunk.chunk_number}::hash_{content_hash_short}"
-
-    try:
-        chroma_collection.add(
-            ids=[doc_id],
-            embeddings=[chunk.embedding],
-            documents=[chunk.content],
-            metadatas=[chroma_metadata]
-        )
-        log_info(f"Added image text chunk ID {doc_id} (Source: {chunk.image_source}, Chunk: {chunk.chunk_number}) to ChromaDB collection '{chroma_collection.name}'.")
-        return doc_id
-    except chromadb.errors.IDAlreadyExistsError:
-        log_warning(f"Image text chunk ID {doc_id} already exists in ChromaDB for {chunk.image_source}. Skipping.")
-        return doc_id
-    except Exception as e:
-        log_error(f"Error adding image text chunk ID {doc_id} for {chunk.image_source} to ChromaDB: {e}")
-        return None
-
-async def process_image_and_index(image_source: str, source_type: str, chroma_collection: chromadb.api.models.Collection.Collection):
-    """
-    Process a single image: extract text, chunk it, and index into ChromaDB.
-    
-    Args:
-        image_source: File path, URL, or base64 string
-        source_type: "file", "url", or "base64"
-        chroma_collection: ChromaDB collection to store the results
-    """
-    log_info(f"Starting image processing for: {image_source} (type: {source_type})")
-    
-    # Extract text from image
-    extracted_text = await extract_text_from_image(image_source, source_type)
-    
-    if not extracted_text.strip():
-        log_warning(f"No text extracted from image: {image_source}. Skipping further processing.")
-        return
-    
-    log_info(f"Successfully extracted {len(extracted_text)} characters from {image_source}")
-    
-    # Split into chunks
-    text_chunks = chunk_text(extracted_text)
-    log_info(f"Split extracted text from {image_source} into {len(text_chunks)} chunks.")
-    
-    # Process each chunk
-    for i, original_chunk_str in enumerate(text_chunks):
-        if not original_chunk_str.strip():
-            log_warning(f"Skipping empty chunk {i} from {image_source} after chunking.")
-            continue
-        
-        # Process the chunk
-        processed_chunk_object = await process_image_chunk(original_chunk_str, i, image_source, extracted_text)
-        
-        if processed_chunk_object:
-            if chroma_collection:
-                await add_image_chunk_to_collection(processed_chunk_object, chroma_collection)
-            else:
-                log_error(f"ChromaDB collection not provided. Cannot store chunk {i} from {image_source}.")
-        else:
-            log_error(f"Failed to process chunk {i} from {image_source}. It will not be stored.")
-
-async def run_image_processor(image_sources: List[Dict[str, str]], 
-                             chroma_collection: chromadb.api.models.Collection.Collection,
-                             max_concurrent_processing: int = 3):
-    """
-    Main function to run the image processor, storing results in the provided ChromaDB Collection.
-    
-    Args:
-        image_sources: List of dicts with 'source' and 'type' keys
-                      e.g., [{'source': '/path/to/image.jpg', 'type': 'file'},
-                             {'source': 'https://example.com/image.png', 'type': 'url'}]
-        chroma_collection: ChromaDB collection to store the results
-        max_concurrent_processing: Maximum number of concurrent image processing tasks
-    """
-    if not chroma_collection:
-        log_error("CRITICAL: ChromaDB collection was not provided to run_image_processor. Processed data will NOT be stored.")
-        return
-    
-    if not image_sources:
-        log_warning("No image sources provided. Exiting image processor.")
-        return
-    
-    # Validate image sources
-    valid_sources = []
-    for source_info in image_sources:
-        if not isinstance(source_info, dict) or 'source' not in source_info or 'type' not in source_info:
-            log_warning(f"Invalid source info format: {source_info}. Skipping.")
-            continue
-        
-        source = source_info['source']
-        source_type = source_info['type']
-        
-        if source_type not in ['file', 'url', 'base64']:
-            log_warning(f"Invalid source type '{source_type}' for {source}. Skipping.")
-            continue
-        
-        if source_type == 'file' and not os.path.exists(source):
-            log_warning(f"File not found: {source}. Skipping.")
-            continue
-        
-        valid_sources.append(source_info)
-    
-    if not valid_sources:
-        log_warning("No valid image sources after filtering. Exiting.")
-        return
-    
-    log_info(f"Total valid image sources to process: {len(valid_sources)}")
-    
-    # Process images with concurrency control
-    semaphore = asyncio.Semaphore(max_concurrent_processing)
-    processing_tasks = []
-    
-    async def process_with_semaphore(source_info: Dict[str, str]):
-        async with semaphore:
-            await process_image_and_index(
-                source_info['source'], 
-                source_info['type'], 
-                chroma_collection
-            )
-    
-    for source_info in valid_sources:
-        processing_tasks.append(process_with_semaphore(source_info))
-    
-    if processing_tasks:
-        await asyncio.gather(*processing_tasks)
-    
-    log_info("Image processor run finished.")
-
 async def parse_conversation_from_text(extracted_text: str, image_source: str) -> ConversationLog | None:
     """
     Parse conversation structure from extracted text using an LLM.
@@ -806,10 +649,8 @@ Return the structured conversation data as JSON."""
             
             message = ConversationMessage(
                 speaker=msg_data.get("speaker", "Unknown"),
-                timestamp=msg_data.get("timestamp", ""),
+                timestamp=msg_data.get("timestamp"),
                 content=message_content,
-                thread_id=None,  # Could be enhanced later
-                message_id=None,  # Could be enhanced later
                 reactions=reactions if reactions else None
             )
             messages.append(message)
@@ -822,147 +663,15 @@ Return the structured conversation data as JSON."""
             participants=parsed_data.get("participants", []),
             messages=messages,
             metadata={
-                "extracted_text_length": len(extracted_text),
-                "message_count": len(messages),
-                "platform_detected": parsed_data.get("platform", "generic")
+                "parsed_at": datetime.now(timezone.utc).isoformat(),
+                "message_count": len(messages)
             },
             extracted_at=datetime.now(timezone.utc).isoformat()
         )
         
-        log_info(f"Successfully parsed conversation from {image_source}: {len(messages)} messages, platform: {conversation_log.platform}")
+        log_info(f"Successfully parsed conversation from {image_source}: {len(messages)} messages from {len(conversation_log.participants)} participants")
         return conversation_log
         
-    except json.JSONDecodeError as e:
-        log_error(f"Failed to parse JSON response for conversation from {image_source}: {e}")
-        return None
     except Exception as e:
         log_error(f"Error parsing conversation from {image_source}: {e}")
         return None
-
-async def process_conversation_and_index(conversation_log: ConversationLog, chroma_collection: chromadb.api.models.Collection.Collection):
-    """
-    Process a conversation log and index it into ChromaDB with conversation-specific metadata.
-    
-    Args:
-        conversation_log: Parsed conversation log
-        chroma_collection: ChromaDB collection to store the results
-    """
-    if not chroma_collection:
-        log_error("ChromaDB collection not provided. Cannot store conversation log.")
-        return
-    
-    if not conversation_log or not conversation_log.messages:
-        log_warning("No valid conversation log or messages to process.")
-        return
-    
-    log_info(f"Processing conversation from {conversation_log.image_source} with {len(conversation_log.messages)} messages")
-    
-    # Create different types of documents for better searchability
-    documents_to_add = []
-    metadatas_to_add = []
-    ids_to_add = []
-    
-    # 1. Full conversation summary document
-    conversation_summary = f"Conversation on {conversation_log.platform}"
-    if conversation_log.channel:
-        conversation_summary += f" in #{conversation_log.channel}"
-    
-    conversation_summary += f"\nParticipants: {', '.join(conversation_log.participants or [])}\n\n"
-    
-    for msg in conversation_log.messages:
-        timestamp_str = f" ({msg.timestamp})" if msg.timestamp else ""
-        conversation_summary += f"{msg.speaker}{timestamp_str}: {msg.content}\n"
-        conversation_summary += "\n"
-    
-    # Add conversation context at the end
-    conversation_summary += f"\n\nConversation context: {conversation_log.platform} conversation"
-    if conversation_log.channel:
-        conversation_summary += f" in #{conversation_log.channel}"
-    if len(conversation_log.participants or []) > 1:
-        conversation_summary += f" with {', '.join(conversation_log.participants)}"
-    
-    # Get embedding for full conversation
-    full_embedding = await get_embedding(conversation_summary)
-    if full_embedding:
-        source_hash = hashlib.md5(conversation_log.image_source.encode('utf-8')).hexdigest()[:8]
-        full_doc_id = f"conv_full::{source_hash}::all_messages"
-        
-        documents_to_add.append(conversation_summary)
-        metadatas_to_add.append({
-            "source_type": "conversation_full",
-            "image_source": conversation_log.image_source,
-            "platform": conversation_log.platform,
-            "channel": conversation_log.channel or "unknown",
-            "participants": json.dumps(conversation_log.participants or []),
-            "message_count": len(conversation_log.messages),
-            "processed_at": conversation_log.extracted_at,
-            "content_type": "full_conversation"
-        })
-        ids_to_add.append(full_doc_id)
-    
-    # 2. Individual message documents for granular search
-    for i, msg in enumerate(conversation_log.messages):
-        message_content = f"Message from {msg.speaker}"
-        if msg.timestamp:
-            message_content += f" at {msg.timestamp}"
-        message_content += f":\n{msg.content}"
-        
-        # Add conversation context
-        message_content += f"\n\nConversation context: {conversation_log.platform} conversation"
-        if conversation_log.channel:
-            message_content += f" in #{conversation_log.channel}"
-        if len(conversation_log.participants or []) > 1:
-            message_content += f" with {', '.join(conversation_log.participants)}"
-        
-        msg_embedding = await get_embedding(message_content)
-        if msg_embedding:
-            msg_doc_id = f"conv_msg::{source_hash}::msg_{i}_{hashlib.md5(msg.content.encode('utf-8')).hexdigest()[:6]}"
-            
-            documents_to_add.append(message_content)
-            metadatas_to_add.append({
-                "source_type": "conversation_message",
-                "image_source": conversation_log.image_source,
-                "platform": conversation_log.platform,
-                "channel": conversation_log.channel or "unknown",
-                "speaker": msg.speaker,
-                "timestamp": msg.timestamp or "",
-                "message_index": i,
-                "message_content": msg.content,
-                "participants": json.dumps(conversation_log.participants or []),
-                "processed_at": conversation_log.extracted_at,
-                "content_type": "individual_message"
-            })
-            ids_to_add.append(msg_doc_id)
-    
-    # 3. Add all documents to ChromaDB
-    if documents_to_add:
-        try:
-            # Get embeddings for all documents
-            embeddings_to_add = []
-            for doc in documents_to_add:
-                embedding = await get_embedding(doc)
-                embeddings_to_add.append(embedding)
-            
-            # Filter out None embeddings
-            valid_data = [(doc, meta, doc_id, emb) for doc, meta, doc_id, emb in 
-                         zip(documents_to_add, metadatas_to_add, ids_to_add, embeddings_to_add) 
-                         if emb is not None]
-            
-            if valid_data:
-                docs, metas, doc_ids, embeddings = zip(*valid_data)
-                
-                chroma_collection.add(
-                    ids=list(doc_ids),
-                    embeddings=list(embeddings),
-                    documents=list(docs),
-                    metadatas=list(metas)
-                )
-                
-                log_info(f"Added {len(valid_data)} conversation documents to ChromaDB for {conversation_log.image_source}")
-            else:
-                log_warning(f"No valid embeddings generated for conversation from {conversation_log.image_source}")
-                
-        except chromadb.errors.IDAlreadyExistsError:
-            log_warning(f"Some conversation documents already exist in ChromaDB for {conversation_log.image_source}")
-        except Exception as e:
-            log_error(f"Error adding conversation documents to ChromaDB for {conversation_log.image_source}: {e}") 

@@ -33,7 +33,9 @@ Our RAG (Retrieval Augmented Generation) agent supports:
 - **Automatic Text Extraction**: Convert images to searchable text
 
 #### **Advanced Features**
-- **ChromaDB Vector Store**: Persistent, high-performance semantic search
+- **Dual Storage Options**: 
+  - Local: ChromaDB vector store with Neo4j graph database
+  - Cloud: Supabase (pgvector) with Neo4j Aura for scalable cloud deployment
 - **File Type Detection**: Automatic MIME type and extension-based filtering
 - **Recursive Processing**: Optional subdirectory scanning
 - **Extension Filtering**: Target specific file types for indexing
@@ -97,6 +99,19 @@ LOCAL_FILE_DIR_KNOWLEDGE_BASE=/path/to/knowledge/base
 # Optional Configuration
 DEBUG=false
 LOG_LEVEL=INFO
+
+# Cloud Storage Configuration (Optional)
+# For Supabase Vector Storage
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=your_supabase_anon_key
+
+# For Neo4j Aura Knowledge Graph
+NEO4J_URI=neo4j+s://your-instance.databases.neo4j.io
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=your_neo4j_password
+
+# Storage Mode (auto, true, false)
+USE_CLOUD_STORAGE=auto
 ```
 
 ### **Required API Keys**
@@ -107,6 +122,13 @@ LOG_LEVEL=INFO
 | **Brave Search** | Web search capabilities | [Brave Search API](https://api.search.brave.com/) |
 | **GitHub** | Repository access | [GitHub Personal Access Token](https://github.com/settings/tokens) |
 | **Slack** | Team communication | [Slack App Dashboard](https://api.slack.com/apps) |
+
+### **Cloud Storage Setup (Optional)**
+
+For scalable cloud deployment, see the [Cloud Setup Guide](docs/cloud_setup.md) which covers:
+- Supabase configuration for vector storage
+- Neo4j Aura setup for knowledge graphs
+- Migration from local to cloud storage
 
 ## 🚀 Usage
 
@@ -128,9 +150,24 @@ python -m src.main_simple
 
 
 The system will:
-1. Initialize ChromaDB vector store
+1. Initialize storage (ChromaDB locally or Supabase/Neo4j if configured)
 2. Start all MCP servers (using npx to auto-download if needed)
 3. Launch interactive chat interface
+
+**Quick Start for Cloud Indexing:**
+```bash
+# 1. Configure cloud services in local.env (see Environment Setup above)
+
+# 2. Test connections
+python scripts/test_cloud_connection.py
+
+# 3. Index your documents
+./index_docs.sh  # Indexes data/meeting_notes and data/va_notes
+
+# 4. Start the system and search
+./run.sh
+# Then: "search for meeting notes about project planning"
+```
 
 ### **Core Commands**
 
@@ -147,6 +184,8 @@ index all .md and .txt files in ./docs directory
 ```
 
 #### **Document Search**
+
+**Local Search (ChromaDB):**
 ```
 # Search indexed content
 what is Huy's job title?
@@ -154,6 +193,85 @@ what is Huy's job title?
 # Search with context
 find information about authentication in the codebase
 ```
+
+**Cloud Search (After Bulk Indexing):**
+```
+# Search in cloud-indexed documents
+search for meeting notes about project planning
+
+# Find specific entities
+find all action items from last week
+
+# Search by document type
+show me VA notes about testing
+
+# Knowledge graph queries
+find all entities related to budget discussions
+```
+
+#### **Bulk Cloud Indexing**
+
+Index entire directories to cloud services (Supabase for vector search + Neo4j Aura for knowledge graphs):
+
+**Prerequisites:**
+1. Configure cloud services in `local.env`:
+   ```env
+   SUPABASE_URL=https://your-project.supabase.co
+   SUPABASE_KEY=your_supabase_anon_key
+   NEO4J_URI=neo4j+s://your-instance.databases.neo4j.io
+   NEO4J_PASSWORD=your_neo4j_password
+   ```
+
+2. Run the SQL schema in Supabase (found in `scripts/supabase_vector_schema.sql`)
+
+**Testing & Verification:**
+```bash
+# Test cloud connections
+python scripts/test_cloud_connection.py
+
+# Test vector search functionality
+python scripts/test_vector_search.py
+
+# Check what's already indexed
+./index_docs.sh --check-only
+```
+
+**Indexing Commands:**
+```bash
+# Index default directories (data/meeting_notes, data/va_notes)
+./index_docs.sh
+
+# Skip already indexed files (default behavior)
+./index_docs.sh
+
+# Force re-index all files
+./index_docs.sh --force
+
+# Clear and re-index from scratch
+./index_docs.sh --clear
+
+# Index specific directories
+./index_docs.sh --directories data/custom_dir data/another_dir
+
+# Index specific file types
+./index_docs.sh --extensions .md .txt .doc
+
+# Combine options
+./index_docs.sh --force --directories data/notes --extensions .md
+```
+
+**What Gets Indexed:**
+- Document content split into contextual chunks
+- Metadata: file paths, dates, titles, document types
+- Entities: dates, emails, topics, action items
+- Relationships in knowledge graph
+
+**Troubleshooting:**
+- If you get duplicate key errors, the documents are already indexed (use `--force` to re-index)
+- For type mismatch errors, run `scripts/fix_match_documents_function.sql` in Supabase
+- Use `--check-only` to see what's already indexed
+
+See the [Indexing Guide](docs/indexing_guide.md) for detailed documentation.
 
 #### **Image Analysis**
 
@@ -214,21 +332,38 @@ Send a message to the #general channel about deployment status
 
 ## 🏗️ Architecture
 
+For a more detailed explanation of the system's architecture, please see the [ARCHITECTURE.md](ARCHITECTURE.md) file.
+
+
 ### **Project Structure**
 ```
 automation-agents/
 ├── src/
 │   ├── agents/          # Individual agent implementations
+│   │   ├── rag_cloud.py # Cloud-enabled RAG agent
+│   │   └── ...
 │   ├── core/            # Configuration, constants, exceptions
 │   ├── mcp/             # MCP server management
 │   ├── processors/      # Data processors (crawler, image, calendar)
-│   ├── storage/         # Storage layer (ChromaDB)
+│   ├── storage/         # Storage layer (ChromaDB, Supabase, Neo4j)
+│   │   ├── supabase_vector.py  # Supabase vector storage
+│   │   ├── neo4j_cloud.py      # Neo4j Aura client
+│   │   └── ...
 │   ├── utils/           # Utilities (logging)
 │   └── main.py          # Main application entry point
 ├── tests/               # Test suite
 ├── data/                # Data files (tasks, logs, meetings)
+│   ├── meeting_notes/   # Meeting documentation
+│   └── va_notes/        # VA-related notes
 ├── docs/                # Documentation
+│   ├── cloud_setup.md   # Cloud services setup guide
+│   └── indexing_guide.md # Document indexing guide
 ├── scripts/             # Utility scripts
+│   ├── index_to_cloud.py        # Bulk document indexing
+│   ├── test_cloud_connection.py # Test cloud connections
+│   ├── supabase_vector_schema.sql # Vector DB schema
+│   └── fix_match_documents_function.sql # SQL fixes
+├── index_docs.sh        # Indexing wrapper script
 └── requirements.txt     # Python dependencies
 ```
 

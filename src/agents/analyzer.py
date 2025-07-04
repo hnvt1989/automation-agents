@@ -13,7 +13,7 @@ from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
-from src.agents.rag import RAGAgent
+from src.agents.rag_cloud import CloudRAGAgent
 from src.agents.enhanced_rag import get_enhanced_rag_context
 from src.utils.logging import log_info, log_error, log_warning
 from src.core.config import get_settings
@@ -296,7 +296,7 @@ class AnalyzerAgent:
             log_info(f"Enhancing task with RAG: {task.title}")
             
             # Create RAG agent
-            rag_agent = RAGAgent(self.model)
+            rag_agent = CloudRAGAgent(self.model, use_cloud=True)
             
             # Search for relevant context
             search_query = f"Find information relevant to: {task.title} {task.description}"
