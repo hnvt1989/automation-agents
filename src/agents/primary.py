@@ -753,11 +753,14 @@ class PrimaryAgent(BaseAgent):
 
     async def run_stream(self, prompt: str, **kwargs):
         """Run the primary agent in streaming mode."""
+        # Extract user_id from kwargs before passing to parent
+        user_id = kwargs.pop("user_id", None)
+        
         deps = PrimaryAgentDeps(
             agents=self.agents,
             query=prompt,
             debug=kwargs.get("debug", False),
-            user_id=kwargs.get("user_id")
+            user_id=user_id
         )
 
         async for delta in super().run_stream(prompt, deps=deps, **kwargs):
