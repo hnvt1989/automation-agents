@@ -135,6 +135,7 @@ class UserLogin(BaseModel):
 
 class UserSettingsUpdate(BaseModel):
     google_drive_calendar_secret_link: str | None = None
+    theme: str | None = None
 
 
 class UserSetting(BaseModel):
@@ -818,6 +819,21 @@ async def delete_memo(memo_id: str, doc_manager: DocumentManager = Depends(get_d
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/memos/{memo_id}/content")
+async def get_memo_content(memo_id: str, doc_manager: DocumentManager = Depends(get_document_manager)):
+    """Get content of a specific memo"""
+    try:
+        content = doc_manager.get_document_content(memo_id, "memo")
+        
+        if content is None:
+            raise HTTPException(status_code=404, detail="Memo not found")
+        
+        return Response(content=content, media_type="text/plain")
+    except Exception as e:
+        log_error(f"Error getting memo content: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # Interviews endpoints using Supabase vector storage
 @app.get("/interviews")
 async def get_interviews(doc_manager: DocumentManager = Depends(get_document_manager)):
@@ -957,6 +973,21 @@ async def delete_interview(interview_id: str, doc_manager: DocumentManager = Dep
         
         return {"success": True}
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/interviews/{interview_id}/content")
+async def get_interview_content(interview_id: str, doc_manager: DocumentManager = Depends(get_document_manager)):
+    """Get content of a specific interview"""
+    try:
+        content = doc_manager.get_document_content(interview_id, "interview")
+        
+        if content is None:
+            raise HTTPException(status_code=404, detail="Interview not found")
+        
+        return Response(content=content, media_type="text/plain")
+    except Exception as e:
+        log_error(f"Error getting interview content: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1169,7 +1200,8 @@ async def get_user_settings(
         
         # Provide default values for known settings
         default_settings = {
-            "google_drive_calendar_secret_link": ""
+            "google_drive_calendar_secret_link": "",
+            "theme": "starwars"
         }
         
         # Merge defaults with user settings
@@ -1200,7 +1232,8 @@ async def get_user_setting(
         if setting_value is None:
             # Return default value for known settings
             defaults = {
-                "google_drive_calendar_secret_link": ""
+                "google_drive_calendar_secret_link": "",
+                "theme": "starwars"
             }
             setting_value = defaults.get(setting_key, "")
         

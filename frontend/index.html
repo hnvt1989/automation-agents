@@ -986,6 +986,220 @@
                 opacity: 1;
             }
         }
+
+        /* Dark Theme Variables */
+        [data-theme="dark"] {
+            --primary-color: #cccccc;
+            --secondary-color: #969696;
+            --accent-color: #0078d4;
+            --background-primary: #1e1e1e;
+            --background-secondary: #252526;
+            --background-tertiary: #2d2d30;
+            --border-color: #3e3e42;
+            --glow-color: rgba(0, 120, 212, 0.4);
+            --text-shadow: none;
+            --hover-bg: #2a2d2e;
+            --active-bg: #094771;
+            --input-bg: #3c3c3c;
+            --button-bg: #0e639c;
+            --button-hover-bg: #1177bb;
+        }
+
+        /* Apply dark theme styles */
+        [data-theme="dark"] body {
+            background: var(--background-primary);
+            color: var(--primary-color);
+        }
+
+        [data-theme="dark"] body::before {
+            background: none;
+        }
+
+        [data-theme="dark"] .container {
+            background: var(--background-primary);
+            border: 1px solid var(--border-color);
+        }
+
+        [data-theme="dark"] .assistant-panel {
+            background: var(--background-secondary);
+            border-right: 1px solid var(--border-color);
+            box-shadow: none;
+        }
+
+        [data-theme="dark"] .assistant-header {
+            background: var(--background-tertiary);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        [data-theme="dark"] .assistant-header::after {
+            background: none;
+        }
+
+        [data-theme="dark"] .assistant-title {
+            color: var(--primary-color);
+            text-shadow: var(--text-shadow);
+        }
+
+        [data-theme="dark"] .messages {
+            background: var(--background-secondary);
+        }
+
+        [data-theme="dark"] .message.assistant {
+            background: var(--background-tertiary);
+            border: 1px solid var(--border-color);
+            color: var(--primary-color);
+        }
+
+        [data-theme="dark"] .message.user {
+            background: var(--active-bg);
+            border: 1px solid var(--accent-color);
+            color: #ffffff;
+        }
+
+        [data-theme="dark"] .input-area input {
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            color: var(--primary-color);
+        }
+
+        [data-theme="dark"] .input-area input:focus {
+            border-color: var(--accent-color);
+            box-shadow: 0 0 0 1px var(--accent-color);
+        }
+
+        [data-theme="dark"] .send-button {
+            background: var(--button-bg);
+            border: 1px solid var(--button-bg);
+            color: #ffffff;
+        }
+
+        [data-theme="dark"] .send-button:hover {
+            background: var(--button-hover-bg);
+        }
+
+        [data-theme="dark"] .workspace-panel {
+            background: var(--background-primary);
+        }
+
+        [data-theme="dark"] .top-header {
+            background: var(--background-tertiary);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        [data-theme="dark"] .workspace-header {
+            background: var(--background-secondary);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        [data-theme="dark"] .workspace-title {
+            color: var(--primary-color);
+            text-shadow: none;
+        }
+
+        [data-theme="dark"] .tab {
+            color: var(--secondary-color);
+            border: 1px solid transparent;
+        }
+
+        [data-theme="dark"] .tab:hover {
+            color: var(--primary-color);
+            background: var(--hover-bg);
+            border-color: var(--border-color);
+        }
+
+        [data-theme="dark"] .tab.active {
+            color: var(--primary-color);
+            background: var(--background-primary);
+            border-color: var(--border-color);
+            border-bottom-color: var(--background-primary);
+        }
+
+        [data-theme="dark"] .workspace-item {
+            background: var(--background-secondary);
+            border: 1px solid var(--border-color);
+            color: var(--primary-color);
+        }
+
+        [data-theme="dark"] .workspace-item:hover {
+            background: var(--hover-bg);
+            border-color: var(--accent-color);
+        }
+
+        [data-theme="dark"] .workspace-item.selected {
+            background: var(--active-bg);
+            border-color: var(--accent-color);
+            color: #ffffff;
+        }
+
+        [data-theme="dark"] .item-title {
+            color: var(--primary-color);
+        }
+
+        [data-theme="dark"] .item-description {
+            color: var(--secondary-color);
+        }
+
+        [data-theme="dark"] .item-meta {
+            color: var(--accent-color);
+        }
+
+        [data-theme="dark"] .action-buttons {
+            background: var(--background-tertiary);
+            border-top: 1px solid var(--border-color);
+        }
+
+        [data-theme="dark"] .action-buttons::before {
+            background: none;
+        }
+
+        [data-theme="dark"] .action-button {
+            background: var(--background-secondary);
+            border: 1px solid var(--border-color);
+            color: var(--primary-color);
+        }
+
+        [data-theme="dark"] .action-button:hover {
+            background: var(--hover-bg);
+            border-color: var(--accent-color);
+        }
+
+        [data-theme="dark"] .action-button.primary {
+            background: var(--button-bg);
+            color: #ffffff;
+            border-color: var(--button-bg);
+        }
+
+        [data-theme="dark"] .action-button.primary:hover {
+            background: var(--button-hover-bg);
+        }
+
+        [data-theme="dark"] .editor-overlay {
+            background: rgba(0, 0, 0, 0.8);
+        }
+
+        [data-theme="dark"] .editor-container {
+            background: var(--background-secondary);
+            border: 1px solid var(--border-color);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+        }
+
+        [data-theme="dark"] .editor-input,
+        [data-theme="dark"] .editor-textarea {
+            background: var(--input-bg);
+            color: var(--primary-color);
+            border: 1px solid var(--border-color);
+        }
+
+        [data-theme="dark"] .editor-input:focus,
+        [data-theme="dark"] .editor-textarea:focus {
+            border-color: var(--accent-color);
+            box-shadow: 0 0 0 1px var(--accent-color);
+        }
+
+        [data-theme="dark"] .editor-input::placeholder,
+        [data-theme="dark"] .editor-textarea::placeholder {
+            color: var(--secondary-color);
+        }
     </style>
 </head>
 <body>
@@ -1717,7 +1931,8 @@ function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 
 
 function SettingsPanel({ authenticatedFetch }) {
     const [settings, setSettings] = useState({
-        google_drive_calendar_secret_link: ''
+        google_drive_calendar_secret_link: '',
+        theme: 'starwars'
     });
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -1882,6 +2097,55 @@ function SettingsPanel({ authenticatedFetch }) {
                     </div>
                 </div>
 
+                {/* Theme Selector */}
+                <div style={{ marginBottom: '24px' }}>
+                    <label style={{
+                        display: 'block',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        fontFamily: 'Orbitron, monospace',
+                        color: '#00ff88',
+                        marginBottom: '8px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '1px',
+                        textShadow: '0 0 5px rgba(0, 255, 136, 0.3)'
+                    }}>
+                        Interface Theme
+                    </label>
+                    <select
+                        value={settings.theme || 'starwars'}
+                        onChange={(e) => {
+                            const newTheme = e.target.value;
+                            handleInputChange('theme', newTheme);
+                            // Apply theme immediately
+                            document.documentElement.setAttribute('data-theme', newTheme === 'starwars' ? '' : newTheme);
+                        }}
+                        style={{
+                            width: '100%',
+                            padding: '16px 20px',
+                            border: '2px solid rgba(0, 255, 136, 0.4)',
+                            borderRadius: '8px',
+                            fontSize: '14px',
+                            fontFamily: 'Roboto Mono, monospace',
+                            background: 'rgba(10, 10, 10, 0.8)',
+                            color: '#e0e0e0',
+                            outline: 'none',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        <option value="starwars">Star Wars (Green)</option>
+                        <option value="dark">Dark (Blue)</option>
+                    </select>
+                    <div style={{
+                        fontSize: '12px',
+                        color: 'rgba(0, 255, 136, 0.7)',
+                        marginTop: '8px',
+                        fontFamily: 'Roboto Mono, monospace'
+                    }}>
+                        Choose your preferred interface theme. Changes apply immediately.
+                    </div>
+                </div>
+
                 {error && (
                     <div style={{
                         background: 'rgba(255, 69, 0, 0.2)',
@@ -1980,12 +2244,20 @@ function Panel({ tab, send, authenticatedFetch }) {
     const [searchQuery, setSearchQuery] = useState('');
     const [typeFilter, setTypeFilter] = useState('all');
     const [statusFilter, setStatusFilter] = useState(['todo', 'in_progress', 'pending']);
-    const [sortBy, setSortBy] = useState('name');
+    const [sortBy, setSortBy] = useState('date-desc');
     const [tagFilter, setTagFilter] = useState('all');
     const [dateFilter, setDateFilter] = useState('');
 
     useEffect(() => {
         setSelected(null);
+        // Set appropriate default sort for each tab
+        if (tab === 'tasks') {
+            setSortBy('due-date-urgent');
+        } else if (tab === 'documents' || tab === 'notes' || tab === 'memos' || tab === 'interviews') {
+            setSortBy('date-desc');
+        } else {
+            setSortBy('date-desc');
+        }
     }, [tab]);
 
     // Close dropdowns when clicking outside
@@ -2132,51 +2404,68 @@ function Panel({ tab, send, authenticatedFetch }) {
             });
         }
         
-        // Apply sorting for tasks
-        if (tab === 'tasks') {
-            items = items.slice().sort((a, b) => {
-                switch (sortBy) {
-                    case 'priority-desc':
-                        const priorityOrder = { high: 3, medium: 2, low: 1 };
-                        return (priorityOrder[b.priority] || 0) - (priorityOrder[a.priority] || 0);
-                    case 'priority-asc':
-                        const priorityOrderAsc = { high: 3, medium: 2, low: 1 };
-                        return (priorityOrderAsc[a.priority] || 0) - (priorityOrderAsc[b.priority] || 0);
-                    case 'due-date-asc':
-                        // Sort by due date (earliest first), tasks without due dates go to end
-                        if (!a.dueDate && !b.dueDate) return 0;
-                        if (!a.dueDate) return 1;
-                        if (!b.dueDate) return -1;
-                        return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
-                    case 'due-date-desc':
-                        // Sort by due date (latest first), tasks without due dates go to end
-                        if (!a.dueDate && !b.dueDate) return 0;
-                        if (!a.dueDate) return 1;
-                        if (!b.dueDate) return -1;
-                        return new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime();
-                    case 'due-date-urgent':
-                        // Sort by urgency: overdue first, then due soon, then by date
-                        const aStatus = a.dueDate ? getDeadlineStatus(a.dueDate) : 'normal';
-                        const bStatus = b.dueDate ? getDeadlineStatus(b.dueDate) : 'normal';
-                        
-                        // Priority order: overdue > due-soon > normal
-                        const statusOrder = { overdue: 3, 'due-soon': 2, normal: 1 };
-                        const statusDiff = (statusOrder[aStatus] || 0) - (statusOrder[bStatus] || 0);
-                        
-                        if (statusDiff !== 0) return -statusDiff; // Reverse for urgent first
-                        
-                        // If same status, sort by due date
-                        if (!a.dueDate && !b.dueDate) return 0;
-                        if (!a.dueDate) return 1;
-                        if (!b.dueDate) return -1;
-                        return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
-                    case 'name':
-                        return (a.name || '').localeCompare(b.name || '');
-                    default:
-                        return 0;
-                }
-            });
-        }
+        // Apply sorting
+        items = items.slice().sort((a, b) => {
+            switch (sortBy) {
+                // Common sorting options for all tabs
+                case 'name-asc':
+                    return (a.name || a.title || '').localeCompare(b.name || b.title || '');
+                case 'name-desc':
+                    return (b.name || b.title || '').localeCompare(a.name || a.title || '');
+                case 'date-desc':
+                    // Sort by creation/modification date (newest first)
+                    const aDate = a.lastModified || a.created_at || a.updated_at || '';
+                    const bDate = b.lastModified || b.created_at || b.updated_at || '';
+                    return new Date(bDate).getTime() - new Date(aDate).getTime();
+                case 'date-asc':
+                    // Sort by creation/modification date (oldest first)
+                    const aDateAsc = a.lastModified || a.created_at || a.updated_at || '';
+                    const bDateAsc = b.lastModified || b.created_at || b.updated_at || '';
+                    return new Date(aDateAsc).getTime() - new Date(bDateAsc).getTime();
+                
+                // Task-specific sorting options
+                case 'priority-desc':
+                    const priorityOrder = { high: 3, medium: 2, low: 1 };
+                    return (priorityOrder[b.priority] || 0) - (priorityOrder[a.priority] || 0);
+                case 'priority-asc':
+                    const priorityOrderAsc = { high: 3, medium: 2, low: 1 };
+                    return (priorityOrderAsc[a.priority] || 0) - (priorityOrderAsc[b.priority] || 0);
+                case 'due-date-asc':
+                    // Sort by due date (earliest first), tasks without due dates go to end
+                    if (!a.dueDate && !b.dueDate) return 0;
+                    if (!a.dueDate) return 1;
+                    if (!b.dueDate) return -1;
+                    return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+                case 'due-date-desc':
+                    // Sort by due date (latest first), tasks without due dates go to end
+                    if (!a.dueDate && !b.dueDate) return 0;
+                    if (!a.dueDate) return 1;
+                    if (!b.dueDate) return -1;
+                    return new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime();
+                case 'due-date-urgent':
+                    // Sort by urgency: overdue first, then due soon, then by date
+                    const aStatus = a.dueDate ? getDeadlineStatus(a.dueDate) : 'normal';
+                    const bStatus = b.dueDate ? getDeadlineStatus(b.dueDate) : 'normal';
+                    
+                    // Priority order: overdue > due-soon > normal
+                    const statusOrder = { overdue: 3, 'due-soon': 2, normal: 1 };
+                    const statusDiff = (statusOrder[aStatus] || 0) - (statusOrder[bStatus] || 0);
+                    
+                    if (statusDiff !== 0) return -statusDiff; // Reverse for urgent first
+                    
+                    // If same status, sort by due date
+                    if (!a.dueDate && !b.dueDate) return 0;
+                    if (!a.dueDate) return 1;
+                    if (!b.dueDate) return -1;
+                    return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+                
+                // Legacy support
+                case 'name':
+                    return (a.name || a.title || '').localeCompare(b.name || b.title || '');
+                default:
+                    return 0;
+            }
+        });
         
         return items;
     };
@@ -2679,28 +2968,42 @@ function Panel({ tab, send, authenticatedFetch }) {
                                 </div>
                             </div>
                             
-                            <select
-                                value={sortBy}
-                                onChange={(e) => setSortBy(e.target.value)}
-                                style={{
-                                    padding: '8px 12px',
-                                    border: '2px solid rgba(0, 255, 136, 0.3)',
-                                    borderRadius: '6px',
-                                    fontSize: '14px',
-                                    fontFamily: 'Roboto Mono, monospace',
-                                    background: 'rgba(10, 10, 10, 0.5)',
-                                    color: '#00ff88',
-                                    backdropFilter: 'blur(5px)'
-                                }}
-                            >
-                                <option value="name">Sort by Name</option>
-                                <option value="priority-desc">Priority (High to Low)</option>
-                                <option value="priority-asc">Priority (Low to High)</option>
-                                <option value="due-date-urgent">🚨 Most Urgent First</option>
-                                <option value="due-date-asc">Due Date (Earliest First)</option>
-                                <option value="due-date-desc">Due Date (Latest First)</option>
-                            </select>
                         </React.Fragment>
+                    )}
+                    
+                    {/* Sorting dropdown for all tabs except settings */}
+                    {tab !== 'settings' && (
+                        <select
+                            value={sortBy}
+                            onChange={(e) => setSortBy(e.target.value)}
+                            style={{
+                                padding: '8px 12px',
+                                border: '2px solid rgba(0, 255, 136, 0.3)',
+                                borderRadius: '6px',
+                                fontSize: '14px',
+                                fontFamily: 'Roboto Mono, monospace',
+                                background: 'rgba(10, 10, 10, 0.5)',
+                                color: '#00ff88',
+                                backdropFilter: 'blur(5px)'
+                            }}
+                        >
+                            {/* Common sorting options for all tabs */}
+                            <option value="name-asc">📄 Name (A-Z)</option>
+                            <option value="name-desc">📄 Name (Z-A)</option>
+                            <option value="date-desc">📅 Newest First</option>
+                            <option value="date-asc">📅 Oldest First</option>
+                            
+                            {/* Task-specific sorting options */}
+                            {tab === 'tasks' && (
+                                <React.Fragment>
+                                    <option value="priority-desc">⭐ Priority (High to Low)</option>
+                                    <option value="priority-asc">⭐ Priority (Low to High)</option>
+                                    <option value="due-date-urgent">🚨 Most Urgent First</option>
+                                    <option value="due-date-asc">📆 Due Date (Earliest First)</option>
+                                    <option value="due-date-desc">📆 Due Date (Latest First)</option>
+                                </React.Fragment>
+                            )}
+                        </select>
                     )}
                     
                     {tab === 'logs' && (
@@ -3201,6 +3504,25 @@ function App() {
             }
         }
     }, []);
+
+    // Load and apply saved theme when user is authenticated
+    useEffect(() => {
+        if (!authToken || !user) return;
+        
+        // Fetch user settings to get saved theme
+        authenticatedFetch(`${CONFIG.API_BASE_URL}/user/settings`)
+            .then(r => r.json())
+            .then(data => {
+                if (data.settings && data.settings.theme) {
+                    // Apply the saved theme immediately
+                    const theme = data.settings.theme;
+                    document.documentElement.setAttribute('data-theme', theme === 'starwars' ? '' : theme);
+                }
+            })
+            .catch(error => {
+                console.log('No saved theme settings found, using default');
+            });
+    }, [authToken, user, authenticatedFetch]);
 
     const handleLogin = (userData, token) => {
         setUser(userData);
