@@ -13,7 +13,7 @@ except ImportError:
     PYDANTIC_AI_AVAILABLE = False
     OpenAIProvider = None
     OpenAIModel = None
-import yaml
+# import yaml  # Not needed for Vercel deployment
 from datetime import datetime
 import os
 from dotenv import load_dotenv, set_key, find_dotenv
