@@ -977,10 +977,14 @@
     <script type="text/babel">
 const { useState, useEffect, useRef } = React;
 
-// Configuration - Update these URLs to match your backend server
+// Configuration - Auto-detect environment
 const CONFIG = {
-    API_BASE_URL: 'http://localhost:8000',  // Backend API server URL
-    WS_URL: 'ws://localhost:8000/ws'        // WebSocket URL for real-time chat
+    API_BASE_URL: window.location.hostname === 'localhost' 
+        ? 'http://localhost:8000' 
+        : window.location.origin,  // Use same domain for production
+    WS_URL: window.location.hostname === 'localhost' 
+        ? 'ws://localhost:8000/ws' 
+        : null  // Disable WebSocket on Vercel (serverless doesn't support persistent connections)
 };
 
 // Deadline calculation helper function
@@ -1190,12 +1194,58 @@ function LoggingModal({ isOpen, onClose, onSave, taskItem, errors, isSubmitting 
 
 function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 'edit', authenticatedFetch }) {
     const isAddMode = mode === 'add';
-    const [formData, setFormData] = useState({
-        name: (item && (item.title || item.name)) || '',
-        description: (item && item.description) || '',
-        content: (item && item.content) || '',
-        ...(item || {})
+    
+    // Helper function to format date for input[type="date"]
+    const formatDateForInput = (dateString) => {
+        if (!dateString) return '';
+        try {
+            // Handle various date formats and convert to YYYY-MM-DD
+            const date = new Date(dateString);
+            if (isNaN(date.getTime())) return '';
+            return date.toISOString().split('T')[0];
+        } catch (e) {
+            return '';
+        }
+    };
+    
+    const [formData, setFormData] = useState(() => {
+        const initialData = {
+            name: (item && (item.title || item.name)) || '',
+            description: (item && item.description) || '',
+            content: (item && item.content) || '',
+            ...(item || {})
+        };
+        
+        // Debug logging
+        console.log('Editor initializing with item:', item);
+        
+        // Explicitly set dueDate after spreading item to ensure proper format
+        if (item && item.dueDate) {
+            initialData.dueDate = formatDateForInput(item.dueDate);
+        }
+        
+        console.log('Final initialData:', initialData);
+        return initialData;
     });
+
+    // Update formData when item changes
+    React.useEffect(() => {
+        if (item) {
+            const newData = {
+                name: (item.title || item.name) || '',
+                description: item.description || '',
+                content: item.content || '',
+                ...item
+            };
+            
+            if (item.dueDate) {
+                newData.dueDate = formatDateForInput(item.dueDate);
+            }
+            
+            console.log('useEffect updating formData with:', newData);
+            setFormData(newData);
+        }
+    }, [item]);
 
     // Logging modal state
     const [showLoggingModal, setShowLoggingModal] = useState(false);
@@ -1946,16 +1996,19 @@ function Panel({ tab, send, authenticatedFetch }) {
         }
         
         // Fetch tasks
+        console.log('🔍 FETCHING TASKS FROM API...');
         authenticatedFetch(`${CONFIG.API_BASE_URL}/tasks`)
             .then(r => r.json())
             .then(data => { 
                 if (data.tasks) {
+                    console.log('Raw API response tasks:', data.tasks.slice(0, 2)); // Debug first 2 tasks
                     // Map backend field names to frontend field names
                     const mappedTasks = data.tasks.map(task => ({
                         ...task,
-                        dueDate: task.due_date,
+                        dueDate: task.dueDate || task.due_date, // Handle both camelCase and snake_case
                         name: task.title || task.name // For backward compatibility
                     }));
+                    console.log('Mapped tasks:', mappedTasks.slice(0, 2)); // Debug first 2 mapped tasks
                     setAllItems(prev => ({ ...prev, tasks: mappedTasks }));
                 }
             })
@@ -2357,14 +2410,43 @@ function Panel({ tab, send, authenticatedFetch }) {
             }
     };
     
-    const handleIndex = (item) => {
-        // Send message to index the file at its path
-        if (item && item.path) {
-            send(`Index the file at this directory ${item.path}`);
-        } else if (item && (item.title || item.name)) {
-            // Fallback if path is not available
-            send(`Index the file: ${item.title || item.name}`);
+    const handleIndex = async (item) => {
+        try {
+            // Index the document using the new Supabase-based API
+            if (item && item.id) {
+                // Map frontend tab names to API document types
+                const docTypeMap = {
+                    'documents': 'document',
+                    'notes': 'note',
+                    'memos': 'memo',
+                    'interviews': 'interview'
+                };
+                
+                const docType = docTypeMap[tab];
+                if (!docType) {
+                    alert(`❌ Cannot index: Unsupported document type '${tab}'`);
+                    return;
+                }
+                
+                const response = await authenticatedFetch(`${CONFIG.API_BASE_URL}/index/${docType}/${item.id}`, {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    alert(`✅ Successfully indexed: ${result.document_name}`);
+                } else {
+                    const error = await response.json();
+                    alert(`❌ Failed to index document: ${error.detail || 'Unknown error'}`);
+                }
+            } else {
+                alert('❌ Cannot index: Document ID not available');
+            }
+        } catch (error) {
+            console.error('Error indexing document:', error);
+            alert(`❌ Error indexing document: ${error.message}`);
         }
+        
         setEditingItem(null);
         setEditingItemIndex(null);
     };
@@ -3105,7 +3187,7 @@ function App() {
     }, [authToken]);
 
     useEffect(() => {
-        if (!authToken) return; // Don't connect WebSocket until authenticated
+        if (!authToken || !CONFIG.WS_URL) return; // Don't connect WebSocket until authenticated or if WS disabled
         
         const ws = new WebSocket(`${CONFIG.WS_URL}?token=${authToken}`);
         wsRef.current = ws;

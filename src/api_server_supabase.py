@@ -953,6 +953,55 @@ async def delete_interview(interview_id: str, doc_manager: DocumentManager = Dep
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# Document indexing endpoints
+@app.post("/index/{doc_type}/{doc_id}")
+async def index_document(doc_type: str, doc_id: str, doc_manager: DocumentManager = Depends(get_document_manager)):
+    """Index a document for search by fetching its content from Supabase and re-indexing it."""
+    try:
+        # Validate document type
+        valid_types = ["document", "note", "memo", "interview"]
+        if doc_type not in valid_types:
+            raise HTTPException(status_code=400, detail=f"Invalid document type. Must be one of: {valid_types}")
+        
+        # Get the document content from Supabase
+        content = doc_manager.get_document_content(doc_id, doc_type)
+        if content is None:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        # Get document metadata
+        documents = doc_manager.get_documents(doc_type)
+        document = next((doc for doc in documents if doc["id"] == doc_id), None)
+        if document is None:
+            raise HTTPException(status_code=404, detail="Document metadata not found")
+        
+        # Re-index the document by updating it (this triggers re-indexing in DocumentManager)
+        success = doc_manager.update_document(
+            doc_id=doc_id,
+            doc_type=doc_type,
+            content=content,  # Re-index with existing content
+            name=document["name"],
+            description=document["description"]
+        )
+        
+        if success:
+            logger.info(f"Successfully re-indexed {doc_type}: {document['name']} (ID: {doc_id})")
+            return {
+                "success": True,
+                "message": f"Successfully indexed {doc_type}: {document['name']}",
+                "document_id": doc_id,
+                "document_name": document["name"]
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to index document")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error indexing document {doc_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error indexing document: {str(e)}")
+
+
 # WebSocket for real-time chat
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
