@@ -1218,8 +1218,6 @@ function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 
         
         // Debug logging
         console.log('Editor initializing with item:', item);
-        console.log('Original dueDate:', item?.dueDate);
-        console.log('Formatted dueDate:', formatDateForInput(item?.dueDate));
         
         // Explicitly set dueDate after spreading item to ensure proper format
         if (item?.dueDate) {
@@ -2005,7 +2003,7 @@ function Panel({ tab, send, authenticatedFetch }) {
                     // Map backend field names to frontend field names
                     const mappedTasks = data.tasks.map(task => ({
                         ...task,
-                        dueDate: task.due_date,
+                        dueDate: task.dueDate || task.due_date, // Handle both camelCase and snake_case
                         name: task.title || task.name // For backward compatibility
                     }));
                     setAllItems(prev => ({ ...prev, tasks: mappedTasks }));
