@@ -300,23 +300,45 @@ class SupabaseVectorClient:
             raise
     
     def get_document_by_id(self, document_id: str) -> Optional[str]:
-        """Get document content by ID.
+        """Get document content by ID, reconstructing from chunks if needed.
         
         Args:
             document_id: ID of the document to retrieve
             
         Returns:
-            Document content or None if not found
+            Complete document content or None if not found
         """
         try:
+            # Get all chunks for this document
             result = self.client.table("document_embeddings") \
-                .select("content") \
+                .select("content, metadata") \
                 .eq("document_id", document_id) \
                 .eq("collection_name", self.collection_name) \
                 .execute()
             
             if result.data and len(result.data) > 0:
-                return result.data[0]["content"]
+                # If we have chunks, try to reconstruct the original content
+                chunks = []
+                for row in result.data:
+                    metadata = row.get("metadata", {})
+                    
+                    # Try to get original content from metadata
+                    if isinstance(metadata, dict) and "original_content" in metadata:
+                        chunk_index = metadata.get("chunk_index", 0)
+                        chunks.append((chunk_index, metadata["original_content"]))
+                    else:
+                        # Fallback to the stored content (which might be contextual)
+                        content = row["content"]
+                        # Remove context prefix if it exists (for contextual chunks)
+                        if "Chunk content:" in content:
+                            content = content.split("Chunk content:")[-1].strip()
+                        chunks.append((0, content))
+                
+                # Sort chunks by index and reconstruct
+                chunks.sort(key=lambda x: x[0])
+                reconstructed_content = "\n".join([chunk[1] for chunk in chunks])
+                
+                return reconstructed_content.strip() if reconstructed_content.strip() else None
             
             return None
             

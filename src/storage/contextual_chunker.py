@@ -303,24 +303,29 @@ class ContextualChunker:
         prompt = self._create_llm_prompt(chunk_text, context_info, chunk_index, total_chunks)
         
         try:
-            # Use asyncio to run the async LLM call
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-            async def get_context():
-                response = await self.llm_model.acomplete(prompt)
-                return response.text
-            
-            context = loop.run_until_complete(get_context())
-            loop.close()
-            
-            # Combine LLM context with chunk
-            full_context = f"{context}\n\nChunk content: {chunk_text}"
-            
-            # Cache the result
-            self._context_cache[cache_key] = full_context
-            
-            return full_context
+            # Check if we're already in an async context
+            try:
+                # Try to get the current event loop
+                loop = asyncio.get_running_loop()
+                # If we're in an async context, we can't use run_until_complete
+                # Fall back to template generation for now
+                log_warning("Already in async context, using template instead of LLM")
+                return self._generate_template_context(chunk_text, context_info, chunk_index, total_chunks)
+            except RuntimeError:
+                # No event loop running, we can create one
+                async def get_context():
+                    response = await self.llm_model.acomplete(prompt)
+                    return response.text
+                
+                context = asyncio.run(get_context())
+                
+                # Combine LLM context with chunk
+                full_context = f"{context}\n\nChunk content: {chunk_text}"
+                
+                # Cache the result
+                self._context_cache[cache_key] = full_context
+                
+                return full_context
             
         except Exception as e:
             log_warning(f"Failed to generate LLM context: {str(e)}. Using template instead.")

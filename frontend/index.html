@@ -597,9 +597,10 @@
             border: 2px solid rgba(0, 255, 136, 0.5);
             border-radius: 12px;
             box-shadow: 0 20px 60px rgba(0, 255, 136, 0.3);
-            width: 90%;
-            max-width: 800px;
-            max-height: 90vh;
+            width: 95%;
+            max-width: 1200px;
+            max-height: 95vh;
+            min-height: 80vh;
             display: flex;
             flex-direction: column;
             backdrop-filter: blur(20px);
@@ -739,12 +740,12 @@
         }
         
         .editor-textarea {
-            min-height: 200px;
+            min-height: 350px;
             resize: vertical;
         }
         
         .memo-content {
-            min-height: 400px;
+            min-height: 500px;
             font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
             font-size: 14px;
             line-height: 1.5;
@@ -3102,18 +3103,13 @@ function Panel({ tab, send, authenticatedFetch }) {
                                     
                                     const response = await authenticatedFetch(endpoint);
                                     if (response.ok) {
-                                        const data = await response.json();
-                                        if (tab === 'interviews') {
-                                            // For interviews, populate all the structured fields
-                                            setEditingItem({ 
-                                                ...item, 
-                                                content: data.content,
-                                                notes: data.notes,
-                                                priority: data.priority,
-                                                status: data.status,
-                                                title: data.title
-                                            });
+                                        if (tab === 'memos' || tab === 'interviews') {
+                                            // Memos and interviews content endpoints return plain text
+                                            const content = await response.text();
+                                            setEditingItem({ ...item, content: content });
                                         } else {
+                                            // Documents and notes return JSON with content field
+                                            const data = await response.json();
                                             setEditingItem({ ...item, content: data.content });
                                         }
                                     } else {
