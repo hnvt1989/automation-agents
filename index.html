@@ -1194,11 +1194,27 @@ function LoggingModal({ isOpen, onClose, onSave, taskItem, errors, isSubmitting 
 
 function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 'edit', authenticatedFetch }) {
     const isAddMode = mode === 'add';
+    
+    // Helper function to format date for input[type="date"]
+    const formatDateForInput = (dateString) => {
+        if (!dateString) return '';
+        try {
+            // Handle various date formats and convert to YYYY-MM-DD
+            const date = new Date(dateString);
+            if (isNaN(date.getTime())) return '';
+            return date.toISOString().split('T')[0];
+        } catch (e) {
+            return '';
+        }
+    };
+    
     const [formData, setFormData] = useState({
         name: (item && (item.title || item.name)) || '',
         description: (item && item.description) || '',
         content: (item && item.content) || '',
-        ...(item || {})
+        ...(item || {}),
+        // Ensure dueDate is properly formatted for date input
+        dueDate: formatDateForInput(item?.dueDate || item?.due_date)
     });
 
     // Logging modal state
