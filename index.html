@@ -1208,14 +1208,46 @@ function Editor({ item, type, onClose, onSave, onIndex, onDelete, onLog, mode = 
         }
     };
     
-    const [formData, setFormData] = useState({
-        name: (item && (item.title || item.name)) || '',
-        description: (item && item.description) || '',
-        content: (item && item.content) || '',
-        ...(item || {}),
-        // Ensure dueDate is properly formatted for date input
-        dueDate: formatDateForInput(item?.dueDate || item?.due_date)
+    const [formData, setFormData] = useState(() => {
+        const initialData = {
+            name: (item && (item.title || item.name)) || '',
+            description: (item && item.description) || '',
+            content: (item && item.content) || '',
+            ...(item || {})
+        };
+        
+        // Debug logging
+        console.log('Editor initializing with item:', item);
+        console.log('Original dueDate:', item?.dueDate);
+        console.log('Formatted dueDate:', formatDateForInput(item?.dueDate));
+        
+        // Explicitly set dueDate after spreading item to ensure proper format
+        if (item?.dueDate) {
+            initialData.dueDate = formatDateForInput(item.dueDate);
+        }
+        
+        console.log('Final initialData:', initialData);
+        return initialData;
     });
+
+    // Update formData when item changes
+    React.useEffect(() => {
+        if (item) {
+            const newData = {
+                name: (item.title || item.name) || '',
+                description: item.description || '',
+                content: item.content || '',
+                ...item
+            };
+            
+            if (item.dueDate) {
+                newData.dueDate = formatDateForInput(item.dueDate);
+            }
+            
+            console.log('useEffect updating formData with:', newData);
+            setFormData(newData);
+        }
+    }, [item]);
 
     // Logging modal state
     const [showLoggingModal, setShowLoggingModal] = useState(false);
