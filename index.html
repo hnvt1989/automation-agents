@@ -2000,12 +2000,14 @@ function Panel({ tab, send, authenticatedFetch }) {
             .then(r => r.json())
             .then(data => { 
                 if (data.tasks) {
+                    console.log('Raw API response tasks:', data.tasks.slice(0, 2)); // Debug first 2 tasks
                     // Map backend field names to frontend field names
                     const mappedTasks = data.tasks.map(task => ({
                         ...task,
                         dueDate: task.dueDate || task.due_date, // Handle both camelCase and snake_case
                         name: task.title || task.name // For backward compatibility
                     }));
+                    console.log('Mapped tasks:', mappedTasks.slice(0, 2)); // Debug first 2 mapped tasks
                     setAllItems(prev => ({ ...prev, tasks: mappedTasks }));
                 }
             })
