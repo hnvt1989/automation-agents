@@ -602,30 +602,36 @@ async def create_note(note_update: NoteUpdate, doc_manager: DocumentManager = De
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.put("/notes/{note_index}")
-async def update_note(note_index: int, note_update: NoteUpdate, doc_manager: DocumentManager = Depends(get_document_manager)):
-    """Update a specific note by index"""
+@app.put("/notes/{note_identifier}")
+async def update_note(note_identifier: str, note_update: NoteUpdate, doc_manager: DocumentManager = Depends(get_document_manager)):
+    """Update a specific note by ID or index (for backward compatibility)"""
     try:
-        notes = doc_manager.get_documents("note")
-        
-        if 0 <= note_index < len(notes):
-            note = notes[note_index]
-            doc_id = note["id"]
+        # Check if note_identifier is a number (index) or UUID (ID)
+        if note_identifier.isdigit():
+            # It's an index - convert to ID
+            notes = doc_manager.get_documents("note")
+            note_index = int(note_identifier)
             
-            success = doc_manager.update_document(
-                doc_id=doc_id,
-                doc_type="note",
-                content=note_update.content,
-                name=note_update.name,
-                description=note_update.description
-            )
-            
-            if success:
-                return {"success": True, "message": "Note updated"}
+            if 0 <= note_index < len(notes):
+                doc_id = notes[note_index]["id"]
             else:
-                raise HTTPException(status_code=500, detail="Failed to update note")
+                raise HTTPException(status_code=404, detail="Note index out of range")
         else:
-            raise HTTPException(status_code=404, detail="Note not found")
+            # It's already a note ID
+            doc_id = note_identifier
+        
+        success = doc_manager.update_document(
+            doc_id=doc_id,
+            doc_type="note",
+            content=note_update.content,
+            name=note_update.name,
+            description=note_update.description
+        )
+        
+        if success:
+            return {"success": True, "message": "Note updated"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to update note")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
